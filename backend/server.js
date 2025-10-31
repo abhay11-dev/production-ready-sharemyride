@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require("cors");
@@ -48,7 +49,7 @@ app.use(cors({
       'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
       'https://share-my-ride.vercel.app',
       'https://production-ready-sharemyride.onrender.com',
-      'http://localhost:5173',
+      'http://localhost:5173/',
       'http://localhost:3000',
       process.env.FRONTEND_URL
     ];

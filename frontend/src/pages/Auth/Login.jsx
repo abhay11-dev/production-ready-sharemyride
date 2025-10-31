@@ -19,8 +19,11 @@ function Login() {
     try {
       // Pass credentials object
       const result = await login({ email, password });
+
+      console.log('Login result:', result);
       
       if (result.success) {
+        console.log('Login successful, navigating to homeggggggggggggggggggggggggggggggggggggggggggggggg');
         navigate('/');
       } else {
         setError(result.error || 'Login failed');

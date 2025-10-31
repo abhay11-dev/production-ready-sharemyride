@@ -1,4 +1,4 @@
-const Razorpay = require('razorpay');
+const { razorpayPayment } = require('../config/razorpay');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
@@ -7,13 +7,6 @@ const Ride = require('../models/Ride');
 const { calculateCommissionBreakdown } = require('../services/commissionService');
 const { sendPaymentReceipt, sendDriverPaymentNotification } = require('../services/emailService');
 
-// Initialize Razorpay
-const razorpayPayment = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
-
-console.log('✅ Razorpay initialized with key:', process.env.RAZORPAY_KEY_ID?.substring(0, 15) + '...');
 
 /**
  * @route   POST /api/payments/create-order

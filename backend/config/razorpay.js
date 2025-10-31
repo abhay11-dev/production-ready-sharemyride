@@ -1,13 +1,13 @@
-// config/razorpay.js
+// ...existing code...
 const Razorpay = require('razorpay');
 
-// Payment Gateway Instance
+// Payment Gateway Instance using environment variables
 const razorpayPayment = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
-// RazorpayX Payout Instance (separate credentials)
+// RazorpayX Payout Instance using environment variables
 const razorpayPayout = new Razorpay({
   key_id: process.env.RAZORPAYX_KEY_ID,
   key_secret: process.env.RAZORPAYX_KEY_SECRET
@@ -29,3 +29,4 @@ module.exports = {
   razorpayPayout,
   verifyWebhookSignature
 };
+// ...existing code...
