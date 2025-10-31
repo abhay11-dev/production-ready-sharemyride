@@ -13,7 +13,8 @@ app.use((req, res, next) => {
     'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
     'https://share-my-ride.vercel.app',
     'http://localhost:5173',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    process.env.FRONTEND_URL
   ];
   
   // Check if origin is allowed or contains share-my-ride
@@ -21,6 +22,8 @@ app.use((req, res, next) => {
       (origin.includes('share-my-ride') && origin.includes('vercel.app')))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
+
+
   
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
@@ -34,6 +37,12 @@ app.use((req, res, next) => {
   
   next();
 });
+  //for deploying
+const path=require('path');
+app.use(express.static(path.join(__dirname, "../frontend/dist")));
+app.get("*", (req, res) => {
+	res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+});
 
 // Also use cors package as backup
 app.use(cors({
@@ -44,7 +53,8 @@ app.use(cors({
       'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
       'https://share-my-ride.vercel.app',
       'http://localhost:5173',
-      'http://localhost:3000'
+      'http://localhost:3000',
+      process.env.FRONTEND_URL
     ];
     
     if (origin.includes('share-my-ride') && origin.includes('vercel.app')) {
