@@ -23,8 +23,6 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
 
-
-  
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -36,12 +34,6 @@ app.use((req, res, next) => {
   }
   
   next();
-});
-  //for deploying
-const path=require('path');
-app.use(express.static(path.join(__dirname, "../frontend/dist")));
-app.get("*", (req, res) => {
-	res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
 });
 
 // Also use cors package as backup
@@ -157,7 +149,16 @@ app.get('/api', (req, res) => {
   });
 });
 
-// 404 handler
+// For deploying - serve static files (MOVED TO END, AFTER API ROUTES)
+const path = require('path');
+app.use(express.static(path.join(__dirname, "../frontend/dist")));
+
+// Catch-all route for SPA (FIXED: changed "*" to "/*")
+app.get("/*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+});
+
+// 404 handler - this won't be reached due to catch-all above, but keeping for non-GET requests
 app.use((req, res) => {
   res.status(404).json({ 
     message: 'Route not found',
