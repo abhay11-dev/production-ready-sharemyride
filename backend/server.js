@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require("cors");
+const path = require('path');
 
 const app = express();
 
@@ -49,7 +50,7 @@ app.use(cors({
       process.env.FRONTEND_URL
     ];
     
-    if (origin.includes('share-my-ride') && origin.includes('vercel.app')) {
+    if (origin && origin.includes('share-my-ride') && origin.includes('vercel.app')) {
       return callback(null, true);
     }
     
@@ -116,6 +117,7 @@ app.use(async (req, res, next) => {
   }
 });
 
+// API Routes - these come BEFORE static file serving
 app.use('/api/auth', authRoutes);
 app.use('/api/rides', rideRoutes);
 app.use('/api/users', userRoutes);
@@ -125,7 +127,18 @@ app.use('/api/payouts', payoutRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/receipts', receiptRoutes);
 
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
+  res.json({ 
+    message: 'API is working',
+    status: 'ok'
+  });
+});
+
+// Serve static files from frontend/dist
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+// Root endpoint (for API info)
+app.get('/api-info', (req, res) => {
   res.json({ 
     message: 'RideShare API is running',
     version: '1.0.0',
@@ -142,28 +155,23 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/api', (req, res) => {
-  res.json({ 
-    message: 'API is working',
-    status: 'ok'
-  });
-});
-
-// For deploying - serve static files (MOVED TO END, AFTER API ROUTES)
-const path = require('path');
-app.use(express.static(path.join(__dirname, "../frontend/dist")));
-
-// Catch-all route for SPA (FIXED: changed "*" to "/*")
-app.get("/*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
-});
-
-// 404 handler - this won't be reached due to catch-all above, but keeping for non-GET requests
-app.use((req, res) => {
-  res.status(404).json({ 
-    message: 'Route not found',
-    requestedUrl: req.originalUrl,
-    method: req.method
+// Catch-all handler for SPA - must be LAST
+// This handles all non-API routes and serves index.html
+app.use((req, res, next) => {
+  // If request is for API and not found, send 404 JSON
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ 
+      message: 'API route not found',
+      requestedUrl: req.originalUrl,
+      method: req.method
+    });
+  }
+  
+  // For all other routes, serve the React app
+  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'), (err) => {
+    if (err) {
+      res.status(500).json({ message: 'Error loading application' });
+    }
   });
 });
 
