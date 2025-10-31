@@ -13,6 +13,7 @@ app.use((req, res, next) => {
   const allowedOrigins = [
     'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
     'https://share-my-ride.vercel.app',
+    'https://production-ready-sharemyride.onrender.com',
     'http://localhost:5173',
     'http://localhost:3000',
     process.env.FRONTEND_URL
@@ -20,7 +21,8 @@ app.use((req, res, next) => {
   
   // Check if origin is allowed or contains share-my-ride
   if (origin && (allowedOrigins.includes(origin) || 
-      (origin.includes('share-my-ride') && origin.includes('vercel.app')))) {
+      (origin.includes('share-my-ride') && origin.includes('vercel.app')) ||
+      (origin.includes('sharemyride') && origin.includes('onrender.com')))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
 
@@ -45,12 +47,14 @@ app.use(cors({
     const allowedOrigins = [
       'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
       'https://share-my-ride.vercel.app',
+      'https://production-ready-sharemyride.onrender.com',
       'http://localhost:5173',
       'http://localhost:3000',
       process.env.FRONTEND_URL
     ];
     
-    if (origin && origin.includes('share-my-ride') && origin.includes('vercel.app')) {
+    if (origin && (origin.includes('share-my-ride') && origin.includes('vercel.app') ||
+        origin.includes('sharemyride') && origin.includes('onrender.com'))) {
       return callback(null, true);
     }
     
