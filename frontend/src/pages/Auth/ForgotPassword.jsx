@@ -14,7 +14,7 @@ function ForgotPassword() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Use environment variable or fallback to deployed API
-  const API_URL = import.meta.env.VITE_API_URL || 'https://sharemyride.onrender.com';
+const API_URL = import.meta.env.VITE_API_URL || 'https://production-ready-sharemyride.onrender.com/api';
 
   const getPasswordStrength = (pwd) => {
     if (!pwd) return { strength: 0, label: '', color: '' };
@@ -39,7 +39,7 @@ function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/forgot-password`, {
+      const response = await fetch(`${API_URL}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -100,7 +100,7 @@ function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/verify-reset-code`, {
+      const response = await fetch(`${API_URL}/auth/verify-reset-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode }),
@@ -188,7 +188,7 @@ function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/reset-password`, {
+      const response = await fetch(`${API_URL}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode, newPassword }),
