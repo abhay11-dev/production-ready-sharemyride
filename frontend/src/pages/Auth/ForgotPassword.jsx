@@ -30,6 +30,8 @@ function ForgotPassword() {
     return { strength, label: 'Strong', color: 'bg-green-500' };
   };
 
+  const API_URL = process.env.VITE_API_URL || 'http://localhost:5000';
+
   const passwordStrength = getPasswordStrength(newPassword);
 
   // Step 1: Send verification code to email
@@ -39,13 +41,11 @@ function ForgotPassword() {
 
     try {
       // API call to check if user exists and send verification code
-      const response = await fetch('http://localhost:5000/api/auth/forgot-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
+      const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email }),
+});
 
       const data = await response.json();
 
