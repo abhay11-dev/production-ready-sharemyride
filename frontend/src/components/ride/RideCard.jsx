@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createBooking } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
+import toast from 'react-hot-toast';
 
 function RideCard({ ride, onBookingSuccess }) {
   const { user } = useAuth();
@@ -11,8 +12,6 @@ function RideCard({ ride, onBookingSuccess }) {
   const [dropLocation, setDropLocation] = useState(ride.end);
   const [passengerNotes, setPassengerNotes] = useState('');
   const [isBooking, setIsBooking] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
-  const [bookingError, setBookingError] = useState('');
   const [hoveredFare, setHoveredFare] = useState(false);
 
   const formatDate = (dateString) => {
@@ -31,48 +30,103 @@ function RideCard({ ride, onBookingSuccess }) {
     return `${hour12}:${minutes} ${ampm}`;
   };
 
- const calculateFinalFare = (baseFare, seats = 1) => {
-  const totalBase = baseFare * seats;
-  const platformFee = totalBase * 0.10; // 10% platform fee
-  const subtotal = totalBase + platformFee;
-  const gst = subtotal * 0.18; // 18% GST
-  const total = subtotal + gst;
+  // PASSENGER SIDE CALCULATION - Split Model
+  const calculatePassengerFare = (driverBaseFare, seats = 1) => {
+    const baseFareTotal = driverBaseFare * seats;
+    const passengerServiceFee = 10 * seats;
+    const passengerServiceFeeGST = passengerServiceFee * 0.18;
+    const passengerTotal = baseFareTotal + passengerServiceFee + passengerServiceFeeGST;
 
-  return {
-    baseFare: totalBase,
-    platformFee,
-    gst,
-    subtotal,
-    total,
+    return {
+      baseFare: baseFareTotal,
+      passengerServiceFee,
+      passengerServiceFeeGST,
+      total: passengerTotal
+    };
   };
-};
 
-
-  const fareDetails = calculateFinalFare(parseFloat(ride.fare), seatsToBook);
-  const singleSeatFare = calculateFinalFare(parseFloat(ride.fare), 1);
+  const fareDetails = calculatePassengerFare(parseFloat(ride.fare), seatsToBook);
+  const singleSeatFare = calculatePassengerFare(parseFloat(ride.fare), 1);
 
   const handleRequestRide = () => {
     if (!user) {
-      alert('Please login to request a ride');
+      toast.error(
+        'Please login to request a ride',
+        {
+          duration: 4000,
+          position: 'top-center',
+          icon: '🔒',
+          style: {
+            background: '#EF4444',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        }
+      );
       return;
     }
     setShowBookingModal(true);
-    setBookingError('');
-    setBookingSuccess(false);
   };
 
   const handleViewContact = () => {
     if (!user) {
-      alert('Please login to view contact details');
+      toast.error(
+        'Please login to view contact details',
+        {
+          duration: 4000,
+          position: 'top-center',
+          icon: '🔒',
+          style: {
+            background: '#EF4444',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        }
+      );
       return;
     }
+    
+    // toast.success(
+    //   'Contact details loaded successfully',
+    //   {
+    //     duration: 2000,
+    //     position: 'top-center',
+    //     icon: '📞',
+    //     style: {
+    //       background: '#10B981',
+    //       color: '#fff',
+    //       fontWeight: '600',
+    //       padding: '16px',
+    //       borderRadius: '12px',
+    //     },
+    //   }
+    // );
+    
     setShowContactModal(true);
   };
 
   const handleSubmitBooking = async (e) => {
     e.preventDefault();
     setIsBooking(true);
-    setBookingError('');
+
+    // Show processing toast
+    const processingToast = toast.loading(
+      'Processing your booking request...',
+      {
+        position: 'top-center',
+        style: {
+          background: '#3B82F6',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      }
+    );
 
     try {
       const bookingData = {
@@ -82,32 +136,142 @@ function RideCard({ ride, onBookingSuccess }) {
         dropLocation,
         passengerNotes,
         totalFare: fareDetails.total,
-        platformFee: fareDetails.platformFee,
-        gst: fareDetails.gst,
+        passengerServiceFee: fareDetails.passengerServiceFee,
+        passengerServiceFeeGST: fareDetails.passengerServiceFeeGST,
         baseFare: fareDetails.baseFare
       };
 
       await createBooking(bookingData);
 
-      setBookingSuccess(true);
-      
-      // Call parent callback if provided
+      // Dismiss loading toast
+      toast.dismiss(processingToast);
+
+      // Show success toast with details
+      toast.success(
+        (t) => (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl"></span>
+              <span className="font-bold text-lg">Booking Successful!</span>
+            </div>
+           
+            <p className="text-xs mt-2 opacity-90">
+              Check your bookings page for details
+            </p>
+          </div>
+        ),
+        {
+          duration: 5000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '20px',
+            borderRadius: '12px',
+            maxWidth: '400px',
+          },
+          iconTheme: {
+            primary: '#fff',
+            secondary: '#10B981',
+          },
+        }
+      );
+
       if (onBookingSuccess) {
         onBookingSuccess();
       }
 
       setTimeout(() => {
         setShowBookingModal(false);
-        setBookingSuccess(false);
         setSeatsToBook(1);
         setPickupLocation(ride.start);
         setDropLocation(ride.end);
         setPassengerNotes('');
-      }, 2000);
+      }, 1000);
+
     } catch (error) {
-      setBookingError(error.response?.data?.message || 'Failed to request ride');
+      // Dismiss loading toast
+      toast.dismiss(processingToast);
+
+      const errorMessage = error.response?.data?.message || 'Failed to request ride';
+      
+      // Show detailed error toast
+      toast.error(
+        (t) => (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-bold">Booking Failed</span>
+            </div>
+            <p className="text-sm">{errorMessage}</p>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              className="mt-2 text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        ),
+        {
+          duration: 6000,
+          position: 'top-center',
+          style: {
+            background: '#EF4444',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+            maxWidth: '400px',
+          },
+        }
+      );
     } finally {
       setIsBooking(false);
+    }
+  };
+
+  const handleCloseBookingModal = () => {
+    if (isBooking) {
+      toast(
+        'Please wait while we process your booking',
+        {
+          duration: 2000,
+          position: 'top-center',
+          icon: '⏳',
+          style: {
+            background: '#F59E0B',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        }
+      );
+      return;
+    }
+    setShowBookingModal(false);
+  };
+
+  const handleSeatsChange = (newSeats) => {
+    setSeatsToBook(parseInt(newSeats));
+    
+    if (parseInt(newSeats) > 1) {
+      toast(
+        `${newSeats} seats selected - ₹${calculatePassengerFare(parseFloat(ride.fare), parseInt(newSeats)).total.toFixed(2)} total`,
+        {
+          duration: 2000,
+          position: 'top-center',
+          icon: '💺',
+          style: {
+            background: '#6366F1',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '12px 16px',
+            borderRadius: '12px',
+            fontSize: '14px',
+          },
+        }
+      );
     }
   };
 
@@ -188,7 +352,7 @@ function RideCard({ ride, onBookingSuccess }) {
             <p className="text-lg sm:text-xl font-bold text-green-600">₹{singleSeatFare.total.toFixed(2)}</p>
             
             {hoveredFare && (
-              <div className="absolute z-10 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 sm:w-64 bg-gray-900 text-white text-xs rounded-lg shadow-xl p-3 sm:p-4">
+              <div className="absolute z-10 bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 sm:w-64 bg-gray-900 text-white text-xs rounded-lg shadow-xl p-3 sm:p-4 pointer-events-none">
                 <div className="space-y-2">
                   <div className="font-semibold text-sm border-b border-gray-700 pb-2">Fare Breakdown (Per Seat)</div>
                   <div className="flex justify-between items-center">
@@ -196,12 +360,12 @@ function RideCard({ ride, onBookingSuccess }) {
                     <span className="font-semibold">₹{parseFloat(ride.fare).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-300">Platform Fee (10%):</span>
-                    <span className="font-semibold">₹{singleSeatFare.platformFee.toFixed(2)}</span>
+                    <span className="text-gray-300">Service Fee:</span>
+                    <span className="font-semibold">₹{(10).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-300">GST (18%):</span>
-                    <span className="font-semibold">₹{singleSeatFare.gst.toFixed(2)}</span>
+                    <span className="font-semibold">₹{singleSeatFare.passengerServiceFeeGST.toFixed(2)}</span>
                   </div>
                   <div className="border-t border-gray-700 pt-2 mt-2">
                     <div className="flex justify-between items-center font-bold">
@@ -221,7 +385,7 @@ function RideCard({ ride, onBookingSuccess }) {
         <div className="flex gap-3">
           <button
             onClick={handleRequestRide}
-            className="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-3 rounded-lg font-semibold hover:from-green-700 hover:to-green-600 transition-all duration-200 flex items-center justify-center gap-2"
+            className="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-3 rounded-lg font-semibold hover:from-green-700 hover:to-green-600 transition-all duration-200 flex items-center justify-center gap-2 hover:shadow-lg transform hover:scale-[1.02]"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -230,7 +394,7 @@ function RideCard({ ride, onBookingSuccess }) {
           </button>
           <button
             onClick={handleViewContact}
-            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-600 transition-all duration-200 flex items-center justify-center gap-2"
+            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-600 transition-all duration-200 flex items-center justify-center gap-2 hover:shadow-lg transform hover:scale-[1.02]"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -240,198 +404,233 @@ function RideCard({ ride, onBookingSuccess }) {
         </div>
       </div>
 
-    {showContactModal && (
-  <div className="fixed inset-0 backdrop-blur-sm bg-blue-100/50 flex items-center justify-center z-50 p-4 animate-fadeIn">
-    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform transition-all duration-300 scale-95 animate-popIn">
-      <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-6 rounded-t-2xl">
-        <div className="flex items-center justify-between">
-          <h3 className="text-2xl font-bold">Contact Details</h3>
-          <button
-            onClick={() => setShowContactModal(false)}
-            className="text-white hover:bg-red-600 hover:bg-opacity-20 rounded-lg p-2 transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
+      {showContactModal && (
+        <div className="fixed inset-0 backdrop-blur-sm bg-blue-100/50 flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform transition-all duration-300 scale-95 animate-popIn">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-6 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold">Contact Details</h3>
+                <button
+                  onClick={() => setShowContactModal(false)}
+                  className="text-white hover:bg-red-600 hover:bg-opacity-20 rounded-lg p-2 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
 
-      <div className="p-6 space-y-4">
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-sm text-gray-500 mb-2">Driver Name</p>
-          <p className="text-lg font-bold text-gray-900">{ride.driverId?.name || 'Not available'}</p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-sm text-gray-500 mb-2">Phone Number</p>
-          <p className="text-lg font-bold text-gray-900">{ride.phoneNumber || 'Not provided'}</p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-sm text-gray-500 mb-2">Pickup Address</p>
-          <p className="text-base font-semibold text-gray-900">{ride.address || 'Not provided'}</p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-sm text-gray-500 mb-2">Vehicle Number</p>
-          <p className="text-lg font-bold text-gray-900 uppercase">{ride.vehicleNumber}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-
-
-    {showBookingModal && (
-  <div className="fixed inset-0 backdrop-blur-md bg-black/40 flex items-center justify-center z-50 p-4 animate-fadeIn">
-    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto transform transition-all duration-300 scale-95 animate-popIn">
-      
-      <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-6 rounded-t-2xl sticky top-0 z-10">
-        <div className="flex items-center justify-between">
-          <h3 className="text-2xl font-bold">Request Ride</h3>
-          <button
-            onClick={() => setShowBookingModal(false)}
-            className="text-white hover:bg-red-600 hover:bg-opacity-20 rounded-lg p-2 transition-colors"
-            disabled={isBooking}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <p className="text-blue-100 mt-2 text-sm">{ride.start} → {ride.end}</p>
-      </div>
-
-      {bookingSuccess && (
-        <div className="m-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center gap-3 animate-popIn">
-          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-          <span className="font-semibold">Booking request sent successfully!</span>
+            <div className="p-6 space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-500 mb-2">Driver Name</p>
+                <p className="text-lg font-bold text-gray-900">{ride.driverId?.name || 'Not available'}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-500 mb-2">Phone Number</p>
+                <p className="text-lg font-bold text-gray-900">{ride.phoneNumber || 'Not provided'}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-500 mb-2">Pickup Address</p>
+                <p className="text-base font-semibold text-gray-900">{ride.address || 'Not provided'}</p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm text-gray-500 mb-2">Vehicle Number</p>
+                <p className="text-lg font-bold text-gray-900 uppercase">{ride.vehicleNumber}</p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {bookingError && (
-        <div className="m-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3 animate-popIn">
-          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-          </svg>
-          <span className="font-semibold">{bookingError}</span>
+      {showBookingModal && (
+        <div className="fixed inset-0 backdrop-blur-md bg-black/40 flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto transform transition-all duration-300 scale-95 animate-popIn">
+            
+            <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white p-6 rounded-t-2xl sticky top-0 z-10">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold">Request Ride</h3>
+                <button
+                  onClick={handleCloseBookingModal}
+                  className="text-white hover:bg-red-600 hover:bg-opacity-20 rounded-lg p-2 transition-colors"
+                  disabled={isBooking}
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-blue-100 mt-2 text-sm">{ride.start} → {ride.end}</p>
+            </div>
+
+            <form onSubmit={handleSubmitBooking} className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Number of Seats
+                </label>
+                <select
+                  value={seatsToBook}
+                  onChange={(e) => handleSeatsChange(e.target.value)}
+                  className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  required
+                  disabled={isBooking}
+                >
+                  {[...Array(ride.seats)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {i + 1} {i === 0 ? 'seat' : 'seats'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Pickup Location (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={pickupLocation}
+                  onChange={(e) => setPickupLocation(e.target.value)}
+                  className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  placeholder="Specify exact pickup point"
+                  disabled={isBooking}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Drop Location (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={dropLocation}
+                  onChange={(e) => setDropLocation(e.target.value)}
+                  className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  placeholder="Specify exact drop point"
+                  disabled={isBooking}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Additional Notes (Optional)
+                </label>
+                <textarea
+                  value={passengerNotes}
+                  onChange={(e) => setPassengerNotes(e.target.value)}
+                  className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+                  rows="3"
+                  placeholder="Any special requirements or messages for the driver..."
+                  disabled={isBooking}
+                />
+              </div>
+
+              <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-lg p-4 space-y-2 border-2 border-green-200">
+                <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  Fare Breakdown
+                </h4>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Base Fare ({seatsToBook} × ₹{ride.fare}):</span>
+                  <span className="font-semibold">₹{fareDetails.baseFare.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Passenger Service Fee:</span>
+                  <span className="font-semibold">₹{fareDetails.passengerServiceFee.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">GST (18%):</span>
+                  <span className="font-semibold">₹{fareDetails.passengerServiceFeeGST.toFixed(2)}</span>
+                </div>
+                <div className="border-t-2 border-green-300 pt-2 mt-2 flex justify-between">
+                  <span className="font-bold text-gray-800 flex items-center gap-1">
+                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Total Amount:
+                  </span>
+                  <span className="font-bold text-green-600 text-lg">₹{fareDetails.total.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseBookingModal}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors disabled:opacity-50"
+                  disabled={isBooking}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-600 transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+                  disabled={isBooking}
+                >
+                  {isBooking ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Processing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>Confirm Booking</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {isBooking && (
+                <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg flex items-center gap-3 animate-pulse">
+                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="font-medium text-sm">Please wait, processing your booking request...</span>
+                </div>
+              )}
+            </form>
+          </div>
         </div>
       )}
 
-      <form onSubmit={handleSubmitBooking} className="p-6 space-y-5">
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Number of Seats
-          </label>
-          <select
-            value={seatsToBook}
-            onChange={(e) => setSeatsToBook(parseInt(e.target.value))}
-            className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            required
-            disabled={isBooking}
-          >
-            {[...Array(ride.seats)].map((_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {i + 1} {i === 0 ? 'seat' : 'seats'}
-              </option>
-            ))}
-          </select>
-        </div>
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
 
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Pickup Location (Optional)
-          </label>
-          <input
-            type="text"
-            value={pickupLocation}
-            onChange={(e) => setPickupLocation(e.target.value)}
-            className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            placeholder="Specify exact pickup point"
-            disabled={isBooking}
-          />
-        </div>
+        @keyframes popIn {
+          0% {
+            transform: scale(0.9);
+            opacity: 0;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
 
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Drop Location (Optional)
-          </label>
-          <input
-            type="text"
-            value={dropLocation}
-            onChange={(e) => setDropLocation(e.target.value)}
-            className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            placeholder="Specify exact drop point"
-            disabled={isBooking}
-          />
-        </div>
+        .animate-fadeIn {
+          animation: fadeIn 0.2s ease-out;
+        }
 
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Additional Notes (Optional)
-          </label>
-          <textarea
-            value={passengerNotes}
-            onChange={(e) => setPassengerNotes(e.target.value)}
-            className="w-full border border-gray-300 px-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
-            rows="3"
-            placeholder="Any special requirements or messages for the driver..."
-            disabled={isBooking}
-          />
-        </div>
-
-        <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-          <h4 className="font-semibold text-gray-800 mb-3">Fare Breakdown</h4>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Base Fare ({seatsToBook} × ₹{ride.fare}):</span>
-            <span className="font-semibold">₹{fareDetails.baseFare.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Platform Fee (10%):</span>
-            <span className="font-semibold">₹{fareDetails.platformFee.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">GST (18%):</span>
-            <span className="font-semibold">₹{fareDetails.gst.toFixed(2)}</span>
-          </div>
-          <div className="border-t pt-2 mt-2 flex justify-between">
-            <span className="font-bold text-gray-800">Total Amount:</span>
-            <span className="font-bold text-green-600 text-lg">₹{fareDetails.total.toFixed(2)}</span>
-          </div>
-        </div>
-
-        <div className="flex gap-3 pt-4">
-          <button
-            type="button"
-            onClick={() => setShowBookingModal(false)}
-            className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-            disabled={isBooking}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-600 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            disabled={isBooking}
-          >
-            {isBooking ? (
-              <>
-                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span>Requesting...</span>
-              </>
-            ) : (
-              'Confirm Request'
-            )}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-)}
-
+        .animate-popIn {
+          animation: popIn 0.3s ease-out;
+        }
+      `}</style>
     </>
   );
 }

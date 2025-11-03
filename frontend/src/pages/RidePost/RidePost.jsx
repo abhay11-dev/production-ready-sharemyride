@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import RideForm from '../../components/ride/RideForm';
 import { postRide, getMyRides, deleteRide } from '../../services/rideService';
 import { useAuth } from '../../hooks/useAuth';
+import toast from 'react-hot-toast';
+import { PaymentCalculator } from '../../utils/paymentCalculator';
+
 
 function RidePost() {
   const { user } = useAuth();
   const [rides, setRides] = useState([]);
-  const [showSuccess, setShowSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [deletingRideId, setDeletingRideId] = useState(null);
   const [hoveredRideId, setHoveredRideId] = useState(null);
   const [expandedRideId, setExpandedRideId] = useState(null);
@@ -23,8 +24,17 @@ function RidePost() {
         setRides(data);
       } catch (err) {
         console.error('Failed to fetch rides:', err);
-        setError('Failed to load your rides');
-        setTimeout(() => setError(null), 3000);
+        toast.error('Failed to load your rides', {
+          duration: 3000,
+          position: 'top-center',
+          style: {
+            background: '#EF4444',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        });
       } finally {
         setIsLoading(false);
       }
@@ -49,53 +59,161 @@ function RidePost() {
     return `${hour12}:${minutes} ${ampm}`;
   };
 
-  const calculateFinalFare = (baseFare) => {
-    const platformFee = baseFare * 0.10; // 10% platform fee
-    const subtotal = baseFare + platformFee;
-    const gst = subtotal * 0.18; // 18% GST
-    const total = subtotal + gst;
-    return { baseFare, platformFee, gst, subtotal, total };
+ const calculateFinalFare = (baseFare) => {
+  const driverCalc = PaymentCalculator.calculateDriverEarnings(baseFare);
+  const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare);
+  
+  return {
+    baseFare: driverCalc.baseFare,
+    platformFee: driverCalc.platformFee,
+    gstOnPlatformFee: driverCalc.gstOnPlatformFee,
+    driverNetAmount: driverCalc.driverNetAmount,
+    totalPassengerPays: passengerCalc.totalPassengerPays
   };
+};
 
   const handlePostRide = async (rideData) => {
     if (!user) {
-      setError('Please login first.');
-      setTimeout(() => setError(null), 3000);
+      toast.error('Please login first to post a ride', {
+        duration: 3000,
+        position: 'top-center',
+        icon: '🔒',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
       return;
     }
     
     setIsLoading(true);
-    setError(null);
     
     try {
       const newRide = await postRide(rideData);
       setRides([newRide, ...rides]);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 5000);
+      
+      // Success toast with ride details
+      toast.success(
+        `Ride posted successfully!`,
+        {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+          iconTheme: {
+            primary: '#fff',
+            secondary: '#10B981',
+          },
+        }
+      );
+      
+      // Smooth scroll to rides section
+      setTimeout(() => {
+        const ridesSection = document.getElementById('your-rides-section');
+        if (ridesSection) {
+          ridesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 500);
+      
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Failed to post ride. Please try again.';
-      setError(errorMessage);
-      setTimeout(() => setError(null), 5000);
+      toast.error(errorMessage, {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDeleteRide = async (rideId) => {
-    if (!window.confirm('Are you sure you want to cancel this ride? This action cannot be undone.')) {
-      return;
-    }
+    // Custom confirmation toast
+    toast((t) => (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <span className="font-semibold text-gray-900">Cancel this ride?</span>
+        </div>
+        <p className="text-sm text-gray-600">This action cannot be undone.</p>
+        <div className="flex gap-2 mt-2">
+          <button
+            onClick={() => {
+              toast.dismiss(t.id);
+              performDelete(rideId);
+            }}
+            className="flex-1 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+          >
+            Yes, Cancel Ride
+          </button>
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-semibold transition-colors"
+          >
+            No, Keep It
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: Infinity,
+      position: 'top-center',
+      style: {
+        background: '#fff',
+        padding: '16px',
+        borderRadius: '12px',
+        boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
+        maxWidth: '400px',
+      },
+    });
+  };
 
+  const performDelete = async (rideId) => {
     setDeletingRideId(rideId);
     
     try {
       await deleteRide(rideId);
       setRides(rides.filter(ride => ride._id !== rideId));
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+      
+      toast.success('Ride cancelled successfully', {
+        duration: 3000,
+        position: 'top-center',
+        icon: '✓',
+        style: {
+          background: '#10B981',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } catch (err) {
-      setError('Failed to cancel ride. Please try again.');
-      setTimeout(() => setError(null), 3000);
+      toast.error('Failed to cancel ride. Please try again.', {
+        duration: 3000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setDeletingRideId(null);
     }
@@ -111,30 +229,12 @@ function RidePost() {
             <p className="text-base sm:text-lg text-gray-600">Share your journey and help fellow travelers</p>
           </div>
 
-          {showSuccess && (
-            <div className="mb-6 sm:mb-8 bg-green-50 border-2 border-green-200 text-green-700 px-4 sm:px-6 py-3 sm:py-4 rounded-xl flex items-center justify-center gap-2 sm:gap-3 shadow-md animate-fade-in">
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <span className="font-semibold text-sm sm:text-base">Success! 🎉</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="mb-6 sm:mb-8 bg-red-50 border-2 border-red-200 text-red-700 px-4 sm:px-6 py-3 sm:py-4 rounded-xl flex items-center justify-center gap-2 sm:gap-3 shadow-md animate-fade-in">
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              <span className="font-semibold text-sm sm:text-base">{error}</span>
-            </div>
-          )}
-
           <div className="mb-8 sm:mb-10 flex justify-center">
             <RideForm onSubmit={handlePostRide} isLoading={isLoading} />
           </div>
 
           {rides.length > 0 && (
-            <div className="relative my-8 sm:my-12">
+            <div id="your-rides-section" className="relative my-8 sm:my-12">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t-2 border-gray-300"></div>
               </div>
@@ -243,56 +343,55 @@ function RidePost() {
                             </svg>
                           </div>
                           <p className="text-xs text-gray-500 font-medium mb-1">Total Fare (Per seat)</p>
-                          <p className="text-lg sm:text-xl font-bold text-green-600">₹{fareDetails.total.toFixed(2)}</p>
+                          <p className="text-lg sm:text-xl font-bold text-green-600">₹{fareDetails.totalPassengerPays.toFixed(2)}</p>
                           
-                          {hoveredRideId === ride._id && (
-                            <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 pointer-events-none">
-                              <div className="w-64 sm:w-72 bg-gray-900 text-white text-xs sm:text-sm rounded-xl shadow-2xl border border-gray-700 p-4">
-                                <div className="space-y-3">
-                                  {/* Header */}
-                                  <div className="font-semibold text-sm sm:text-base border-b border-gray-700 pb-2 text-center text-green-400">
-                                    Fare Breakdown 💰
-                                  </div>
+                        {hoveredRideId === ride._id && (
+  <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 pointer-events-none">
+    <div className="w-64 sm:w-72 bg-gray-900 text-white text-xs sm:text-sm rounded-xl shadow-2xl border border-gray-700 p-4">
+      <div className="space-y-3">
+        <div className="font-semibold text-sm sm:text-base border-b border-gray-700 pb-2 text-center text-green-400">
+          Your Earnings Breakdown 💰
+        </div>
 
-                                  {/* Breakdown Details */}
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-gray-300">Base Fare (Driver):</span>
-                                      <span className="font-medium">₹{fareDetails.baseFare.toFixed(2)}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-gray-300">Platform Fee (10%):</span>
-                                      <span className="font-medium">₹{fareDetails.platformFee.toFixed(2)}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                      <span className="text-gray-300">GST (18%):</span>
-                                      <span className="font-medium">₹{fareDetails.gst.toFixed(2)}</span>
-                                    </div>
-                                  </div>
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-300">Base Fare You Set:</span>
+            <span className="font-medium text-green-400">₹{fareDetails.baseFare.toFixed(2)}</span>
+          </div>
+        </div>
 
-                                  {/* Total Section */}
-                                  <div className="border-t border-gray-700 pt-3 mt-2">
-                                    <div className="flex justify-between items-center font-bold text-sm sm:text-base">
-                                      <span>Total Fare:</span>
-                                      <span className="text-green-400">₹{fareDetails.total.toFixed(2)}</span>
-                                    </div>
-                                  </div>
+        <div className="border-t border-gray-700 pt-2 space-y-2">
+          <p className="text-xs text-red-400 font-semibold">Deductions:</p>
+          <div className="flex justify-between items-center pl-2">
+            <span className="text-gray-400 text-xs">Platform Fee (8%):</span>
+            <span className="font-medium text-red-400">-₹{fareDetails.platformFee.toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between items-center pl-2">
+            <span className="text-gray-400 text-xs">GST on Fee (18%):</span>
+            <span className="font-medium text-red-400">-₹{fareDetails.gstOnPlatformFee.toFixed(2)}</span>
+          </div>
+        </div>
 
-                                  {/* Info Section */}
-                                  <div className="text-xs text-gray-400 mt-3 border-t border-gray-700 pt-2 leading-relaxed space-y-1">
-                                    <p>✓ Driver receives: ₹{fareDetails.baseFare.toFixed(2)}</p>
-                                    <p>✓ Platform fee covers service costs</p>
-                                    <p>✓ GST (18%) applied on total charges</p>
-                                  </div>
-                                </div>
+        <div className="border-t border-gray-700 pt-3 mt-2">
+          <div className="flex justify-between items-center font-bold text-sm sm:text-base">
+            <span>You Receive:</span>
+            <span className="text-green-400">₹{fareDetails.driverNetAmount.toFixed(2)}</span>
+          </div>
+        </div>
 
-                                {/* Tooltip Arrow */}
-                                <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-px">
-                                  <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900"></div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
+        <div className="text-xs text-gray-400 mt-3 border-t border-gray-700 pt-2 leading-relaxed space-y-1">
+          <p>✓ Passenger pays: ₹{fareDetails.totalPassengerPays.toFixed(2)}</p>
+          <p>✓ Includes ₹10 service fee + GST</p>
+          <p>✓ You get ₹{fareDetails.driverNetAmount.toFixed(2)} after fees</p>
+        </div>
+      </div>
+
+      <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-px">
+        <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900"></div>
+      </div>
+    </div>
+  </div>
+)}
                         </div>
                       </div>
 
@@ -349,12 +448,15 @@ function RidePost() {
               <p className="text-gray-600 text-sm sm:text-lg mb-4 sm:mb-6">
                 Fill out the form above to post your first ride and start sharing your journey!
               </p>
-              <div className="inline-flex items-center gap-2 text-green-600 font-semibold text-sm sm:text-base">
-                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="inline-flex items-center gap-2 text-green-600 hover:text-green-700 font-semibold text-sm sm:text-base hover:gap-3 transition-all duration-200 bg-green-50 hover:bg-green-100 px-4 py-2 rounded-lg"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
                 </svg>
                 <span>Get started above</span>
-              </div>
+              </button>
             </div>
           )}
 

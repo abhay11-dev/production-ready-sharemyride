@@ -99,6 +99,8 @@ const connectDB = async () => {
   }
 };
 
+
+
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const rideRoutes = require('./routes/rideRoutes');
@@ -131,6 +133,8 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/payouts', payoutRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/receipts', receiptRoutes);
+
+
 
 app.get('/api', (req, res) => {
   res.json({ 

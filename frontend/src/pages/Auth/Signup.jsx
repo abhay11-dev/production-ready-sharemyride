@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signupUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
+import toast from 'react-hot-toast';
 
 function Signup() {
   const navigate = useNavigate();
@@ -53,10 +54,68 @@ function Signup() {
     
     try {
       const userData = await signupUser({ name, email, password });
-      signup(userData);
-      navigate('/');
+      
+      // Show success toast
+      toast.success(
+        `🎉 Account created successfully!!`,
+        {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+          iconTheme: {
+            primary: '#fff',
+            secondary: '#10B981',
+          },
+        }
+      );
+
+      // Wait a moment for user to see the success message
+      setTimeout(() => {
+        // Show info toast asking to login
+        toast(
+          'Please log in to start using the app',
+          {
+            duration: 3000,
+            position: 'top-center',
+            icon: '🔐',
+            style: {
+               background: '#10B981',
+            color: '#fff',
+              fontWeight: '600',
+              padding: '16px',
+              borderRadius: '12px',
+            },
+          }
+        );
+        
+        // Navigate to login page
+        setTimeout(() => {
+          navigate('/login');
+        }, 500);
+      }, 1500);
+      
     } catch (err) {
-      setError(err.message || 'Signup failed. Please try again.');
+      const errorMessage = err.message || 'Signup failed. Please try again.';
+      setError(errorMessage);
+      
+      // Show error toast
+      toast.error(errorMessage, {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setIsLoading(false);
     }
@@ -162,7 +221,7 @@ function Signup() {
               >
                 {showPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                   </svg>
                 ) : (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -228,7 +287,7 @@ function Signup() {
               >
                 {showConfirmPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                   </svg>
                 ) : (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -293,19 +352,12 @@ function Signup() {
         {/* Additional Help Text */}
         <p className="text-center mt-4 sm:mt-6 text-xs sm:text-sm text-gray-600">
           By creating an account, you agree to our{' '}
-          <button 
+         <button 
             onClick={() => navigate('/terms')} 
-            className="text-green-600 hover:underline"
+            className="text-blue-600 hover:underline"
           >
-            Terms of Service
-          </button>
-          {' '}and{' '}
-          <button 
-            onClick={() => navigate('/privacy')} 
-            className="text-green-600 hover:underline"
-          >
-            Privacy Policy
-          </button>
+            Terms of Service &  Privacy Policy
+          </button>.
         </p>
       </div>
     </div>

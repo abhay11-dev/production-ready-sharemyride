@@ -1,26 +1,23 @@
 import React, { useState } from 'react';
 import RideCard from '../../components/ride/RideCard';
 import { searchRides } from '../../services/rideService';
+import toast from 'react-hot-toast';
 
 function RideSearch() {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [rides, setRides] = useState([]);
-  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [searchSuggestion, setSearchSuggestion] = useState('');
 
-  // Normalize text for better matching (lowercase, remove extra spaces, handle common typos)
   const normalizeText = (text) => {
     return text
       .toLowerCase()
       .trim()
-      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-      .replace(/[^\w\s]/g, ''); // Remove special characters
+      .replace(/\s+/g, ' ')
+      .replace(/[^\w\s]/g, '');
   };
 
-  // Calculate similarity between two strings (Levenshtein distance approximation)
   const calculateSimilarity = (str1, str2) => {
     const s1 = normalizeText(str1);
     const s2 = normalizeText(str2);
@@ -28,7 +25,6 @@ function RideSearch() {
     if (s1 === s2) return 1;
     if (s1.includes(s2) || s2.includes(s1)) return 0.8;
     
-    // Simple character overlap check
     const set1 = new Set(s1.split(''));
     const set2 = new Set(s2.split(''));
     const intersection = new Set([...set1].filter(x => set2.has(x)));
@@ -37,7 +33,6 @@ function RideSearch() {
     return intersection.size / union.size;
   };
 
-  // Fuzzy match rides based on start and end locations
   const fuzzyMatchRides = (allRides, searchStart, searchEnd) => {
     return allRides.map(ride => {
       const startSimilarity = calculateSimilarity(ride.start, searchStart);
@@ -49,36 +44,76 @@ function RideSearch() {
         matchScore: avgSimilarity
       };
     })
-    .filter(ride => ride.matchScore > 0.4) // Keep rides with >40% match
-    .sort((a, b) => b.matchScore - a.matchScore); // Sort by best match first
+    .filter(ride => ride.matchScore > 0.4)
+    .sort((a, b) => b.matchScore - a.matchScore);
   };
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    setError('');
     setIsLoading(true);
     setHasSearched(true);
-    setSearchSuggestion('');
+    
+    // Show searching toast
+    const searchingToast = toast.loading(
+      `🔍 Searching rides from ${start} to ${end}...`,
+      {
+        position: 'top-center',
+        style: {
+          background: '#3B82F6',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      }
+    );
     
     try {
-      // First try exact search
       const results = await searchRides(start, end);
       
       if (results && results.length > 0) {
-        // Apply fuzzy matching to results
         const fuzzyResults = fuzzyMatchRides(results, start, end);
         setRides(fuzzyResults);
         
-        // Show suggestion if best match isn't perfect
+        // Dismiss searching toast and show success
+        toast.dismiss(searchingToast);
+        
         if (fuzzyResults.length > 0 && fuzzyResults[0].matchScore < 0.95) {
-          setSearchSuggestion(`Showing results similar to "${start}" → "${end}"`);
+          toast.success(
+            `Found ${fuzzyResults.length} similar ${fuzzyResults.length === 1 ? 'ride' : 'rides'}!`,
+            {
+              duration: 3000,
+              position: 'top-center',
+              icon: '✨',
+              style: {
+                background: '#10B981',
+                color: '#fff',
+                fontWeight: '600',
+                padding: '16px',
+                borderRadius: '12px',
+              },
+            }
+          );
+        } else {
+          toast.success(
+            ` Found ${fuzzyResults.length} perfect ${fuzzyResults.length === 1 ? 'match' : 'matches'}!`,
+            {
+              duration: 3000,
+              position: 'top-center',
+              style: {
+                background: '#10B981',
+                color: '#fff',
+                fontWeight: '600',
+                padding: '16px',
+                borderRadius: '12px',
+              },
+            }
+          );
         }
       } else {
-        // If no results, try broader search by splitting search terms
+        // Try broader search
         const startWords = normalizeText(start).split(' ');
-        const endWords = normalizeText(end).split(' ');
         
-        // Try searching with individual words
         let broadResults = [];
         for (const word of startWords) {
           if (word.length > 2) {
@@ -96,14 +131,57 @@ function RideSearch() {
             .map(id => broadResults.find(r => r._id === id));
           const fuzzyResults = fuzzyMatchRides(uniqueResults, start, end);
           setRides(fuzzyResults);
-          setSearchSuggestion(`No exact matches found. Showing similar rides.`);
+          
+          toast.dismiss(searchingToast);
+          toast(
+            `Found ${fuzzyResults.length} similar ${fuzzyResults.length === 1 ? 'ride' : 'rides'}`,
+            {
+              duration: 3000,
+              position: 'top-center',
+              icon: '💡',
+              style: {
+                background: '#F59E0B',
+                color: '#fff',
+                fontWeight: '600',
+                padding: '16px',
+                borderRadius: '12px',
+              },
+            }
+          );
         } else {
           setRides([]);
+          toast.dismiss(searchingToast);
+          toast.error(
+            `No rides found from ${start} to ${end}`,
+            {
+              duration: 4000,
+              position: 'top-center',
+              style: {
+                background: '#EF4444',
+                color: '#fff',
+                fontWeight: '600',
+                padding: '16px',
+                borderRadius: '12px',
+              },
+            }
+          );
         }
       }
     } catch (err) {
       console.error('Search error:', err);
-      setError(err.response?.data?.message || 'Search failed. Please try different locations.');
+      toast.dismiss(searchingToast);
+      const errorMessage = err.response?.data?.message || 'Search failed. Please try different locations.';
+      toast.error(errorMessage, {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
       setRides([]);
     } finally {
       setIsLoading(false);
@@ -115,8 +193,19 @@ function RideSearch() {
     setEnd('');
     setRides([]);
     setHasSearched(false);
-    setError('');
-    setSearchSuggestion('');
+    
+    toast.success('Search cleared', {
+      duration: 2000,
+      position: 'top-center',
+      icon: '🔄',
+      style: {
+        background: '#6B7280',
+        color: '#fff',
+        fontWeight: '600',
+        padding: '12px 16px',
+        borderRadius: '12px',
+      },
+    });
   };
 
   return (
@@ -129,9 +218,12 @@ function RideSearch() {
             <p className="text-gray-600 text-base sm:text-lg">Find the perfect ride for your journey</p>
           </div>
 
-          <form onSubmit={handleSearch} className="bg-white rounded-xl sm:rounded-2xl shadow-xl border border-gray-100 p-4 sm:p-6 md:p-8 mb-8 sm:mb-10">
-            <div className="flex flex-col md:flex-row gap-4">
+          <form onSubmit={handleSearch} className="bg-white rounded-xl sm:rounded-2xl shadow-xl border border-gray-100 p-6 sm:p-8 mb-8 sm:mb-10">
+            
+            {/* Input Fields and Button Row */}
+            <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-stretch md:items-end">
               
+              {/* From Input */}
               <div className="flex-1">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   From
@@ -145,23 +237,24 @@ function RideSearch() {
                   </div>
                   <input
                     type="text"
-                    placeholder="Starting location (e.g., Ludhiana, Delhi)"
+                    placeholder="Starting location"
                     value={start}
                     onChange={(e) => setStart(e.target.value)}
-                    className="w-full border border-gray-300 pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    className="w-full border border-gray-300 pl-10 sm:pl-12 pr-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
                     required
                     disabled={isLoading}
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Don't worry about spelling - we'll find the best matches!</p>
               </div>
 
-              <div className="hidden md:flex items-end pb-3">
-                <svg className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Arrow Icon */}
+              <div className="hidden md:flex items-center justify-center pb-3">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
                 </svg>
               </div>
 
+              {/* To Input */}
               <div className="flex-1">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   To
@@ -174,118 +267,100 @@ function RideSearch() {
                   </div>
                   <input
                     type="text"
-                    placeholder="Destination (e.g., Chandigarh, Mumbai)"
+                    placeholder="Destination"
                     value={end}
                     onChange={(e) => setEnd(e.target.value)}
-                    className="w-full border border-gray-300 pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    className="w-full border border-gray-300 pl-10 sm:pl-12 pr-4 py-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
                     required
                     disabled={isLoading}
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Case insensitive search - type freely!</p>
               </div>
 
-              <div className="flex items-end gap-2">
-  <button
-    type="submit"
-    className="flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-5 sm:px-10 py-3 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base
-               hover:from-blue-700 hover:to-blue-600 hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200
-               disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none "
-    disabled={isLoading}
-  >
-    {isLoading ? (
-      <>
-        <svg
-          className="animate-spin h-5 w-5 text-white"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          ></circle>
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-          ></path>
-        </svg>
-        <span className="hidden sm:inline">Searching...</span>
-        <span className="sm:hidden">...</span>
-      </>
-    ) : (
-      <>
-        <svg
-          className="w-5 h-5 sm:w-6 sm:h-6"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-          />
-        </svg>
-        <span>Search</span>
-      </>
-    )}
-  </button>
-
-
-                {hasSearched && (
-                  <button
-                    type="button"
-                    onClick={handleClearSearch}
-                    className="md:hidden p-2.5 sm:p-3 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
-                    disabled={isLoading}
-                    title="Clear search"
-                  >
-                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
+              {/* Search Button */}
+              <div className="md:w-auto">
+                <button
+                  type="submit"
+                  className="w-full md:w-auto cursor-pointer flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-6 py-3 rounded-lg font-semibold text-sm sm:text-base
+                             hover:from-blue-700 hover:to-blue-600 hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200
+                             disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none whitespace-nowrap"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <svg
+                        className="animate-spin h-5 w-5 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
+                      </svg>
+                      <span>Searching...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
+                      </svg>
+                      <span>Search</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
+            {/* Helper Text Row */}
+            <div className="flex flex-col md:flex-row gap-3 md:gap-4 mt-2">
+              <div className="flex-1">
+                <p className="text-xs text-gray-500">Don't worry about spelling - we'll find the best matches!</p>
+              </div>
+              <div className="hidden md:block w-6"></div>
+              <div className="flex-1">
+                <p className="text-xs text-gray-500">Case insensitive search - type freely!</p>
+              </div>
+              <div className="md:w-auto md:min-w-[120px]"></div>
+            </div>
+
+            {/* Clear Search Button */}
             {hasSearched && (
-              <div className="hidden md:flex justify-center mt-4">
+              <div className="flex justify-center mt-6 pt-4 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={handleClearSearch}
-                  className="text-sm text-blue-600 hover:text-blue-700 hover:underline font-medium transition-colors duration-200"
+                  className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 hover:underline font-medium transition-colors duration-200"
                   disabled={isLoading}
                 >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                   Clear search
                 </button>
               </div>
             )}
           </form>
-
-          {searchSuggestion && (
-            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 sm:px-6 py-3 sm:py-4 rounded-xl mb-6 sm:mb-8 flex items-start sm:items-center gap-2 sm:gap-3">
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0 mt-0.5 sm:mt-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <span className="font-medium text-sm sm:text-base">{searchSuggestion}</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 sm:px-6 py-3 sm:py-4 rounded-xl mb-6 sm:mb-8 flex items-start sm:items-center gap-2 sm:gap-3">
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0 mt-0.5 sm:mt-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              <span className="font-medium text-sm sm:text-base">{error}</span>
-            </div>
-          )}
 
           {hasSearched && (
             <>
@@ -356,7 +431,7 @@ function RideSearch() {
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-6">
                 <p className="text-sm text-green-800 font-semibold mb-2">🎯 Smart Search Features:</p>
                 <div className="space-y-1 text-xs text-green-700">
-                  <p>✓ Case insensitive - type in any case</p>
+                  <p>✓ Case insensitive - type in any case </p>
                   <p>✓ Flexible spelling - small typos are okay</p>
                   <p>✓ Partial matches - finds similar locations</p>
                   <p>✓ Smart suggestions - best matches first</p>

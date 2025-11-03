@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function RideForm({ onSubmit }) {
+function RideForm({ onSubmit, isLoading }) {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [date, setDate] = useState('');
@@ -11,35 +11,42 @@ function RideForm({ onSubmit }) {
   const [address, setAddress] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
 
-  // Calculate fare breakdown - PER SEAT
-  const baseFarePerSeat = parseFloat(fare) || 0;
-  const platformFeePerSeat = baseFarePerSeat * 0.10; // 10% platform fee
-  const subtotalPerSeat = baseFarePerSeat + platformFeePerSeat;
-  const gstPerSeat = subtotalPerSeat * 0.18; // 18% GST
-  const totalPerSeat = subtotalPerSeat + gstPerSeat;
+  // DRIVER SIDE CALCULATION - Split Model
+  // Driver sets what they want to earn (base fare)
+  const driverBaseFare = parseFloat(fare) || 0;
+  
+  // Platform deductions from driver's fare
+  const platformFeeOnDriver = driverBaseFare * 0.08; // 8% platform fee
+  const gstOnPlatformFee = platformFeeOnDriver * 0.18; // 18% GST on platform fee
+  const driverDeductions = platformFeeOnDriver + gstOnPlatformFee;
+  const driverNetEarning = driverBaseFare - driverDeductions;
+
+  // Passenger side (what they will pay)
+  const passengerServiceFee = 10; // ₹10 per seat
+  const gstOnPassengerFee = passengerServiceFee * 0.18; // 18% GST
+  const passengerTotalPerSeat = driverBaseFare + passengerServiceFee + gstOnPassengerFee;
 
   // Calculate totals for all seats
   const seatsCount = parseInt(seats) || 1;
-  const grandTotalAllSeats = totalPerSeat * seatsCount;
+  const driverTotalEarning = driverNetEarning * seatsCount;
+  const passengerGrandTotal = passengerTotalPerSeat * seatsCount;
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // Send only the base fare to backend - backend will calculate everything
     onSubmit({ 
       start, 
       end, 
       date, 
       time, 
-      seats, 
-      fare,
+      seats: parseInt(seats), 
+      fare: parseFloat(fare), // Driver's base fare only
       phoneNumber,
       address,
-      vehicleNumber,
-      // Include calculated values per seat
-      platformFee: platformFeePerSeat.toFixed(2),
-      gst: gstPerSeat.toFixed(2),
-      totalPerSeat: totalPerSeat.toFixed(2),
-      grandTotal: grandTotalAllSeats.toFixed(2)
+      vehicleNumber
     });
+    
     // Clear form
     setStart('');
     setEnd('');
@@ -58,7 +65,7 @@ function RideForm({ onSubmit }) {
       {/* Form Title */}
       <div className="text-center mb-6">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2">
-          Post a Ride 🚗
+          Post a Ride 
         </h2>
         <p className="text-sm text-gray-600">Share your journey and earn</p>
       </div>
@@ -166,7 +173,7 @@ function RideForm({ onSubmit }) {
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Base Fare per Seat (₹) <span className="text-red-500">*</span>
+              Your Desired Fare per Seat (₹) <span className="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -174,7 +181,7 @@ function RideForm({ onSubmit }) {
               step="0.01"
               value={fare}
               onChange={(e) => setFare(e.target.value)}
-              placeholder="e.g., 100"
+              placeholder="e.g., 500"
               className="w-full border-2 border-gray-300 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 outline-none text-sm sm:text-base"
               required
             />
@@ -182,83 +189,89 @@ function RideForm({ onSubmit }) {
         </div>
       </div>
 
-      {/* Fare Breakdown Section */}
+      {/* Fare Breakdown Section - DRIVER VIEW */}
       {fare && parseFloat(fare) > 0 && (
         <div className="mb-6 pb-6 border-b-2 border-gray-200">
           <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
             <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Fare Breakdown (Per Seat)
+            Your Earnings (Per Seat)
           </h3>
 
-          <div className="bg-gradient-to-br from-blue-50 via-purple-50 to-green-50 rounded-xl p-5 border-2 border-blue-200 shadow-inner">
-            {/* Per Seat Breakdown */}
+          <div className="bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 rounded-xl p-5 border-2 border-green-200 shadow-inner">
+            {/* Driver's Earning Breakdown */}
             <div className="space-y-3">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-600 font-medium">Base Fare:</span>
-                <span className="font-semibold text-gray-800">₹{baseFarePerSeat.toFixed(2)}</span>
+                <span className="text-gray-600 font-medium">Your Base Fare:</span>
+                <span className="font-semibold text-gray-800">₹{driverBaseFare.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-600 font-medium">Platform Fee (10%):</span>
-                <span className="font-semibold text-gray-800">₹{platformFeePerSeat.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-600 font-medium">GST (18%):</span>
-                <span className="font-semibold text-gray-800">₹{gstPerSeat.toFixed(2)}</span>
+              
+              <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                <p className="text-xs font-semibold text-red-700 mb-2">Deductions:</p>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-red-600">Platform Fee (8%):</span>
+                    <span className="font-semibold text-red-700">- ₹{platformFeeOnDriver.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-red-600">GST on Platform Fee (18%):</span>
+                    <span className="font-semibold text-red-700">- ₹{gstOnPlatformFee.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
               
               <div className="border-t-2 border-gray-300 pt-3 flex justify-between items-center bg-white rounded-lg p-3 shadow-sm">
-                <span className="font-bold text-gray-800 text-base">Total per Seat:</span>
-                <span className="font-bold text-blue-600 text-xl">₹{totalPerSeat.toFixed(2)}</span>
+                <span className="font-bold text-gray-800 text-base">You Receive per Seat:</span>
+                <span className="font-bold text-green-600 text-xl">₹{driverNetEarning.toFixed(2)}</span>
               </div>
             </div>
 
-            {/* Total for All Seats - Always Show */}
-            <div className="border-t-2 border-blue-300 pt-4 mt-4">
-              <div className="bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-4 shadow-md border-2 border-green-300">
+            {/* Total Earning for All Seats */}
+            <div className="border-t-2 border-green-300 pt-4 mt-4">
+              <div className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-lg p-4 shadow-md border-2 border-green-300">
                 <div className="flex justify-between items-center mb-2">
                   <div>
-                    <span className="font-bold text-gray-800 text-base block">Grand Total</span>
+                    <span className="font-bold text-gray-800 text-base block">Total You'll Earn</span>
                     <span className="text-xs text-gray-600">
-                      ({seatsCount} seat{seatsCount > 1 ? 's' : ''} × ₹{totalPerSeat.toFixed(2)})
+                      ({seatsCount} seat{seatsCount > 1 ? 's' : ''} × ₹{driverNetEarning.toFixed(2)})
                     </span>
                   </div>
-                  <span className="font-bold text-green-600 text-2xl">₹{grandTotalAllSeats.toFixed(2)}</span>
+                  <span className="font-bold text-green-600 text-2xl">₹{driverTotalEarning.toFixed(2)}</span>
                 </div>
                 <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
                   <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
-                  Maximum earning if all seats are booked
+                  Net amount you receive if all seats are booked
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg p-3">
+          <div className="mt-4 bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
             <div className="flex items-start gap-2">
-              <svg className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
               <div>
-                <p className="text-xs font-semibold text-yellow-800 mb-1">What passengers will pay:</p>
-                <p className="text-xs text-yellow-700 leading-relaxed">
-                  ₹{totalPerSeat.toFixed(2)} per seat (includes all fees & GST)
+                <p className="text-xs font-semibold text-blue-800 mb-1">What passengers will pay (per seat):</p>
+                <p className="text-xs text-blue-700 leading-relaxed">
+                  ₹{passengerTotalPerSeat.toFixed(2)} (includes ₹{driverBaseFare.toFixed(2)} base + ₹{passengerServiceFee.toFixed(2)} service fee + ₹{gstOnPassengerFee.toFixed(2)} GST)
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-3 bg-blue-50 border-2 border-blue-200 rounded-lg p-3">
+          <div className="mt-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg p-3">
             <div className="flex items-start gap-2">
-              <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+              <svg className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
               <div>
-                <p className="text-xs font-semibold text-blue-800 mb-1">Your earning (per seat):</p>
-                <p className="text-xs text-blue-700 leading-relaxed">
-                  ₹{baseFarePerSeat.toFixed(2)} (Platform fee & GST deducted from passenger payment)
+                <p className="text-xs font-semibold text-yellow-800 mb-1">How it works:</p>
+                <p className="text-xs text-yellow-700 leading-relaxed">
+                  You set ₹{driverBaseFare.toFixed(2)} as your desired earning. Platform deducts ₹{driverDeductions.toFixed(2)} (8% fee + GST). Passengers pay ₹{passengerTotalPerSeat.toFixed(2)} (your base + their service fee + GST).
                 </p>
               </div>
             </div>
@@ -359,9 +372,20 @@ function RideForm({ onSubmit }) {
       {/* Submit Button */}
       <button
         type="submit"
-        className="w-full bg-gradient-to-r from-green-600 via-blue-600 to-purple-600 text-white px-6 py-3 sm:py-4 rounded-xl font-bold hover:from-green-700 hover:via-blue-700 hover:to-purple-700 hover:shadow-2xl transform hover:scale-[1.02] transition-all duration-200 text-base sm:text-lg shadow-lg"
+        disabled={isLoading}
+        className="w-full cursor-pointer bg-gradient-to-r from-blue-600 to-blue-500 text-white px-6 py-3 sm:py-4 rounded-xl font-bold hover:from-blue-700 hover:to-blue-600 hover:shadow-2xl transform hover:scale-[1.02] transition-all duration-200 text-base sm:text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
       >
-        🚗 Post Ride Now
+        {isLoading ? (
+          <span className="flex items-center justify-center gap-2">
+            <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Posting Ride...
+          </span>
+        ) : (
+          ' Post Ride'
+        )}
       </button>
 
       {/* Info Note */}

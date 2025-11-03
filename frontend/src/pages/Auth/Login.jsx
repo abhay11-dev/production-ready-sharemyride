@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import toast from 'react-hot-toast';
 
 function Login() {
   const navigate = useNavigate();
@@ -23,13 +24,71 @@ function Login() {
       console.log('Login result:', result);
       
       if (result.success) {
-        console.log('Login successful, navigating to homeggggggggggggggggggggggggggggggggggggggggggggggg');
-        navigate('/');
+        console.log('Login successful, navigating to home');
+        
+        // Extract user name for toast
+        const userName = result.user?.name || result.user?.firstName || result.user?.email?.split('@')[0] || 'User';
+        
+        // Show success toast
+        toast.success(
+          `Welcome ${userName}!`,
+          {
+            duration: 3000,
+            position: 'top-center',
+            style: {
+              background: '#10B981',
+              color: '#fff',
+              fontWeight: '600',
+              padding: '16px',
+              borderRadius: '12px',
+            },
+            iconTheme: {
+              primary: '#fff',
+              secondary: '#10B981',
+            },
+          }
+        );
+
+        // Navigate after brief delay to show toast
+        setTimeout(() => {
+          navigate('/');
+        }, 1000);
       } else {
+        // Show error toast
+        toast.error(
+          'Wrong credentials, Please try again',
+          {
+            duration: 4000,
+            position: 'top-center',
+            style: {
+              background: '#EF4444',
+              color: '#fff',
+              fontWeight: '600',
+              padding: '16px',
+              borderRadius: '12px',
+            },
+          }
+        );
         setError(result.error || 'Login failed');
       }
     } catch (err) {
       console.error('Login error:', err);
+      
+      // Show error toast
+      toast.error(
+        'Wrong credentials, Please try again',
+        {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#EF4444',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        }
+      );
       setError(err.message || 'Invalid credentials. Please try again.');
     } finally {
       setIsLoading(false);
@@ -111,7 +170,7 @@ function Login() {
               >
                 {showPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                   </svg>
                 ) : (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -183,15 +242,8 @@ function Login() {
             onClick={() => navigate('/terms')} 
             className="text-blue-600 hover:underline"
           >
-            Terms of Service
-          </button>
-          {' '}and{' '}
-          <button 
-            onClick={() => navigate('/privacy')} 
-            className="text-blue-600 hover:underline"
-          >
-            Privacy Policy
-          </button>
+            Terms of Service & Privacy Policy
+          </button>.
         </p>
       </div>
     </div>

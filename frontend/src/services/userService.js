@@ -1,7 +1,9 @@
 // src/services/userService.js
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://share-my-ride-backend-aioz8wnlr-abhays-projects-cdb9056e.vercel.app/';
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  'https://share-my-ride-backend-aioz8wnlr-abhays-projects-cdb9056e.vercel.app/';
 
 const userAPI = axios.create({
   baseURL: API_URL,
@@ -11,28 +13,27 @@ const userAPI = axios.create({
   },
 });
 
-// Request interceptor
 userAPI.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    console.log('🔄 API Request:', config.method.toUpperCase(), config.url);
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor
 userAPI.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('✅ API Response:', response.config.url, response.data);
+    return response;
+  },
   (error) => {
+    console.error('❌ API Error:', error.response?.data || error.message);
     if (error.response?.status === 401) {
-localStorage.removeItem('token');
-
+      localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
@@ -47,10 +48,23 @@ localStorage.removeItem('token');
  */
 export const updateUserProfile = async (profileData) => {
   try {
-    const response = await userAPI.put('/profile', profileData);
-    return response.data;
+    console.log('📤 Updating profile with:', profileData);
+    
+    const response = await userAPI.put('/users/profile', profileData);
+    
+    console.log('📦 Profile update response:', response.data);
+    
+    // Handle different response structures from backend
+    // Backend might return: { user: {...} } or { data: {...} } or just {...}
+    const updatedUser = response.data.user || response.data.data || response.data;
+    
+    if (!updatedUser || !updatedUser.email) {
+      throw new Error('Invalid response from server');
+    }
+    
+    return updatedUser;
   } catch (error) {
-    console.error('Update profile error:', error);
+    console.error('❌ Update profile error:', error);
     throw error;
   }
 };

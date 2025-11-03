@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getDriverBookings, updateBookingStatus } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
+import { PaymentCalculator } from '../../utils/paymentCalculator';
 
 function DriverBookings() {
   const { user } = useAuth();
@@ -271,25 +272,29 @@ function DriverBookings() {
                       </div>
                     </div>
 
-                    {/* Booking Details Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                      <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-200">
-                        <p className="text-xs text-gray-500 mb-1">Seats</p>
-                        <p className="text-lg font-bold text-blue-600">{booking.seatsBooked}</p>
-                      </div>
-                      <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
-                        <p className="text-xs text-gray-500 mb-1">Base Fare</p>
-                        <p className="text-lg font-bold text-green-600">₹{booking.baseFare?.toFixed(2)}</p>
-                      </div>
-                      <div className="bg-purple-50 rounded-lg p-3 text-center border border-purple-200">
-                        <p className="text-xs text-gray-500 mb-1">Platform Fee</p>
-                        <p className="text-sm font-bold text-purple-600">₹{booking.platformFee?.toFixed(2)}</p>
-                      </div>
-                      <div className="bg-yellow-50 rounded-lg p-3 text-center border border-yellow-200">
-                        <p className="text-xs text-gray-500 mb-1">Total</p>
-                        <p className="text-lg font-bold text-yellow-600">₹{booking.totalFare?.toFixed(2)}</p>
-                      </div>
-                    </div>
+                   {/* Booking Details Grid */}
+<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+  <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-200">
+    <p className="text-xs text-gray-500 mb-1">Seats</p>
+    <p className="text-lg font-bold text-blue-600">{booking.seatsBooked}</p>
+  </div>
+  <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
+    <p className="text-xs text-gray-500 mb-1">Base Fare</p>
+    <p className="text-lg font-bold text-green-600">₹{booking.baseFare?.toFixed(2)}</p>
+  </div>
+  <div className="bg-red-50 rounded-lg p-3 text-center border border-red-200">
+    <p className="text-xs text-gray-500 mb-1">Your Deduction</p>
+    <p className="text-sm font-bold text-red-600">
+      ₹{((booking.baseFare * 0.08) + (booking.baseFare * 0.08 * 0.18)).toFixed(2)}
+    </p>
+  </div>
+  <div className="bg-yellow-50 rounded-lg p-3 text-center border border-yellow-200">
+    <p className="text-xs text-gray-500 mb-1">You Receive</p>
+    <p className="text-lg font-bold text-yellow-600">
+      ₹{(booking.baseFare - (booking.baseFare * 0.08) - (booking.baseFare * 0.08 * 0.18)).toFixed(2)}
+    </p>
+  </div>
+</div>
 
                     {/* Pickup & Drop Locations */}
                     {(booking.pickupLocation || booking.dropLocation) && (

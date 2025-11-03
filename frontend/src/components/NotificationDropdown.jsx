@@ -142,16 +142,16 @@ function NotificationDropdown() {
         )}
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown - Responsive positioning and width */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-2xl border-2 border-gray-200 z-50 max-h-[600px] overflow-hidden flex flex-col">
+        <div className="fixed sm:absolute right-0 left-0 sm:left-auto mt-2 sm:w-96 bg-white rounded-xl shadow-2xl border-2 border-gray-200 z-50 max-h-[600px] sm:max-h-[600px] max-h-[calc(100vh-80px)] overflow-hidden flex flex-col mx-2 sm:mx-0">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-4 py-3 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-3 sm:px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
               </svg>
-              <h3 className="font-bold text-lg">Ride Requests</h3>
+              <h3 className="font-bold text-base sm:text-lg">Ride Requests</h3>
             </div>
             <span className="bg-white text-blue-600 text-xs font-bold px-2 py-1 rounded-full">
               {notifications.length}
@@ -179,15 +179,15 @@ function NotificationDropdown() {
                 {notifications.map((booking) => (
                   <div
                     key={booking._id}
-                    className="p-4 hover:bg-gray-50 transition-colors"
+                    className="p-3 sm:p-4 hover:bg-gray-50 transition-colors"
                   >
                     {/* User Info */}
-                    <div className="flex items-start gap-3 mb-3">
+                    <div className="flex items-start gap-2 sm:gap-3 mb-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                         {booking.passengerId?.name?.charAt(0).toUpperCase() || 'U'}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 truncate">
+                        <p className="font-semibold text-gray-900 truncate text-sm sm:text-base">
                           {booking.passengerId?.name || 'Unknown User'}
                         </p>
                         <p className="text-xs text-gray-500">
@@ -197,12 +197,12 @@ function NotificationDropdown() {
                     </div>
 
                     {/* Ride Details */}
-                    <div className="bg-blue-50 rounded-lg p-3 mb-3">
+                    <div className="bg-blue-50 rounded-lg p-2 sm:p-3 mb-3">
                       <div className="flex items-center gap-2 mb-2">
                         <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         </svg>
-                        <p className="font-semibold text-blue-900 text-sm">
+                        <p className="font-semibold text-blue-900 text-xs sm:text-sm break-words">
                           {booking.rideId?.start}
                         </p>
                       </div>
@@ -215,27 +215,27 @@ function NotificationDropdown() {
                         <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                         </svg>
-                        <p className="font-semibold text-blue-900 text-sm">
+                        <p className="font-semibold text-blue-900 text-xs sm:text-sm break-words">
                           {booking.rideId?.end}
                         </p>
                       </div>
                     </div>
 
-                    {/* Booking Info */}
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      <div className="bg-gray-50 rounded-lg p-2 text-center">
-                        <p className="text-xs text-gray-500 mb-1">Seats</p>
-                        <p className="font-bold text-gray-900">{booking.seatsBooked}</p>
+                    {/* Booking Info - Responsive grid */}
+                    <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-3">
+                      <div className="bg-gray-50 rounded-lg p-1.5 sm:p-2 text-center">
+                        <p className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">Seats</p>
+                        <p className="font-bold text-gray-900 text-sm sm:text-base">{booking.seatsBooked}</p>
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-2 text-center">
-                        <p className="text-xs text-gray-500 mb-1">Date</p>
-                        <p className="font-bold text-gray-900 text-xs">
+                      <div className="bg-gray-50 rounded-lg p-1.5 sm:p-2 text-center">
+                        <p className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">Date</p>
+                        <p className="font-bold text-gray-900 text-[10px] sm:text-xs leading-tight">
                           {formatDate(booking.rideId?.date)}
                         </p>
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-2 text-center">
-                        <p className="text-xs text-gray-500 mb-1">Fare</p>
-                        <p className="font-bold text-green-600">₹{booking.totalFare?.toFixed(2)}</p>
+                      <div className="bg-gray-50 rounded-lg p-1.5 sm:p-2 text-center">
+                        <p className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">Fare</p>
+                        <p className="font-bold text-green-600 text-sm sm:text-base">₹{booking.totalFare?.toFixed(2)}</p>
                       </div>
                     </div>
 
@@ -248,12 +248,12 @@ function NotificationDropdown() {
                       </div>
                     )}
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
+                    {/* Action Buttons - Stack on very small screens */}
+                    <div className="flex flex-col xs:flex-row gap-2">
                       <button
                         onClick={(e) => handleAccept(booking._id, e)}
                         disabled={processingId === booking._id}
-                        className="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-2 rounded-lg font-semibold hover:from-green-700 hover:to-green-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+                        className="flex-1 bg-gradient-to-r from-green-600 to-green-500 text-white px-3 sm:px-4 py-2 rounded-lg font-semibold hover:from-green-700 hover:to-green-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs sm:text-sm"
                       >
                         {processingId === booking._id ? (
                           <>
@@ -275,7 +275,7 @@ function NotificationDropdown() {
                       <button
                         onClick={(e) => handleReject(booking._id, e)}
                         disabled={processingId === booking._id}
-                        className="flex-1 bg-gradient-to-r from-red-600 to-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:from-red-700 hover:to-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+                        className="flex-1 bg-gradient-to-r from-red-600 to-red-500 text-white px-3 sm:px-4 py-2 rounded-lg font-semibold hover:from-red-700 hover:to-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs sm:text-sm"
                       >
                         {processingId === booking._id ? (
                           'Processing...'

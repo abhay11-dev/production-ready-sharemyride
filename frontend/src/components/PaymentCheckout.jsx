@@ -23,6 +23,25 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
     };
   }, []);
 
+  // Calculate passenger-side breakdown
+  const calculatePassengerBreakdown = () => {
+    if (!booking) return null;
+    
+    // Assuming booking has baseFare (driver's desired amount per seat)
+    const baseFare = booking.baseFare || booking.totalFare / 1.2818; // Reverse calc if needed
+    const passengerServiceFee = booking.passengerServiceFee || 10 * booking.seatsBooked;
+    const passengerServiceFeeGST = booking.passengerServiceFeeGST || passengerServiceFee * 0.18;
+    
+    return {
+      baseFare: baseFare,
+      passengerServiceFee: passengerServiceFee,
+      passengerServiceFeeGST: passengerServiceFeeGST,
+      total: booking.totalFare
+    };
+  };
+
+  const passengerBreakdown = calculatePassengerBreakdown();
+
   const handlePayment = async () => {
     if (!booking || !booking._id) {
       setError('Invalid booking details');
@@ -33,95 +52,141 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
     setError('');
 
     try {
-      // Step 1: Create payment order
+      // Step 1: Create Razorpay order with Route
       const orderResponse = await createPaymentOrder(booking._id);
       
       if (!orderResponse.success) {
         throw new Error(orderResponse.message || 'Failed to create order');
       }
 
-      const { orderId, amount, currency, transactionId, razorpayKeyId } = orderResponse.data;
+      const { orderId, amount, currency, razorpayKeyId } = orderResponse.data;
       setCommissionBreakdown(orderResponse.data.commissionBreakdown);
 
-      // Step 2: Configure Razorpay options
+      // Step 2: Configure Razorpay Checkout options
       const options = {
-        key: razorpayKeyId,
-        amount: amount, // Amount in paise
-        currency: currency,
+        key: razorpayKeyId, // Razorpay Key ID from backend
+        amount: amount, // Total amount in paise
+        currency: currency || 'INR',
         name: 'ShareMyRide',
         description: `Booking: ${booking.pickupLocation} to ${booking.dropLocation}`,
-        order_id: orderId,
+        image: '/logo.png', // Your app logo
+        order_id: orderId, // Razorpay Order ID
         
-        // Customer details
+        // Pre-fill customer details
         prefill: {
-          name: user.name,
-          email: user.email,
-          contact: user.phone
+          name: user?.name || '',
+          email: user?.email || '',
+          contact: user?.phone || ''
         },
         
-        // Theme
+        // Theme customization
         theme: {
-          color: '#3B82F6'
+          color: '#3B82F6' // Blue color matching your app
         },
         
-        // Payment success handler
+        // Notes (for reference)
+        notes: {
+          booking_id: booking._id,
+          passenger_id: user?.id || user?._id,
+          pickup: booking.pickupLocation,
+          drop: booking.dropLocation,
+          seats: booking.seatsBooked
+        },
+        
+        // Success handler - called after successful payment
         handler: async function (response) {
           try {
             setIsLoading(true);
             
-            // Step 3: Verify payment on backend
+            // Step 3: Verify payment signature on backend
             const verificationData = {
-              razorpayOrderId: response.razorpay_order_id,
-              razorpayPaymentId: response.razorpay_payment_id,
-              razorpaySignature: response.razorpay_signature,
-              transactionId: transactionId
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              bookingId: booking._id
             };
             
             const verifyResponse = await verifyPayment(verificationData);
             
             if (verifyResponse.success) {
-              // Payment successful
+              // Payment verified successfully
+              // Backend webhook will automatically trigger driver transfer
+              
               if (onSuccess) {
-                onSuccess(verifyResponse.data);
+                onSuccess({
+                  ...verifyResponse.data,
+                  bookingId: booking._id,
+                  paymentId: response.razorpay_payment_id
+                });
               } else {
-                navigate(`/payment-success/${transactionId}`);
+                // Navigate to success page
+                navigate(`/payment-success/${booking._id}`, {
+                  state: {
+                    paymentId: response.razorpay_payment_id,
+                    orderId: response.razorpay_order_id,
+                    amount: amount / 100, // Convert paise to rupees
+                    booking: booking
+                  }
+                });
               }
             } else {
-              throw new Error('Payment verification failed');
+              throw new Error(verifyResponse.message || 'Payment verification failed');
             }
             
           } catch (error) {
             console.error('Payment verification error:', error);
-            setError(error.message || 'Payment verification failed');
+            setError(error.message || 'Payment verification failed. Please contact support.');
             setIsLoading(false);
+            
+            // Navigate to failure page
+            navigate(`/payment-failed/${booking._id}`, {
+              state: {
+                error: error.message,
+                booking: booking
+              }
+            });
           }
         },
         
-        // Payment modal closed handler
+        // Modal closed handler
         modal: {
           ondismiss: function() {
             setIsLoading(false);
-            setError('Payment cancelled by user');
+            setError('Payment cancelled. You can try again when ready.');
+            console.log('Payment modal closed by user');
           }
-        },
-        
-        // Error handler
-        error: function(error) {
-          console.error('Payment error:', error);
-          setError('Payment failed. Please try again.');
-          setIsLoading(false);
         }
       };
 
-      // Step 4: Open Razorpay checkout
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
+      // Step 4: Open Razorpay Checkout
+      if (!window.Razorpay) {
+        throw new Error('Razorpay SDK not loaded. Please refresh the page.');
+      }
       
+      const razorpay = new window.Razorpay(options);
+      
+      // Handle payment failures
+      razorpay.on('payment.failed', function (response) {
+        console.error('Payment failed:', response.error);
+        setError(`Payment failed: ${response.error.description || 'Please try again'}`);
+        setIsLoading(false);
+        
+        // Navigate to failure page
+        navigate(`/payment-failed/${booking._id}`, {
+          state: {
+            error: response.error.description,
+            errorCode: response.error.code,
+            booking: booking
+          }
+        });
+      });
+      
+      razorpay.open();
       setIsLoading(false);
 
     } catch (error) {
       console.error('Error initiating payment:', error);
-      setError(error.message || 'Failed to initiate payment');
+      setError(error.message || 'Failed to initiate payment. Please try again.');
       setIsLoading(false);
     }
   };
@@ -167,28 +232,23 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
           </div>
         </div>
 
-        {/* Price Breakdown */}
+        {/* Price Breakdown - PASSENGER VIEW */}
         <div className="border-t border-gray-200 pt-4">
           <div className="space-y-2">
             <div className="flex justify-between text-gray-600">
-              <span>Ride Fare</span>
-              <span>₹{booking.totalFare.toFixed(2)}</span>
+              <span>Base Fare ({booking.seatsBooked} seat{booking.seatsBooked > 1 ? 's' : ''})</span>
+              <span>₹{passengerBreakdown?.baseFare.toFixed(2)}</span>
             </div>
             
-            {commissionBreakdown && (
-              <>
-                <div className="text-xs text-gray-500 pl-4">
-                  <div className="flex justify-between">
-                    <span>• Platform Fee</span>
-                    <span>₹{commissionBreakdown.platformCommission.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>• GST (18%)</span>
-                    <span>₹{commissionBreakdown.gstOnCommission.toFixed(2)}</span>
-                  </div>
-                </div>
-              </>
-            )}
+            <div className="flex justify-between text-gray-600">
+              <span>Passenger Service Fee</span>
+              <span>₹{passengerBreakdown?.passengerServiceFee.toFixed(2)}</span>
+            </div>
+            
+            <div className="flex justify-between text-gray-600">
+              <span>GST (18% on service fee)</span>
+              <span>₹{passengerBreakdown?.passengerServiceFeeGST.toFixed(2)}</span>
+            </div>
             
             <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t">
               <span>Total Amount</span>
@@ -204,8 +264,8 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
             <div className="text-sm text-blue-800">
-              <p className="font-semibold mb-1">Secure Payment</p>
-              <p>Your payment is processed securely through Razorpay. The driver will receive their amount automatically after ride completion.</p>
+              <p className="font-semibold mb-1">Secure Payment with Automatic Payout</p>
+              <p>Your payment is processed securely through Razorpay. The driver will automatically receive their earnings (after platform fees) within 1-2 business days.</p>
             </div>
           </div>
         </div>

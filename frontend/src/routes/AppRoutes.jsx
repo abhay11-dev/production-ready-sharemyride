@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Home from '../pages/Home/Home';
 import Login from '../pages/Auth/Login';
 import Signup from '../pages/Auth/Signup';
+import ForgotPassword from '../pages/Auth/ForgotPassword.jsx';
+import Terms from '../pages/Auth/Terms.jsx';
 import RideSearch from '../pages/RideSearch/RideSearch';
 import RidePost from '../pages/RidePost/RidePost';
 import Profile from '../pages/Profile/Profile.jsx';
@@ -14,6 +16,8 @@ import PaymentSetupForm from '../pages/PaymentSetupForm.jsx';
 import UpcomingRides from '../pages/rides/UpcomingRides';
 import DriverUpcomingRides from '../pages/driver/DriverUpcomingRides';
 
+import PaymentSuccess from "../pages/PaymentSuccess.jsx";
+import PaymentFailed from "../pages/PaymentFailed.jsx";
 // Add these routes
 
 // Protected Route Component
@@ -67,6 +71,25 @@ function AppRoutes() {
           </PublicRoute>
         } 
       />
+
+       <Route 
+        path="/terms" 
+        element={
+          <PublicRoute>
+            <Terms />
+          </PublicRoute>
+        } 
+      />
+
+       <Route 
+        path="/forgot-password" 
+        element={
+          <PublicRoute>
+            <ForgotPassword />
+          </PublicRoute>
+        } 
+      />
+
       <Route 
         path="/signup" 
         element={
@@ -138,6 +161,8 @@ function AppRoutes() {
   element={<ProtectedRoute><PaymentSetupForm /></ProtectedRoute>} 
 />
 
+<Route path="/payment-success/:bookingId" element={<PaymentSuccess />} />
+<Route path="/payment-failed/:bookingId" element={<PaymentFailed />} />
 
       {/* 404 Not Found Route */}
       <Route 

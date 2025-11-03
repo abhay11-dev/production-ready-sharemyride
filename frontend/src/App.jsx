@@ -4,7 +4,7 @@ import AppRoutes from './routes/AppRoutes';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
 import { UserProvider } from './contexts/UserContext';
-
+import { Toaster } from 'react-hot-toast';
 function App() {
   return (
     <Router>
@@ -12,6 +12,9 @@ function App() {
         <div className="min-h-screen flex flex-col bg-gray-50">
           {/* Header */}
           <Header />
+
+          <Toaster />
+
           
           {/* Main Content */}
           <main className="flex-1">

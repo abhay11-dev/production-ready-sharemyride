@@ -1,24 +1,24 @@
-// backend/routes/authRoutes.js (Final Corrected Code)
 const express = require('express');
 const router = express.Router();
 
+// Import all controller functions
+const authController = require('../controllers/authController');
 
+// Import middleware
+const { protect } = require('../middleware/auth');
 
-// Destructure the controller functions
-const { signup, login, getProfile } = require('../controllers/authController');
+// Authentication routes
+router.post('/signup', authController.signup);
+router.post('/login', authController.login);
 
-// 🛑 FIX: Import 'protect' using destructuring, as it's the function you need.
-// We assume '../middleware/auth' exports { protect, authorize }
-const { protect } = require('../middleware/auth'); 
+// Protected routes
+router.get('/profile', protect, authController.getProfile);
+router.put('/profile', protect, authController.updateProfile);
+router.delete('/account', protect, authController.deleteAccount);
 
-// POST /api/auth/signup
-router.post('/signup', signup);
-
-// POST /api/auth/login
-router.post('/login', login);
-
-// GET /api/auth/profile
-// ✅ Use 'protect' (which is now the function) as the middleware
-router.get('/profile', protect, getProfile); 
+// Password reset routes (public)
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/verify-reset-code', authController.verifyResetCode);
+router.post('/reset-password', authController.resetPassword);
 
 module.exports = router;

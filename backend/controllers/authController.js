@@ -1,58 +1,46 @@
-// backend/controllers/authController.js
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const { sendPasswordResetEmail } = require('../services/utils/emailService');
 
 // Generate JWT Token
 const generateToken = (userId) => {
-  return jwt.sign(
-    { id: userId },
-    process.env.JWT_SECRET,
-    { expiresIn: '30d' }
-  );
+  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+  });
 };
 
-// @desc    Register a new user
-// @route   POST /api/auth/signup
-// @access  Public
-exports.signup = async (req, res) => {
+// Signup user
+const signup = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    
-    console.log('📝 Signup request:', { name, email });
 
     // Validation
     if (!name || !email || !password) {
-      console.log('❌ Missing required fields');
-      return res.status(400).json({
+      return res.status(400).json({ 
         success: false,
-        message: 'Name, email, and password are required'
+        message: 'Please provide all required fields' 
       });
     }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
-    
     if (existingUser) {
-      console.log('❌ User already exists:', email);
-      return res.status(400).json({
+      return res.status(400).json({ 
         success: false,
-        message: 'User already exists with this email'
+        message: 'User already exists with this email' 
       });
     }
 
-    // Create user (password will be hashed by the User model pre-save hook)
+    // Create new user
     const user = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password
     });
 
-    console.log('✅ User created successfully:', user.email);
-
     // Generate token
     const token = generateToken(user._id);
 
-    // Send response
     res.status(201).json({
       success: true,
       token,
@@ -60,190 +48,346 @@ exports.signup = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role || 'user',
         createdAt: user.createdAt
       }
     });
-
   } catch (error) {
-    console.error('❌ Signup error:', error);
-    
-    // Handle duplicate key error (email already exists)
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email already registered'
-      });
-    }
-
-    // Handle validation errors
-    if (error.name === 'ValidationError') {
-      const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        success: false,
-        message: messages.join(', ')
-      });
-    }
-
-    res.status(500).json({
+    console.error('Signup error:', error);
+    res.status(500).json({ 
       success: false,
-      message: error.message || 'Server error during signup'
+      message: 'Server error during signup' 
     });
   }
 };
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
-exports.login = async (req, res) => {
+// Login user
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
-    console.log('🔐 Login request:', { email });
 
     // Validation
     if (!email || !password) {
-      console.log('❌ Missing email or password');
-      return res.status(400).json({
+      return res.status(400).json({ 
         success: false,
-        message: 'Email and password are required'
+        message: 'Please provide email and password' 
       });
     }
 
-    // Find user and include password field (it's excluded by default in schema)
+    // Find user and include password field
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-
+    
     if (!user) {
-      console.log('❌ User not found:', email);
-      return res.status(401).json({
+      return res.status(401).json({ 
         success: false,
-        message: 'Invalid email or password'
+        message: 'Invalid credentials' 
       });
     }
 
-    // Check password using the model method
-    const isPasswordMatch = await user.comparePassword(password);
-
-    if (!isPasswordMatch) {
-      console.log('❌ Invalid password for user:', email);
-      return res.status(401).json({
+    // Check password
+    const isPasswordCorrect = await user.comparePassword(password);
+    
+    if (!isPasswordCorrect) {
+      return res.status(401).json({ 
         success: false,
-        message: 'Invalid email or password'
+        message: 'Invalid credentials' 
       });
     }
-
-    console.log('✅ Login successful:', user.email);
 
     // Generate token
     const token = generateToken(user._id);
 
-    // Send response
-    res.status(200).json({
+    res.json({
       success: true,
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role || 'user',
         createdAt: user.createdAt
       }
     });
-
   } catch (error) {
-    console.error('❌ Login error:', error);
-    res.status(500).json({
+    console.error('Login error:', error);
+    res.status(500).json({ 
       success: false,
-      message: error.message || 'Server error during login'
+      message: 'Server error during login' 
     });
   }
 };
 
-// @desc    Get current user profile
-// @route   GET /api/auth/profile
-// @access  Private
-exports.getProfile = async (req, res) => {
+// Get user profile
+const getProfile = async (req, res) => {
   try {
-    // req.user is set by the protect middleware
-    const user = await User.findById(req.user.id).select('-password');
-
+    const user = await User.findById(req.user._id).select('-password');
+    
     if (!user) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
-        message: 'User not found'
+        message: 'User not found' 
       });
     }
 
-    console.log('✅ Profile retrieved for:', user.email);
-
-    res.status(200).json({
+    res.json({
       success: true,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role || 'user',
         createdAt: user.createdAt
       }
     });
-
   } catch (error) {
-    console.error('❌ Get profile error:', error);
-    res.status(500).json({
+    console.error('Get profile error:', error);
+    res.status(500).json({ 
       success: false,
-      message: error.message || 'Server error fetching profile'
+      message: 'Server error' 
     });
   }
 };
 
-// @desc    Update user profile
-// @route   PUT /api/auth/profile
-// @access  Private
-exports.updateProfile = async (req, res) => {
+// Update user profile
+const updateProfile = async (req, res) => {
+  const { name, email } = req.body;
+
+  // Validation
+  if (!name || !email) {
+    return res.status(400).json({ 
+      success: false,
+      message: 'Name and email are required' 
+    });
+  }
+
+  if (name.trim().length < 2) {
+    return res.status(400).json({ 
+      success: false,
+      message: 'Name must be at least 2 characters long' 
+    });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ 
+      success: false,
+      message: 'Invalid email format' 
+    });
+  }
+
   try {
-    const { name, email } = req.body;
+    // Check if email is already taken by another user
+    if (email.toLowerCase() !== req.user.email.toLowerCase()) {
+      const existingUser = await User.findOne({ 
+        email: email.toLowerCase(),
+        _id: { $ne: req.user._id }
+      });
+      
+      if (existingUser) {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Email already in use' 
+        });
+      }
+    }
 
-    const user = await User.findById(req.user.id);
-
+    // Update user
+    const user = await User.findById(req.user._id);
+    
     if (!user) {
-      return res.status(404).json({
+      return res.status(404).json({ 
         success: false,
-        message: 'User not found'
+        message: 'User not found' 
       });
     }
 
-    // Update fields
-    if (name) user.name = name.trim();
-    if (email) user.email = email.toLowerCase().trim();
+    user.name = name.trim();
+    user.email = email.trim().toLowerCase();
 
     await user.save();
 
-    console.log('✅ Profile updated for:', user.email);
-
-    res.status(200).json({
+    res.json({
       success: true,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role || 'user',
         createdAt: user.createdAt
       }
     });
-
   } catch (error) {
-    console.error('❌ Update profile error:', error);
-    
-    if (error.code === 11000) {
-      return res.status(400).json({
+    console.error('Update profile error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error' 
+    });
+  }
+};
+
+// Delete user account
+const deleteAccount = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ 
         success: false,
-        message: 'Email already in use'
+        message: 'User not found' 
       });
     }
 
-    res.status(500).json({
+    await User.findByIdAndDelete(req.user._id);
+
+    res.json({ 
+      success: true,
+      message: 'Account deleted successfully' 
+    });
+  } catch (error) {
+    console.error('Delete account error:', error);
+    res.status(500).json({ 
       success: false,
-      message: error.message || 'Server error updating profile'
+      message: 'Server error' 
     });
   }
+};
+
+// Send password reset code
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email is required' 
+      });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No account found with this email. Please register first.' 
+      });
+    }
+
+    // Generate reset token (6-digit code)
+    const resetToken = user.generateResetToken();
+    await user.save();
+
+    // Send email with reset code
+    await sendPasswordResetEmail(user.email, user.name, resetToken);
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset code sent to your email'
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to send reset code. Please try again.' 
+    });
+  }
+};
+
+// Verify reset code
+const verifyResetCode = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email and code are required' 
+      });
+    }
+
+    const user = await User.findOne({ 
+      email: email.toLowerCase(),
+      resetPasswordToken: code,
+      resetPasswordExpires: { $gt: Date.now() } // Check if not expired
+    });
+
+    if (!user) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid or expired verification code' 
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Code verified successfully'
+    });
+  } catch (error) {
+    console.error('Verify code error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Verification failed. Please try again.' 
+    });
+  }
+};
+
+// Reset password
+const resetPassword = async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email, code, and new password are required' 
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Password must be at least 6 characters' 
+      });
+    }
+
+    // Find user with valid reset token
+    const user = await User.findOne({ 
+      email: email.toLowerCase(),
+      resetPasswordToken: code,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid or expired verification code' 
+      });
+    }
+
+    // Update password
+    user.password = newPassword;
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to reset password. Please try again.' 
+    });
+  }
+};
+
+// Export all functions
+module.exports = {
+  signup,
+  login,
+  getProfile,
+  updateProfile,
+  deleteAccount,
+  forgotPassword,
+  verifyResetCode,
+  resetPassword
 };

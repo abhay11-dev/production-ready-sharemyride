@@ -139,7 +139,7 @@ function NotificationsPage() {
             <svg className="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
             </svg>
-            Ride Request Notifications 🚗
+            Ride Request Notifications 
           </h1>
           <p className="text-gray-600 text-base md:text-lg">
             Manage booking requests for your posted rides
@@ -167,7 +167,7 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Pending ⏳</p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Pending </p>
               <p className="text-2xl md:text-3xl font-bold text-yellow-600">{pendingCount}</p>
             </div>
           </div>
@@ -179,7 +179,7 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Accepted ✅</p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Accepted </p>
               <p className="text-2xl md:text-3xl font-bold text-green-600">{acceptedCount}</p>
             </div>
           </div>
@@ -191,7 +191,7 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Completed 💰</p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Completed </p>
               <p className="text-2xl md:text-3xl font-bold text-blue-600">{completedCount}</p>
             </div>
           </div>
@@ -203,36 +203,36 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Rejected ❌</p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Rejected </p>
               <p className="text-2xl md:text-3xl font-bold text-red-600">{rejectedCount}</p>
             </div>
           </div>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="bg-white rounded-xl shadow-lg p-2 mb-6">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { value: 'pending', label: 'Pending', count: pendingCount, color: 'yellow' },
-              { value: 'accepted', label: 'Accepted', count: acceptedCount, color: 'green' },
-              { value: 'completed', label: 'Completed', count: completedCount, color: 'blue' },
-              { value: 'rejected', label: 'Rejected', count: rejectedCount, color: 'red' },
-              { value: 'all', label: 'All', count: notifications.length, color: 'gray' }
-            ].map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => setFilter(tab.value)}
-                className={`flex-1 min-w-[90px] px-3 py-2.5 md:px-4 md:py-3 rounded-lg font-semibold transition-all text-sm md:text-base ${
-                  filter === tab.value
-                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg transform scale-105'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md'
-                }`}
-              >
-                {tab.label} ({tab.count})
-              </button>
-            ))}
-          </div>
-        </div>
+     {/* Filter Tabs */}
+<div className="bg-white rounded-xl shadow-lg p-2 mb-6">
+  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+    {[
+      { value: 'pending', label: 'Pending', color: 'yellow' },
+      { value: 'accepted', label: 'Accepted', color: 'green' },
+      { value: 'completed', label: 'Completed', color: 'blue' },
+      { value: 'rejected', label: 'Rejected', color: 'red' },
+      { value: 'all', label: 'All', color: 'gray' }
+    ].map((tab) => (
+      <button
+        key={tab.value}
+        onClick={() => setFilter(tab.value)}
+        className={`px-3 py-2.5 md:px-4 md:py-3 rounded-lg font-semibold transition-all text-sm md:text-base ${
+          filter === tab.value
+            ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md'
+        }`}
+      >
+        {tab.label}
+      </button>
+    ))}
+  </div>
+</div>
 
         {/* Error Message */}
         {error && (
@@ -337,31 +337,29 @@ function NotificationsPage() {
                       </div>
                     </div>
 
-                    {/* Booking Details Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 text-center border border-blue-200">
-                        <p className="text-xs text-gray-600 mb-1">Seats Booked</p>
-                        <p className="text-xl md:text-2xl font-bold text-blue-600">{notification.seatsBooked}</p>
-                      </div>
-                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-3 text-center border border-purple-200">
-                        <p className="text-xs text-gray-600 mb-1">Date</p>
-                        <p className="text-xs md:text-sm font-bold text-purple-600">
-                          {new Date(notification.rideId?.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </p>
-                      </div>
-                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-3 text-center border border-orange-200">
-                        <p className="text-xs text-gray-600 mb-1">Time</p>
-                        <p className="text-xs md:text-sm font-bold text-orange-600">
-                          {formatTime(notification.rideId?.time)}
-                        </p>
-                      </div>
-                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 text-center border border-green-200">
-                        <p className="text-xs text-gray-600 mb-1">Total Fare</p>
-                        <p className="text-lg md:text-xl font-bold text-green-600">
-                          ₹{notification.totalFare?.toFixed(2)}
-                        </p>
-                      </div>
-                    </div>
+                   {/* Booking Details Grid - around line 400 */}
+<div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 text-center border border-blue-200">
+    <p className="text-xs text-gray-600 mb-1">Seats Booked</p>
+    <p className="text-xl md:text-2xl font-bold text-blue-600">{notification.seatsBooked}</p>
+  </div>
+  <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 text-center border border-green-200">
+    <p className="text-xs text-gray-600 mb-1">Base Fare</p>
+    <p className="text-lg md:text-xl font-bold text-green-600">₹{notification.baseFare?.toFixed(2)}</p>
+  </div>
+  <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 text-center border border-red-200">
+    <p className="text-xs text-gray-600 mb-1">Your Fee</p>
+    <p className="text-sm font-bold text-red-600">
+      -₹{((notification.baseFare * 0.08) + (notification.baseFare * 0.08 * 0.18)).toFixed(2)}
+    </p>
+  </div>
+  <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 text-center border border-yellow-200">
+    <p className="text-xs text-gray-600 mb-1">You Receive</p>
+    <p className="text-lg md:text-xl font-bold text-yellow-600">
+      ₹{(notification.baseFare - (notification.baseFare * 0.08) - (notification.baseFare * 0.08 * 0.18)).toFixed(2)}
+    </p>
+  </div>
+</div>
 
                     {/* Pickup/Drop Locations */}
                     {(notification.pickupLocation || notification.dropLocation) && (

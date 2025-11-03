@@ -37,7 +37,7 @@ function Header() {
           <nav className="hidden md:flex items-center space-x-1 lg:space-x-2">
             <Link 
               to="/ride/search" 
-              className="px-3 lg:px-4 py-2 rounded-lg hover:bg-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
+              className="px-3 lg:px-4 py-2 rounded-lg hover:bg-green-500 hover:text-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -47,7 +47,7 @@ function Header() {
 
             <Link 
               to="/ride/post" 
-              className="px-3 lg:px-4 py-2 rounded-lg hover:bg-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
+              className="px-3 lg:px-4 py-2 rounded-lg hover:bg-green-500 hover:text-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -61,7 +61,7 @@ function Header() {
                 {/* Upcoming Rides Link */}
                 <Link 
                   to="/upcoming-rides" 
-                  className="px-3 lg:px-4 py-2 rounded-lg hover:bg-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
+                  className="px-3 lg:px-4 py-2 rounded-lg hover:bg-green-500 hover:text-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -72,7 +72,7 @@ function Header() {
                 {/* My Bookings Link */}
                 <Link 
                   to="/bookings/my-bookings" 
-                  className="px-3 lg:px-4 py-2 rounded-lg hover:bg-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
+                  className="px-3 lg:px-4 py-2 rounded-lg hover:bg-green-500 hover:text-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -83,7 +83,7 @@ function Header() {
                 {/* Ride Requests Link */}
                 <Link 
                   to="/notifications" 
-                  className="px-3 lg:px-4 py-2 rounded-lg hover:bg-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
+                  className="px-3 lg:px-4 py-2 rounded-lg hover:bg-green-500 hover:text-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -95,7 +95,7 @@ function Header() {
 
             <Link 
               to="/profile" 
-              className="px-3 lg:px-4 py-2 rounded-lg hover:bg-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
+              className="px-3 lg:px-4 py-2 rounded-lg hover:bg-green-500 hover:text-black hover:bg-opacity-10 transition-all duration-200 font-medium text-sm lg:text-base flex items-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -134,39 +134,47 @@ function Header() {
             )}
           </nav>
 
-          {/* Mobile Menu Button */}
-          <button
-            onClick={toggleMenu}
-            className="md:hidden p-2 rounded-lg hover:bg-white hover:bg-opacity-10 transition-all duration-200 z-50"
-            aria-label="Toggle menu"
-            aria-expanded={isMenuOpen}
-          >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+          {/* Mobile: Notification Bell + Menu Button */}
+          <div className="md:hidden flex items-center gap-2">
+            {/* Notification Bell - Mobile (only show when logged in) */}
+            {user && (
+              <NotificationDropdown />
+            )}
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={toggleMenu}
+              className="p-2 rounded-lg hover:bg-white hover:bg-opacity-10 transition-all duration-200 z-50"
+              aria-label="Toggle menu"
+              aria-expanded={isMenuOpen}
             >
-              {isMenuOpen ? (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              ) : (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              )}
-            </svg>
-          </button>
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                {isMenuOpen ? (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                ) : (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                )}
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Mobile Navigation Menu */}
+        {/* Mobile Navigation Menu - ORIGINAL WORKING VERSION */}
         <div
           className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${
             isMenuOpen ? 'max-h-[900px] opacity-100' : 'max-h-0 opacity-0'
@@ -243,15 +251,6 @@ function Header() {
               </svg>
               Profile
             </Link>
-
-            {/* Notification Dropdown - Mobile */}
-            {user && (
-              <div className="px-4 py-3 md:hidden">
-                <div className="w-full">
-                  <NotificationDropdown />
-                </div>
-              </div>
-            )}
 
             {/* Login/Logout in Mobile */}
             {user ? (

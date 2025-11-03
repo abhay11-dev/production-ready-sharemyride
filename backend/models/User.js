@@ -1,4 +1,3 @@
-// backend/models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -44,8 +43,15 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  resetPasswordToken: String,
-  resetPasswordExpire: Date,
+  // Password reset fields
+  resetPasswordToken: {
+    type: String,
+    default: null
+  },
+  resetPasswordExpires: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -87,12 +93,22 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   }
 };
 
+// Generate reset token method
+userSchema.methods.generateResetToken = function() {
+  // Generate 6-digit code
+  const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
+  this.resetPasswordToken = resetToken;
+  // Token expires in 15 minutes
+  this.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+  return resetToken;
+};
+
 // Method to get public user data (without sensitive info)
 userSchema.methods.toJSON = function() {
   const user = this.toObject();
   delete user.password;
   delete user.resetPasswordToken;
-  delete user.resetPasswordExpire;
+  delete user.resetPasswordExpires;
   delete user.__v;
   return user;
 };

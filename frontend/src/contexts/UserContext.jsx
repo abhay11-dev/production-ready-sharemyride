@@ -19,7 +19,7 @@ export const UserProvider = ({ children }) => {
           
           if (parsedUser && (parsedUser.id || parsedUser._id) && parsedUser.email) {
             setUser(parsedUser);
-            console.log('✅ User session restored');
+            console.log('✅ User session restored:', parsedUser.email);
           } else {
             console.warn('⚠️ Invalid user data in localStorage');
             localStorage.removeItem('user');
@@ -40,57 +40,53 @@ export const UserProvider = ({ children }) => {
   }, []);
 
   const login = useCallback(async (credentials) => {
-  try {
-    setLoading(true);
-    setError(null);
+    try {
+      setLoading(true);
+      setError(null);
 
-    if (!credentials || !credentials.email || !credentials.password) {
-      throw new Error('Email and password are required');
-    }
+      if (!credentials || !credentials.email || !credentials.password) {
+        throw new Error('Email and password are required');
+      }
 
-    console.log('🔄 Logging in with:', { email: credentials.email });
-    
-    const response = await loginAPI(credentials);
-    
-    console.log('📦 Login API response:', response);
-    
-    // ✅ FIX: Handle the 'success' field from backend
-    if (response.success === false) {
-      throw new Error(response.message || 'Login failed');
+      console.log('🔄 Logging in with:', { email: credentials.email });
+      
+      const response = await loginAPI(credentials);
+      
+      console.log('📦 Login API response:', response);
+      
+      if (response.success === false) {
+        throw new Error(response.message || 'Login failed');
+      }
+      
+      const token = response.token;
+      const userData = response.user;
+      
+      if (!token) {
+        console.error('❌ No token in response:', response);
+        throw new Error('No authentication token received');
+      }
+      
+      console.log('✅ Login successful with token');
+      
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      
+      setUser(userData);
+      
+      return { success: true, user: userData, token };
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || err.message || 'Login failed';
+      setError(errorMessage);
+      console.error('❌ Login error:', err);
+      
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
     }
-    
-    // Extract token and user from response
-    const token = response.token;
-    const userData = response.user;
-    
-    if (!token) {
-      console.error('❌ No token in response:', response);
-      throw new Error('No authentication token received');
-    }
-    
-    console.log('✅ Login successful with token');
-    
-    // Save both token and user
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    
-    setUser(userData);
-    
-    return { success: true, user: userData, token };
-  } catch (err) {
-    const errorMessage = err.response?.data?.message || err.message || 'Login failed';
-    setError(errorMessage);
-    console.error('❌ Login error:', err);
-    
-    // Clear storage on error
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    
-    return { success: false, error: errorMessage };
-  } finally {
-    setLoading(false);
-  }
-}, []);
+  }, []);
 
   const signup = useCallback(async (details) => {
     try {
@@ -112,7 +108,6 @@ export const UserProvider = ({ children }) => {
       
       console.log('📦 Signup API response:', response);
       
-      // Extract token and user from response
       const token = response.token || response.data?.token;
       const userData = response.user || response.data?.user || response;
       
@@ -123,7 +118,6 @@ export const UserProvider = ({ children }) => {
       
       console.log('✅ Signup successful with token');
       
-      // Save both token and user
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(userData));
       
@@ -135,7 +129,6 @@ export const UserProvider = ({ children }) => {
       setError(errorMessage);
       console.error('❌ Signup error:', err);
       
-      // Clear storage on error
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       
@@ -150,10 +143,9 @@ export const UserProvider = ({ children }) => {
       setUser(null);
       setError(null);
       
-      // Remove both user and token
       localStorage.removeItem('user');
       localStorage.removeItem('token');
-      localStorage.removeItem('authToken'); // Old key if exists
+      localStorage.removeItem('authToken');
       
       console.log('✅ User logged out');
       
@@ -164,9 +156,11 @@ export const UserProvider = ({ children }) => {
     }
   }, []);
 
-  // ✅ FIXED: This is the main fix - preserve token when updating user
+  // ✅ COMPLETELY FIXED: updateUser now properly handles the backend response
   const updateUser = useCallback((updatedData) => {
     try {
+      console.log('🔄 Updating user with data:', updatedData);
+      
       if (!user) {
         throw new Error('No user logged in');
       }
@@ -179,20 +173,22 @@ export const UserProvider = ({ children }) => {
         throw new Error('Authentication token missing. Please log in again.');
       }
 
+      // ✅ FIX: Create updated user object, ensuring we preserve the ID
       const updatedUser = { 
-        ...user, 
-        ...updatedData,
+        ...updatedData, // Use the backend response data as primary source
         id: updatedData.id || updatedData._id || user.id || user._id,
         updatedAt: new Date().toISOString()
       };
       
+      console.log('✅ Updated user object:', updatedUser);
+      
+      // Update React state
       setUser(updatedUser);
       
-      // ✅ CRITICAL: Save user data BUT keep the token unchanged
+      // ✅ CRITICAL: Save updated user data to localStorage, token remains unchanged
       localStorage.setItem('user', JSON.stringify(updatedUser));
-      // Token is already in localStorage, don't touch it!
       
-      console.log('✅ User updated successfully');
+      console.log('✅ User updated successfully in state and localStorage');
       console.log('🔑 Token preserved in localStorage');
       
       return { success: true, user: updatedUser };
