@@ -31,20 +31,12 @@ exports.createPaymentOrder = async (req, res) => {
       });
     }
     
-    // Validate bookingId format
-    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid booking ID format'
-      });
-    }
-    
     // Check Razorpay instance
     if (!razorpayInstance) {
       console.error('❌ Razorpay not initialized');
       return res.status(500).json({
         success: false,
-        message: 'Payment gateway not configured. Please check server configuration.'
+        message: 'Payment gateway not configured'
       });
     }
     
@@ -60,29 +52,12 @@ exports.createPaymentOrder = async (req, res) => {
     
     console.log('✅ Booking found:', booking._id);
     console.log('Fare:', booking.totalFare);
-    console.log('Driver ID:', booking.driverId || 'NOT SET');
     
     // Verify ownership
     if (booking.passengerId.toString() !== passengerId.toString()) {
       return res.status(403).json({
         success: false,
-        message: 'Unauthorized access to this booking'
-      });
-    }
-    
-    // Check if already paid
-    if (booking.paymentStatus === 'completed') {
-      return res.status(400).json({
-        success: false,
-        message: 'This booking has already been paid'
-      });
-    }
-    
-    // Validate fare
-    if (!booking.totalFare || booking.totalFare <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid booking fare'
+        message: 'Unauthorized'
       });
     }
     
@@ -92,13 +67,13 @@ exports.createPaymentOrder = async (req, res) => {
       paymentStatus: { $in: ['pending', 'created', 'failed'] }
     });
     
-    // Convert to paise (Razorpay uses paise, not rupees)
+    // Convert to paise
     const amountInPaise = Math.round(booking.totalFare * 100);
     
     console.log('💵 Amount:', amountInPaise, 'paise (₹' + booking.totalFare + ')');
     
     // Create simple Razorpay order (NO ROUTE, NO SPLITS)
-    const receipt = `test_${bookingId.toString().slice(-8)}_${Date.now()}`;
+    const receipt = `test_${bookingId.toString().slice(-8)}`;
     
     const orderOptions = {
       amount: amountInPaise,
@@ -107,115 +82,85 @@ exports.createPaymentOrder = async (req, res) => {
       notes: {
         booking_id: bookingId.toString(),
         passenger_id: passengerId.toString(),
-        test_mode: 'true',
-        mode: 'test_no_driver'
+        test_mode: 'true'
       }
     };
     
     console.log('🚀 Creating Razorpay order...');
-    console.log('Options:', JSON.stringify(orderOptions, null, 2));
+    console.log('Options:', orderOptions);
     
     let razorpayOrder;
     try {
       razorpayOrder = await razorpayInstance.orders.create(orderOptions);
-      console.log('✅ Razorpay Order created successfully:', razorpayOrder.id);
-      console.log('Order details:', JSON.stringify(razorpayOrder, null, 2));
+      console.log('✅ Order created:', razorpayOrder.id);
     } catch (razorpayError) {
-      console.error('❌ Razorpay API Error:', razorpayError.message);
-      console.error('Error Details:', JSON.stringify(razorpayError, null, 2));
-      console.error('Full Error:', razorpayError);
+      console.error('❌ Razorpay Error:', razorpayError.message);
+      console.error('Details:', razorpayError);
       
       return res.status(500).json({
         success: false,
-        message: 'Failed to create payment order with Razorpay',
-        error: razorpayError.message,
-        details: 'Please check Razorpay credentials and configuration'
+        message: 'Razorpay API error',
+        error: razorpayError.message
       });
     }
     
-    // TEST MODE: Use passenger as driver fallback
-    const effectiveDriverId = booking.driverId || passengerId;
-    
-    console.log('Using driver ID:', effectiveDriverId, '(fallback to passenger in test mode)');
-    
-    // Save transaction (minimal fields for test mode)
+    // Save transaction with ALL REQUIRED FIELDS
     const transaction = new Transaction({
       bookingId,
       passengerId,
-      driverId: effectiveDriverId, // Required field - use fallback
+      driverId: booking.driverId || passengerId, // Use passenger as fallback in test mode
       razorpayOrderId: razorpayOrder.id,
       totalAmount: booking.totalFare,
+      
+      // REQUIRED FIELDS - Set to 0 in test mode
       baseCommissionAmount: 0,
       gstAmount: 0,
       totalCommissionAmount: 0,
+      platformTotalAmount: 0, // THIS WAS MISSING!
       driverNetAmount: booking.totalFare,
+      
       paymentStatus: 'created',
       payoutStatus: 'pending',
-      passengerEmail: req.user.email || 'test@example.com',
-      passengerPhone: req.user.phone || '0000000000',
+      passengerEmail: req.user.email,
+      passengerPhone: req.user.phone || 'N/A',
       metadata: {
         paymentMode: 'test',
-        note: 'Test mode payment - no driver splits',
-        testMode: true,
-        driverFallback: !booking.driverId
+        note: 'Test mode payment - no driver splits'
       }
     });
     
-    try {
-      await transaction.save();
-      console.log('✅ Transaction saved:', transaction._id);
-    } catch (dbError) {
-      console.error('❌ Database Error saving transaction:', dbError.message);
-      console.error('Validation errors:', dbError.errors);
-      
-      // Try to cleanup the Razorpay order (optional)
-      // Note: Razorpay doesn't have a delete order API
-      
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to save transaction to database',
-        error: dbError.message
-      });
-    }
+    await transaction.save();
+    console.log('✅ Transaction saved:', transaction._id);
     
-    // Update booking status
-    try {
-      booking.paymentStatus = 'pending';
-      await booking.save();
-      console.log('✅ Booking status updated to pending');
-    } catch (bookingError) {
-      console.error('⚠️ Warning: Could not update booking status:', bookingError.message);
-      // Continue anyway - transaction is created
-    }
+    // Update booking
+    booking.paymentStatus = 'pending';
+    await booking.save();
     
     console.log('=== ORDER CREATED SUCCESSFULLY ===');
     
-    // Return order details to frontend
+    // Return order details
     res.status(201).json({
       success: true,
-      message: 'Payment order created successfully (TEST MODE)',
+      message: 'Payment order created (TEST MODE)',
       data: {
         orderId: razorpayOrder.id,
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
         bookingId: booking._id,
-        razorpayKeyId: process.env.RAZORPAY_KEY_ID,
-        transactionId: transaction._id
-      },
-      testMode: true
+        razorpayKeyId: process.env.RAZORPAY_KEY_ID
+      }
     });
     
   } catch (error) {
-    console.error('=== UNEXPECTED ERROR ===');
+    console.error('=== ERROR ===');
     console.error('Name:', error.name);
     console.error('Message:', error.message);
     console.error('Stack:', error.stack);
     
     res.status(500).json({
       success: false,
-      message: 'An unexpected error occurred while creating payment order',
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: 'Failed to create payment order',
+      error: error.message
     });
   }
 };
@@ -237,14 +182,6 @@ exports.verifyPayment = async (req, res) => {
     console.log('Order ID:', razorpay_order_id);
     console.log('Payment ID:', razorpay_payment_id);
     
-    // Validate inputs
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required payment verification parameters'
-      });
-    }
-    
     // Find transaction
     const transaction = await Transaction.findOne({ 
       razorpayOrderId: razorpay_order_id 
@@ -253,15 +190,7 @@ exports.verifyPayment = async (req, res) => {
     if (!transaction) {
       return res.status(404).json({
         success: false,
-        message: 'Transaction not found for this order'
-      });
-    }
-    
-    // Check if already verified
-    if (transaction.paymentStatus === 'captured') {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment already verified for this transaction'
+        message: 'Transaction not found'
       });
     }
     
@@ -273,42 +202,28 @@ exports.verifyPayment = async (req, res) => {
     );
     
     if (!isValid) {
-      console.log('❌ Invalid payment signature');
+      console.log('❌ Invalid signature');
       transaction.paymentStatus = 'failed';
-      transaction.metadata.failureReason = 'Invalid signature';
       await transaction.save();
       
       return res.status(400).json({
         success: false,
-        message: 'Payment verification failed - invalid signature'
+        message: 'Invalid signature'
       });
     }
     
-    console.log('✅ Signature verified successfully');
+    console.log('✅ Signature verified');
     
-    // Fetch payment details from Razorpay
-    let payment;
-    try {
-      payment = await razorpayInstance.payments.fetch(razorpay_payment_id);
-      console.log('✅ Payment fetched from Razorpay:', payment.status);
-    } catch (fetchError) {
-      console.error('❌ Error fetching payment from Razorpay:', fetchError.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Could not verify payment with Razorpay'
-      });
-    }
+    // Fetch payment from Razorpay
+    const payment = await razorpayInstance.payments.fetch(razorpay_payment_id);
     
-    // Check payment status
     if (payment.status !== 'captured' && payment.status !== 'authorized') {
-      console.log('❌ Payment not successful. Status:', payment.status);
       transaction.paymentStatus = 'failed';
-      transaction.metadata.failureReason = `Payment status: ${payment.status}`;
       await transaction.save();
       
       return res.status(400).json({
         success: false,
-        message: `Payment not successful. Status: ${payment.status}`
+        message: 'Payment not successful'
       });
     }
     
@@ -320,46 +235,39 @@ exports.verifyPayment = async (req, res) => {
     transaction.paymentMethod = payment.method || 'unknown';
     await transaction.save();
     
-    console.log('✅ Transaction updated successfully');
+    console.log('✅ Transaction updated');
     
     // Update booking
     const booking = await Booking.findById(transaction.bookingId);
-    if (booking) {
-      booking.paymentStatus = 'completed';
-      booking.paymentCompletedAt = new Date();
-      booking.status = 'completed';
-      await booking.save();
-      console.log('✅ Booking marked as completed');
-    }
+    booking.paymentStatus = 'completed';
+    booking.paymentCompletedAt = new Date();
+    booking.status = 'completed';
+    await booking.save();
     
-    console.log('=== PAYMENT VERIFICATION SUCCESSFUL ===');
+    console.log('✅ Booking completed');
     
     res.status(200).json({
       success: true,
-      message: 'Payment verified successfully',
+      message: 'Payment verified successfully (TEST MODE)',
       data: {
         verified: true,
         paymentId: razorpay_payment_id,
         orderId: razorpay_order_id,
         status: 'captured',
         amount: transaction.totalAmount,
-        booking: booking ? {
+        booking: {
           id: booking._id,
           status: booking.status,
           paymentStatus: booking.paymentStatus
-        } : null
-      },
-      testMode: true
+        }
+      }
     });
     
   } catch (error) {
-    console.error('=== ERROR VERIFYING PAYMENT ===');
-    console.error('Error:', error.message);
-    console.error('Stack:', error.stack);
-    
+    console.error('Error verifying payment:', error);
     res.status(500).json({
       success: false,
-      message: 'Payment verification failed',
+      message: 'Verification failed',
       error: error.message
     });
   }
@@ -390,7 +298,6 @@ exports.getTransaction = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error fetching transaction:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch transaction',
@@ -429,7 +336,6 @@ exports.getPassengerTransactions = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error fetching passenger transactions:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch transactions',
@@ -472,7 +378,6 @@ exports.getDriverEarnings = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error fetching driver earnings:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch earnings',
