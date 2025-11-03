@@ -173,24 +173,7 @@ exports.createPaymentOrder = async (req, res) => {
     });
     
     // CRITICAL FIX 5: Validate driver has Razorpay account
-    if (!driver.razorpayAccountId) {
-      console.log('❌ Driver does not have linked Razorpay account');
-      console.log('Driver details:', {
-        id: driver._id,
-        name: driver.name,
-        razorpayAccountId: driver.razorpayAccountId
-      });
-      return res.status(400).json({
-        success: false,
-        message: 'Driver has not completed payment setup. Please contact support.',
-        debug: {
-          driverId: driver._id,
-          driverName: driver.name
-        }
-      });
-    }
-    
-    console.log('✅ Driver Razorpay Account:', driver.razorpayAccountId);
+   
     
     // Calculate commission breakdown using your existing logic
     console.log('💰 Calculating commission breakdown...');
