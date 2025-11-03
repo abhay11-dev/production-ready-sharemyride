@@ -39,7 +39,7 @@ function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/auth/forgot-password`, {
+      const response = await fetch(`${API_URL}/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -100,7 +100,7 @@ function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/auth/verify-reset-code`, {
+      const response = await fetch(`${API_URL}/verify-reset-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode }),
@@ -188,7 +188,7 @@ function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/auth/reset-password`, {
+      const response = await fetch(`${API_URL}/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode, newPassword }),
