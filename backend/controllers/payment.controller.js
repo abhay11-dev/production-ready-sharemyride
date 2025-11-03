@@ -22,8 +22,39 @@ exports.createPaymentOrder = async (req, res) => {
     console.log('Booking ID:', bookingId);
     console.log('Passenger ID:', passengerId);
     console.log('User:', req.user.email);
+    console.log('Razorpay Instance Exists:', !!razorpayInstance);
+    console.log('Razorpay Key ID:', process.env.RAZORPAY_KEY_ID ? 'SET' : 'MISSING');
+    console.log('Razorpay Secret:', process.env.RAZORPAY_KEY_SECRET ? 'SET' : 'MISSING');
+    
+    // CRITICAL FIX 1: Validate bookingId format
+    if (!bookingId || !mongoose.Types.ObjectId.isValid(bookingId)) {
+      console.log('❌ Invalid booking ID format:', bookingId);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid booking ID format'
+      });
+    }
+    
+    // CRITICAL FIX 2: Check if Razorpay is initialized
+    if (!razorpayInstance) {
+      console.error('❌ CRITICAL: Razorpay instance not initialized!');
+      console.error('RAZORPAY_KEY_ID:', process.env.RAZORPAY_KEY_ID);
+      console.error('RAZORPAY_KEY_SECRET:', process.env.RAZORPAY_KEY_SECRET ? 'EXISTS' : 'MISSING');
+      return res.status(500).json({
+        success: false,
+        message: 'Payment gateway not configured. Please contact support.',
+        debug: {
+          keyIdExists: !!process.env.RAZORPAY_KEY_ID,
+          keySecretExists: !!process.env.RAZORPAY_KEY_SECRET,
+          instanceExists: !!razorpayInstance
+        }
+      });
+    }
+    
+    console.log('✅ Razorpay instance validated');
     
     // Get booking with ride details and driver
+    console.log('📦 Fetching booking...');
     const booking = await Booking.findById(bookingId)
       .populate({
         path: 'rideId',
@@ -41,11 +72,32 @@ exports.createPaymentOrder = async (req, res) => {
       });
     }
     
-    console.log('✅ Booking found - Status:', booking.status, 'Fare:', booking.totalFare);
+    console.log('✅ Booking found:', {
+      id: booking._id,
+      status: booking.status,
+      fare: booking.totalFare,
+      rideId: booking.rideId?._id,
+      hasDriver: !!booking.rideId?.driverId
+    });
+    
+    // CRITICAL FIX 3: Validate totalFare exists and is valid
+    if (!booking.totalFare || isNaN(booking.totalFare) || booking.totalFare <= 0) {
+      console.log('❌ Invalid booking fare:', booking.totalFare);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid booking fare amount',
+        debug: {
+          totalFare: booking.totalFare,
+          type: typeof booking.totalFare
+        }
+      });
+    }
     
     // Verify passenger owns this booking
     if (booking.passengerId.toString() !== passengerId.toString()) {
-      console.log('❌ Unauthorized access');
+      console.log('❌ Unauthorized access - Passenger mismatch');
+      console.log('Booking passenger:', booking.passengerId.toString());
+      console.log('Request passenger:', passengerId.toString());
       return res.status(403).json({
         success: false,
         message: 'Unauthorized access to booking'
@@ -54,61 +106,119 @@ exports.createPaymentOrder = async (req, res) => {
     
     // Check if booking is accepted
     if (booking.status !== 'accepted') {
-      console.log('❌ Booking not accepted');
+      console.log('❌ Booking not accepted. Status:', booking.status);
       return res.status(400).json({
         success: false,
         message: 'Booking is not in accepted status. Current status: ' + booking.status
       });
     }
     
-    // Check if payment already exists
     // Check if payment already completed
-const existingTransaction = await Transaction.findOne({
-  bookingId,
-  paymentStatus: 'captured'
-});
+    const existingTransaction = await Transaction.findOne({
+      bookingId,
+      paymentStatus: 'captured'
+    });
 
-if (existingTransaction) {
-  console.log('❌ Payment already completed for this booking');
-  return res.status(400).json({
-    success: false,
-    message: 'Payment already completed for this booking'
-  });
-}
-
-// Delete any old pending/failed transactions to create fresh order
-console.log('🗑️ Cleaning up old pending/failed transactions...');
-const deletedCount = await Transaction.deleteMany({
-  bookingId,
-  paymentStatus: { $in: ['pending', 'created', 'failed'] }
-});
-console.log(`✅ Cleaned up ${deletedCount.deletedCount} old transaction(s)`);
-    
-    // Get driver details
-    const driver = booking.rideId?.driverId;
-    
-    if (!driver) {
-      console.log('❌ Driver not found');
+    if (existingTransaction) {
+      console.log('❌ Payment already completed for this booking');
       return res.status(400).json({
         success: false,
-        message: 'Driver information not found for this booking'
+        message: 'Payment already completed for this booking',
+        transactionId: existingTransaction._id
+      });
+    }
+
+    // Delete any old pending/failed transactions to create fresh order
+    console.log('🗑️ Cleaning up old pending/failed transactions...');
+    const deletedCount = await Transaction.deleteMany({
+      bookingId,
+      paymentStatus: { $in: ['pending', 'created', 'failed'] }
+    });
+    console.log(`✅ Cleaned up ${deletedCount.deletedCount} old transaction(s)`);
+    
+    // CRITICAL FIX 4: Validate ride and driver exist
+    if (!booking.rideId) {
+      console.log('❌ Ride not populated for booking');
+      return res.status(400).json({
+        success: false,
+        message: 'Ride information not found for this booking',
+        debug: {
+          bookingId: booking._id,
+          rideId: booking.rideId
+        }
       });
     }
     
-    // CRITICAL: Check if driver has Razorpay linked account
-  
+    const driver = booking.rideId.driverId;
     
-    console.log('✅ Driver ID:', driver._id);
+    if (!driver) {
+      console.log('❌ Driver not populated for ride');
+      console.log('Ride ID:', booking.rideId._id);
+      console.log('Driver ID field:', booking.rideId.driverId);
+      return res.status(400).json({
+        success: false,
+        message: 'Driver information not found for this booking',
+        debug: {
+          rideId: booking.rideId._id,
+          driverField: booking.rideId.driverId
+        }
+      });
+    }
+    
+    console.log('✅ Driver validated:', {
+      id: driver._id,
+      name: driver.name,
+      email: driver.email,
+      hasRazorpayAccount: !!driver.razorpayAccountId
+    });
+    
+    // CRITICAL FIX 5: Validate driver has Razorpay account
+    if (!driver.razorpayAccountId) {
+      console.log('❌ Driver does not have linked Razorpay account');
+      console.log('Driver details:', {
+        id: driver._id,
+        name: driver.name,
+        razorpayAccountId: driver.razorpayAccountId
+      });
+      return res.status(400).json({
+        success: false,
+        message: 'Driver has not completed payment setup. Please contact support.',
+        debug: {
+          driverId: driver._id,
+          driverName: driver.name
+        }
+      });
+    }
+    
     console.log('✅ Driver Razorpay Account:', driver.razorpayAccountId);
     
     // Calculate commission breakdown using your existing logic
+    console.log('💰 Calculating commission breakdown...');
+    console.log('Total Fare:', booking.totalFare);
+    console.log('Commission %:', process.env.PLATFORM_COMMISSION_PERCENT || 10);
+    console.log('GST %:', process.env.GST_PERCENT || 18);
+    
     const commissionBreakdown = calculateCommissionBreakdown(
       booking.totalFare,
       process.env.PLATFORM_COMMISSION_PERCENT || 10,
       process.env.GST_PERCENT || 18
     );
     
-    console.log('Commission breakdown:', commissionBreakdown);
+    console.log('Commission breakdown:', JSON.stringify(commissionBreakdown, null, 2));
+    
+    // CRITICAL FIX 6: Validate commission breakdown
+    if (!commissionBreakdown || !commissionBreakdown.driverNetAmount) {
+      console.log('❌ Failed to calculate commission breakdown');
+      console.log('Breakdown result:', commissionBreakdown);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to calculate payment amounts',
+        debug: {
+          totalFare: booking.totalFare,
+          commissionResult: commissionBreakdown
+        }
+      });
+    }
     
     // Convert amounts to paise for Razorpay
     const totalAmountInPaise = Math.round(booking.totalFare * 100);
@@ -116,37 +226,56 @@ console.log(`✅ Cleaned up ${deletedCount.deletedCount} old transaction(s)`);
     const platformFeeInPaise = Math.round(commissionBreakdown.baseCommissionAmount * 100);
     const gstAmountInPaise = Math.round(commissionBreakdown.gstAmount * 100);
     
+    console.log('💵 Amounts in paise:', {
+      total: totalAmountInPaise,
+      driver: driverAmountInPaise,
+      platform: platformFeeInPaise,
+      gst: gstAmountInPaise
+    });
+    
     // CRITICAL VALIDATION: Ensure split matches total
     const calculatedTotal = driverAmountInPaise + platformFeeInPaise + gstAmountInPaise;
+    let finalDriverAmountInPaise = driverAmountInPaise;
     
     if (calculatedTotal !== totalAmountInPaise) {
       const difference = totalAmountInPaise - calculatedTotal;
       console.log('⚠️ Rounding adjustment needed:', difference, 'paise');
       
       // Adjust driver amount to match total exactly
-      const adjustedDriverAmount = driverAmountInPaise + difference;
+      finalDriverAmountInPaise = driverAmountInPaise + difference;
       
-      console.log('Split validation:');
-      console.log('  Total:', totalAmountInPaise, 'paise');
-      console.log('  Driver (adjusted):', adjustedDriverAmount, 'paise');
-      console.log('  Platform Fee:', platformFeeInPaise, 'paise');
-      console.log('  GST:', gstAmountInPaise, 'paise');
-      console.log('  Sum:', adjustedDriverAmount + platformFeeInPaise + gstAmountInPaise);
-      
-      // Update driver amount
-      var finalDriverAmountInPaise = adjustedDriverAmount;
-    } else {
-      var finalDriverAmountInPaise = driverAmountInPaise;
+      console.log('Split validation (adjusted):', {
+        total: totalAmountInPaise,
+        driver: finalDriverAmountInPaise,
+        platform: platformFeeInPaise,
+        gst: gstAmountInPaise,
+        sum: finalDriverAmountInPaise + platformFeeInPaise + gstAmountInPaise
+      });
+    }
+    
+    // CRITICAL FIX 7: Validate final amounts
+    if (finalDriverAmountInPaise <= 0 || totalAmountInPaise <= 0) {
+      console.log('❌ Invalid payment amounts calculated');
+      console.log('Driver amount:', finalDriverAmountInPaise);
+      console.log('Total amount:', totalAmountInPaise);
+      return res.status(500).json({
+        success: false,
+        message: 'Invalid payment amounts calculated',
+        debug: {
+          driverAmount: finalDriverAmountInPaise,
+          totalAmount: totalAmountInPaise
+        }
+      });
     }
     
     // Create Razorpay order with Route
     const shortBookingId = bookingId.toString().slice(-12);
     const receipt = `bk_${shortBookingId}`;
     
-    console.log('Receipt:', receipt, '(length:', receipt.length, ')');
+    console.log('📝 Receipt:', receipt, '(length:', receipt.length, ')');
     
     const razorpayOrderOptions = {
-      amount: totalAmountInPaise, // Total amount in paise
+      amount: totalAmountInPaise,
       currency: 'INR',
       receipt: receipt,
       notes: {
@@ -163,19 +292,51 @@ console.log(`✅ Cleaned up ${deletedCount.deletedCount} old transaction(s)`);
       }
     };
     
-    console.log('Creating Razorpay order with Route...');
+    console.log('🚀 Creating Razorpay order...');
+    console.log('Order options:', JSON.stringify(razorpayOrderOptions, null, 2));
     
-    const razorpayOrder = await razorpayInstance.orders.create(razorpayOrderOptions);
-    
-    console.log('✅ Razorpay order created:', razorpayOrder.id);
+    // CRITICAL FIX 8: Wrap Razorpay API call in try-catch
+    let razorpayOrder;
+    try {
+      razorpayOrder = await razorpayInstance.orders.create(razorpayOrderOptions);
+      console.log('✅ Razorpay order created successfully');
+      console.log('Order ID:', razorpayOrder.id);
+      console.log('Order details:', JSON.stringify(razorpayOrder, null, 2));
+    } catch (razorpayError) {
+      console.error('❌ RAZORPAY API ERROR:');
+      console.error('Error name:', razorpayError.name);
+      console.error('Error message:', razorpayError.message);
+      console.error('Error code:', razorpayError.code);
+      console.error('Status code:', razorpayError.statusCode);
+      console.error('Error object:', JSON.stringify(razorpayError, null, 2));
+      console.error('Full error:', razorpayError);
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create payment order with Razorpay',
+        error: razorpayError.message || 'Payment gateway error',
+        debug: {
+          errorName: razorpayError.name,
+          errorCode: razorpayError.code,
+          statusCode: razorpayError.statusCode,
+          description: razorpayError.description,
+          orderOptions: razorpayOrderOptions
+        }
+      });
+    }
     
     // Create transaction record
+    console.log('💾 Creating transaction record...');
     const transaction = new Transaction({
       bookingId,
       passengerId,
       driverId: driver._id,
       razorpayOrderId: razorpayOrder.id,
-      ...commissionBreakdown,
+      totalAmount: booking.totalFare,
+      baseCommissionAmount: commissionBreakdown.baseCommissionAmount,
+      gstAmount: commissionBreakdown.gstAmount,
+      totalCommissionAmount: commissionBreakdown.totalCommissionAmount,
+      driverNetAmount: commissionBreakdown.driverNetAmount,
       paymentStatus: 'created',
       payoutStatus: 'pending',
       passengerEmail: req.user.email,
@@ -191,14 +352,13 @@ console.log(`✅ Cleaned up ${deletedCount.deletedCount} old transaction(s)`);
     });
     
     await transaction.save();
-    
     console.log('✅ Transaction saved:', transaction._id);
     
     // Update booking payment status
     booking.paymentStatus = 'pending';
     await booking.save();
+    console.log('✅ Booking updated to pending payment');
     
-    console.log('✅ Booking updated');
     console.log('=== PAYMENT ORDER SUCCESS ===');
     
     // Return order details for frontend
@@ -217,11 +377,23 @@ console.log(`✅ Cleaned up ${deletedCount.deletedCount} old transaction(s)`);
     
   } catch (error) {
     console.error('=== PAYMENT ORDER ERROR ===');
-    console.error('Error:', error);
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Error stack:', error.stack);
+    console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    
     res.status(500).json({
       success: false,
       message: 'Failed to create payment order',
-      error: error.message
+      error: process.env.NODE_ENV === 'production' 
+        ? 'Internal server error' 
+        : error.message,
+      debug: process.env.NODE_ENV === 'development' ? {
+        errorName: error.name,
+        errorMessage: error.message,
+        errorStack: error.stack
+      } : undefined
     });
   }
 };
@@ -327,71 +499,9 @@ exports.verifyPayment = async (req, res) => {
     await booking.save();
     
     console.log('✅ Booking updated to completed');
-console.log('⏳ Webhook will trigger automatic transfer to driver');
+    console.log('⏳ Webhook will trigger automatic transfer to driver');
 
-// Send response FIRST before emails
-res.status(200).json({
-  success: true,
-  message: 'Payment verified successfully. Driver will receive payout automatically.',
-  data: {
-    verified: true,
-    paymentId: razorpay_payment_id,
-    orderId: razorpay_order_id,
-    status: 'captured',
-    amount: transaction.totalAmount,
-    booking: {
-      id: booking._id,
-      status: booking.status,
-      paymentStatus: booking.paymentStatus
-    },
-    driver: {
-      name: transaction.driverId?.name,
-      phone: transaction.driverId?.phone
-    },
-    breakdown: {
-      totalPaid: transaction.totalAmount,
-      platformCommission: transaction.baseCommissionAmount,
-      gst: transaction.gstAmount,
-      driverAmount: transaction.driverNetAmount
-    }
-  }
-});
-
-// Send email receipts AFTER response (non-blocking)
-setImmediate(async () => {
-  try {
-    console.log('📧 Sending email receipts...');
-    
-    const populatedBooking = await Booking.findById(booking._id)
-      .populate('passengerId')
-      .populate({
-        path: 'rideId',
-        populate: { path: 'driverId' }
-      });
-    
-    await sendPaymentReceipt(
-      transaction,
-      populatedBooking,
-      populatedBooking.passengerId,
-      populatedBooking.rideId.driverId
-    );
-    
-    await sendDriverPaymentNotification(
-      transaction,
-      populatedBooking,
-      populatedBooking.passengerId,
-      populatedBooking.rideId.driverId
-    );
-    
-    console.log('✅ Email receipts sent successfully');
-  } catch (emailError) {
-    console.error('❌ Error sending emails:', emailError.message);
-  }
-});
-
-console.log('=== PAYMENT VERIFICATION SUCCESS ===');
-    
-    
+    // Send response FIRST before emails
     res.status(200).json({
       success: true,
       message: 'Payment verified successfully. Driver will receive payout automatically.',
@@ -418,6 +528,40 @@ console.log('=== PAYMENT VERIFICATION SUCCESS ===');
         }
       }
     });
+
+    // Send email receipts AFTER response (non-blocking)
+    setImmediate(async () => {
+      try {
+        console.log('📧 Sending email receipts...');
+        
+        const populatedBooking = await Booking.findById(booking._id)
+          .populate('passengerId')
+          .populate({
+            path: 'rideId',
+            populate: { path: 'driverId' }
+          });
+        
+        await sendPaymentReceipt(
+          transaction,
+          populatedBooking,
+          populatedBooking.passengerId,
+          populatedBooking.rideId.driverId
+        );
+        
+        await sendDriverPaymentNotification(
+          transaction,
+          populatedBooking,
+          populatedBooking.passengerId,
+          populatedBooking.rideId.driverId
+        );
+        
+        console.log('✅ Email receipts sent successfully');
+      } catch (emailError) {
+        console.error('❌ Error sending emails:', emailError.message);
+      }
+    });
+
+    console.log('=== PAYMENT VERIFICATION SUCCESS ===');
     
   } catch (error) {
     console.error('=== PAYMENT VERIFICATION ERROR ===');

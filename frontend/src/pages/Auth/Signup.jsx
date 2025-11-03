@@ -57,7 +57,7 @@ function Signup() {
       
       // Show success toast
       toast.success(
-        `🎉 Account created successfully!!`,
+        ` Account created successfully!!`,
         {
           duration: 4000,
           position: 'top-center',
