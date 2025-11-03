@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 
 function ForgotPassword() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1); // 1: Email, 2: Verify Code, 3: New Password
+  const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -13,7 +13,9 @@ function ForgotPassword() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Password strength calculator
+  // Use environment variable or fallback to deployed API
+  const API_URL = import.meta.env.VITE_API_URL || 'https://sharemyride.onrender.com';
+
   const getPasswordStrength = (pwd) => {
     if (!pwd) return { strength: 0, label: '', color: '' };
     
@@ -30,66 +32,40 @@ function ForgotPassword() {
     return { strength, label: 'Strong', color: 'bg-green-500' };
   };
 
-  const API_URL = process.env.VITE_API_URL || 'http://localhost:5000';
-
   const passwordStrength = getPasswordStrength(newPassword);
 
-  // Step 1: Send verification code to email
   const handleSendCode = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      // API call to check if user exists and send verification code
       const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email }),
-});
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
 
       const data = await response.json();
 
       if (response.ok) {
-        toast.success(
-          'Verification code sent to your email!',
-          {
-            duration: 4000,
-            position: 'top-center',
-            style: {
-              background: '#10B981',
-              color: '#fff',
-              fontWeight: '600',
-              padding: '16px',
-              borderRadius: '12px',
-            },
-            iconTheme: {
-              primary: '#fff',
-              secondary: '#10B981',
-            },
-          }
-        );
+        toast.success('Verification code sent to your email!', {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+          iconTheme: {
+            primary: '#fff',
+            secondary: '#10B981',
+          },
+        });
         setStep(2);
       } else {
-        // User not found
-        toast.error(
-          data.message || 'No account found with this email. Please register first.',
-          {
-            duration: 4000,
-            position: 'top-center',
-            style: {
-              background: '#EF4444',
-              color: '#fff',
-              fontWeight: '600',
-              padding: '16px',
-              borderRadius: '12px',
-            },
-          }
-        );
-      }
-    } catch (error) {
-      toast.error(
-        'Failed to send verification code. Please try again.',
-        {
+        toast.error(data.message || 'No account found with this email. Please register first.', {
           duration: 4000,
           position: 'top-center',
           style: {
@@ -99,66 +75,54 @@ function ForgotPassword() {
             padding: '16px',
             borderRadius: '12px',
           },
-        }
-      );
+        });
+      }
+    } catch (error) {
+      console.error('Send code error:', error);
+      toast.error('Failed to send verification code. Please check your internet connection and try again.', {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Step 2: Verify code
   const handleVerifyCode = async (e) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
-      // API call to verify code
-      const response = await fetch('http://localhost:5000/api/auth/verify-reset-code', {
+      const response = await fetch(`${API_URL}/api/auth/verify-reset-code`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        toast.success(
-          'Code verified successfully!',
-          {
-            duration: 3000,
-            position: 'top-center',
-            style: {
-              background: '#10B981',
-              color: '#fff',
-              fontWeight: '600',
-              padding: '16px',
-              borderRadius: '12px',
-            },
-          }
-        );
+        toast.success('Code verified successfully!', {
+          duration: 3000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        });
         setStep(3);
       } else {
-        toast.error(
-          data.message || 'Invalid verification code. Please try again.',
-          {
-            duration: 4000,
-            position: 'top-center',
-            style: {
-              background: '#EF4444',
-              color: '#fff',
-              fontWeight: '600',
-              padding: '16px',
-              borderRadius: '12px',
-            },
-          }
-        );
-      }
-    } catch (error) {
-      toast.error(
-        'Verification failed. Please try again.',
-        {
+        toast.error(data.message || 'Invalid verification code. Please try again.', {
           duration: 4000,
           position: 'top-center',
           style: {
@@ -168,129 +132,107 @@ function ForgotPassword() {
             padding: '16px',
             borderRadius: '12px',
           },
-        }
-      );
+        });
+      }
+    } catch (error) {
+      console.error('Verify code error:', error);
+      toast.error('Verification failed. Please try again.', {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Step 3: Reset password
   const handleResetPassword = async (e) => {
     e.preventDefault();
 
-    // Validation
     if (newPassword !== confirmPassword) {
-      toast.error(
-        'Passwords do not match',
-        {
-          duration: 3000,
-          position: 'top-center',
-          style: {
-            background: '#EF4444',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        }
-      );
+      toast.error('Passwords do not match', {
+        duration: 3000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
       return;
     }
 
     if (newPassword.length < 6) {
-      toast.error(
-        'Password must be at least 6 characters',
-        {
-          duration: 3000,
-          position: 'top-center',
-          style: {
-            background: '#EF4444',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        }
-      );
+      toast.error('Password must be at least 6 characters', {
+        duration: 3000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // API call to reset password
-      const response = await fetch('http://localhost:5000/api/auth/reset-password', {
+      const response = await fetch(`${API_URL}/api/auth/reset-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode, newPassword }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        toast.success(
-          ' Password reset successfully!',
-          {
-            duration: 4000,
+        toast.success('Password reset successfully!', {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+          iconTheme: {
+            primary: '#fff',
+            secondary: '#10B981',
+          },
+        });
+
+        setTimeout(() => {
+          toast('Please log in with your new password', {
+            duration: 3000,
             position: 'top-center',
+            icon: '🔐',
             style: {
-              background: '#10B981',
+              background: '#3B82F6',
               color: '#fff',
               fontWeight: '600',
               padding: '16px',
               borderRadius: '12px',
             },
-            iconTheme: {
-              primary: '#fff',
-              secondary: '#10B981',
-            },
-          }
-        );
-
-        setTimeout(() => {
-          toast(
-            'Please log in with your new password',
-            {
-              duration: 3000,
-              position: 'top-center',
-              icon: '🔐',
-              style: {
-                background: '#3B82F6',
-                color: '#fff',
-                fontWeight: '600',
-                padding: '16px',
-                borderRadius: '12px',
-              },
-            }
-          );
+          });
           
           setTimeout(() => {
             navigate('/login');
           }, 500);
         }, 1500);
       } else {
-        toast.error(
-          data.message || 'Failed to reset password. Please try again.',
-          {
-            duration: 4000,
-            position: 'top-center',
-            style: {
-              background: '#EF4444',
-              color: '#fff',
-              fontWeight: '600',
-              padding: '16px',
-              borderRadius: '12px',
-            },
-          }
-        );
-      }
-    } catch (error) {
-      toast.error(
-        'Failed to reset password. Please try again.',
-        {
+        toast.error(data.message || 'Failed to reset password. Please try again.', {
           duration: 4000,
           position: 'top-center',
           style: {
@@ -300,8 +242,21 @@ function ForgotPassword() {
             padding: '16px',
             borderRadius: '12px',
           },
-        }
-      );
+        });
+      }
+    } catch (error) {
+      console.error('Reset password error:', error);
+      toast.error('Failed to reset password. Please try again.', {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setIsLoading(false);
     }
@@ -310,10 +265,8 @@ function ForgotPassword() {
   return (
     <div className="flex justify-center items-center min-h-[80vh] bg-gradient-to-br from-purple-50 to-purple-100 px-4 py-8 sm:py-12">
       <div className="w-full max-w-md">
-        {/* Step 1: Enter Email */}
         {step === 1 && (
           <form onSubmit={handleSendCode} className="bg-white shadow-2xl rounded-2xl px-6 sm:px-8 py-8 sm:py-10 border border-gray-100">
-            {/* Header */}
             <div className="text-center mb-6 sm:mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-100 rounded-full mb-4">
                 <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -324,7 +277,6 @@ function ForgotPassword() {
               <p className="text-gray-600 text-xs sm:text-sm">Enter your email to receive a verification code</p>
             </div>
 
-            {/* Email Input */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Email Address
@@ -348,7 +300,6 @@ function ForgotPassword() {
               </div>
             </div>
 
-            {/* Submit Button */}
             <button 
               type="submit" 
               className="w-full bg-gradient-to-r from-purple-600 to-purple-500 text-white py-3 sm:py-3.5 rounded-lg font-semibold hover:from-purple-700 hover:to-purple-600 hover:shadow-lg transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none flex items-center justify-center gap-2 text-sm sm:text-base"
@@ -372,7 +323,6 @@ function ForgotPassword() {
               )}
             </button>
 
-            {/* Back to Login */}
             <div className="text-center mt-6">
               <button
                 type="button"
@@ -389,10 +339,8 @@ function ForgotPassword() {
           </form>
         )}
 
-        {/* Step 2: Verify Code */}
         {step === 2 && (
           <form onSubmit={handleVerifyCode} className="bg-white shadow-2xl rounded-2xl px-6 sm:px-8 py-8 sm:py-10 border border-gray-100">
-            {/* Header */}
             <div className="text-center mb-6 sm:mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-100 rounded-full mb-4">
                 <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -403,7 +351,6 @@ function ForgotPassword() {
               <p className="text-gray-600 text-xs sm:text-sm">Enter the verification code sent to <span className="font-semibold">{email}</span></p>
             </div>
 
-            {/* Verification Code Input */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Verification Code
@@ -427,7 +374,6 @@ function ForgotPassword() {
               </div>
             </div>
 
-            {/* Submit Button */}
             <button 
               type="submit" 
               className="w-full bg-gradient-to-r from-purple-600 to-purple-500 text-white py-3 sm:py-3.5 rounded-lg font-semibold hover:from-purple-700 hover:to-purple-600 hover:shadow-lg transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none flex items-center justify-center gap-2 text-sm sm:text-base"
@@ -446,7 +392,6 @@ function ForgotPassword() {
               )}
             </button>
 
-            {/* Resend Code */}
             <div className="text-center mt-4">
               <button
                 type="button"
@@ -460,10 +405,8 @@ function ForgotPassword() {
           </form>
         )}
 
-        {/* Step 3: Reset Password */}
         {step === 3 && (
           <form onSubmit={handleResetPassword} className="bg-white shadow-2xl rounded-2xl px-6 sm:px-8 py-8 sm:py-10 border border-gray-100">
-            {/* Header */}
             <div className="text-center mb-6 sm:mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 bg-purple-100 rounded-full mb-4">
                 <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -474,7 +417,6 @@ function ForgotPassword() {
               <p className="text-gray-600 text-xs sm:text-sm">Enter your new password</p>
             </div>
 
-            {/* New Password Input */}
             <div className="mb-4">
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 New Password
@@ -516,7 +458,6 @@ function ForgotPassword() {
                 </button>
               </div>
               
-              {/* Password Strength Indicator */}
               {newPassword && (
                 <div className="mt-2">
                   <div className="flex items-center justify-between mb-1">
@@ -541,7 +482,6 @@ function ForgotPassword() {
               <p className="text-xs text-gray-500 mt-2">Must be at least 6 characters</p>
             </div>
 
-            {/* Confirm Password Input */}
             <div className="mb-6">
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Confirm Password
@@ -591,7 +531,6 @@ function ForgotPassword() {
               )}
             </div>
 
-            {/* Submit Button */}
             <button 
               type="submit" 
               className="w-full bg-gradient-to-r from-purple-600 to-purple-500 text-white py-3 sm:py-3.5 rounded-lg font-semibold hover:from-purple-700 hover:to-purple-600 hover:shadow-lg transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none flex items-center justify-center gap-2 text-sm sm:text-base"
