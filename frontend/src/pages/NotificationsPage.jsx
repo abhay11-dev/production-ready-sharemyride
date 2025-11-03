@@ -301,9 +301,7 @@ function NotificationsPage() {
                             <p className="text-blue-600 text-sm mt-1">
                               Amount Received: ₹{notification.baseFare?.toFixed(2)} (Base Fare)
                             </p>
-                            <p className="text-blue-500 text-xs mt-1">
-                              Total Booking: ₹{notification.totalFare?.toFixed(2)} | Platform Fee: ₹{notification.platformFee?.toFixed(2)} | GST: ₹{notification.gst?.toFixed(2)}
-                            </p>
+                            
                           </div>
                         </div>
                       </div>

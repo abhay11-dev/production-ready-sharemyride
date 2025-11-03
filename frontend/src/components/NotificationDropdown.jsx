@@ -3,6 +3,7 @@ import { getDriverBookings } from '../services/bookingService';
 import { updateBookingStatus } from '../services/bookingService';
 import { useAuth } from '../hooks/useAuth';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 function NotificationDropdown() {
   const { user } = useAuth();
@@ -48,10 +49,45 @@ function NotificationDropdown() {
     setProcessingId(bookingId);
     try {
       await updateBookingStatus(bookingId, 'accepted');
+      
+      // Show success toast
+      toast.success(
+        'Ride request accepted successfully',
+        {
+          duration: 3000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+          iconTheme: {
+            primary: '#fff',
+            secondary: '#10B981',
+          },
+        }
+      );
+      
       // Remove from notifications
       setNotifications(notifications.filter(n => n._id !== bookingId));
     } catch (error) {
-      alert('Failed to accept booking');
+      // Show error toast
+      toast.error(
+        'Failed to accept ride request',
+        {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#EF4444',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        }
+      );
     } finally {
       setProcessingId(null);
     }
@@ -65,10 +101,45 @@ function NotificationDropdown() {
     setProcessingId(bookingId);
     try {
       await updateBookingStatus(bookingId, 'rejected');
+      
+      // Show success toast
+      toast.success(
+        'Ride request rejected',
+        {
+          duration: 3000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+          iconTheme: {
+            primary: '#fff',
+            secondary: '#10B981',
+          },
+        }
+      );
+      
       // Remove from notifications
       setNotifications(notifications.filter(n => n._id !== bookingId));
     } catch (error) {
-      alert('Failed to reject booking');
+      // Show error toast
+      toast.error(
+        'Failed to reject ride request',
+        {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#EF4444',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        }
+      );
     } finally {
       setProcessingId(null);
     }

@@ -55,7 +55,7 @@ function RideSearch() {
     
     // Show searching toast
     const searchingToast = toast.loading(
-      `🔍 Searching rides...`,
+      `Searching rides...`,
       {
         position: 'top-center',
         style: {

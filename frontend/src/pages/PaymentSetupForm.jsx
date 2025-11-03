@@ -360,9 +360,7 @@ function PaymentSetupForm() {
                   <p className="font-semibold text-blue-900 mb-1">Important Information</p>
                   <ul className="text-sm text-blue-700 space-y-1">
                     <li>• Your payment details are securely stored and encrypted</li>
-                    <li>• Passengers will see your UPI ID or QR code to make payments</li>
                     <li>• Bank account details are kept private and secure</li>
-                    <li>• You can update your details anytime</li>
                   </ul>
                 </div>
               </div>

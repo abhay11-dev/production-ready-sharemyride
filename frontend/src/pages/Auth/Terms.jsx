@@ -79,8 +79,6 @@ function TermsOfService() {
           <h2 className="text-2xl font-bold text-gray-900 mb-4">4. Driver Requirements</h2>
           <p className="mb-3">Drivers must:</p>
           <ul className="list-disc pl-6 space-y-2">
-            <li>Possess a valid driver's license</li>
-            <li>Maintain valid vehicle registration and insurance</li>
             <li>Ensure their vehicle meets safety standards</li>
             <li>Comply with all applicable traffic laws and regulations</li>
             <li>Not discriminate against passengers based on race, religion, gender, or other protected characteristics</li>
@@ -281,8 +279,8 @@ function PrivacyPolicy() {
             We share limited information to facilitate rides:
           </p>
           <ul className="list-disc pl-6 space-y-2 mb-4">
-            <li>Passengers can see driver's name, photo, vehicle details, and ratings</li>
-            <li>Drivers can see passenger's name, photo, pickup location, and ratings</li>
+            <li>Passengers can see driver's name, vehicle details, and contact shared</li>
+            <li>Drivers can see passenger's name, pickup location, and message</li>
             <li>Contact information may be shared temporarily to coordinate pickups</li>
           </ul>
 

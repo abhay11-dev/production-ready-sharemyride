@@ -214,15 +214,29 @@ const MyBookings = () => {
         modal: {
           ondismiss: function() {
             console.log('Payment cancelled by user');
-            toast('Payment cancelled', {
-              duration: 3000,
+            toast((t) => (
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <svg className="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900">Payment Cancelled</p>
+                  <p className="text-sm text-gray-600 mt-0.5">You closed the payment window. Your booking is still pending.</p>
+                </div>
+              </div>
+            ), {
+              duration: 4000,
               position: 'top-center',
               style: {
-                background: '#FF2400',
-                color: '#FFFFFF',
-                fontWeight: '600',
+                background: '#fff',
+                color: '#1F2937',
                 padding: '16px',
                 borderRadius: '12px',
+                border: '2px solid #F59E0B',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+                maxWidth: '500px',
               },
             });
             setProcessingPayment(null);
@@ -274,43 +288,83 @@ const MyBookings = () => {
   };
 
   const handleCancelBooking = async (bookingId) => {
-    if (!window.confirm('Are you sure you want to cancel this booking?')) {
-      return;
-    }
-
-    try {
-      await cancelBooking(bookingId);
-      
-      toast.success('Booking cancelled successfully', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#10B981',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-        iconTheme: {
-          primary: '#fff',
-          secondary: '#10B981',
-        },
-      });
-      
-      await fetchBookings();
-    } catch (error) {
-      toast.error('Failed to cancel booking: ' + error.message, {
-        duration: 4000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-    }
+    // Show custom confirmation toast
+    toast((t) => (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0">
+            <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-gray-900">Cancel Booking</p>
+            <p className="text-sm text-gray-600 mt-0.5">Are you sure you want to cancel this booking? This action cannot be undone.</p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+          >
+            Keep Booking
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                await cancelBooking(bookingId);
+                
+                toast.success('Booking cancelled successfully', {
+                  duration: 3000,
+                  position: 'top-center',
+                  style: {
+                    background: '#10B981',
+                    color: '#fff',
+                    fontWeight: '600',
+                    padding: '16px',
+                    borderRadius: '12px',
+                  },
+                  iconTheme: {
+                    primary: '#fff',
+                    secondary: '#10B981',
+                  },
+                });
+                
+                await fetchBookings();
+              } catch (error) {
+                toast.error('Failed to cancel booking: ' + error.message, {
+                  duration: 4000,
+                  position: 'top-center',
+                  style: {
+                    background: '#EF4444',
+                    color: '#fff',
+                    fontWeight: '600',
+                    padding: '16px',
+                    borderRadius: '12px',
+                  },
+                });
+              }
+            }}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors duration-200"
+          >
+            Yes, Cancel
+          </button>
+        </div>
+      </div>
+    ), {
+      duration: Infinity,
+      position: 'top-center',
+      style: {
+        background: '#fff',
+        color: '#1F2937',
+        padding: '20px',
+        borderRadius: '12px',
+        border: '2px solid #EF4444',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
+        maxWidth: '500px',
+      },
+    });
   };
 
   const getStatusBadge = (booking) => {
