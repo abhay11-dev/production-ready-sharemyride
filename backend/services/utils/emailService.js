@@ -1,22 +1,56 @@
 const nodemailer = require('nodemailer');
 
-// Create transporter
+// Create transporter with better error handling
 const createTransporter = () => {
-  // For development - using Gmail
-  // For production, use services like SendGrid, AWS SES, etc.
+  // Validate environment variables
+  if (!process.env.EMAIL_USER) {
+    throw new Error('EMAIL_USER environment variable is not set');
+  }
+  
+  if (!process.env.EMAIL_PASSWORD) {
+    throw new Error('EMAIL_PASSWORD environment variable is not set');
+  }
+
+  // Log configuration (without sensitive data) for debugging
+  console.log('Email service configuration:', {
+    user: process.env.EMAIL_USER,
+    service: 'gmail',
+    hasPassword: !!process.env.EMAIL_PASSWORD
+  });
+
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: process.env.EMAIL_USER, // Your Gmail address
-      pass: process.env.EMAIL_PASSWORD  // Your Gmail app password (changed from EMAIL_PASS)
-    }
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD
+    },
+    // Add these options for better reliability
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 3,
+    rateDelta: 1000,
+    rateLimit: 3
   });
 };
 
 // Send password reset email
 const sendPasswordResetEmail = async (email, name, resetCode) => {
   try {
+    // Validate inputs
+    if (!email || !name || !resetCode) {
+      throw new Error('Missing required parameters: email, name, or resetCode');
+    }
+
     const transporter = createTransporter();
+
+    // Verify transporter configuration
+    try {
+      await transporter.verify();
+      console.log('Email server connection verified');
+    } catch (verifyError) {
+      console.error('Email server verification failed:', verifyError.message);
+      throw new Error(`Email server connection failed: ${verifyError.message}`);
+    }
 
     const mailOptions = {
       from: `"RideShare" <${process.env.EMAIL_USER}>`,
@@ -115,15 +149,55 @@ const sendPasswordResetEmail = async (email, name, resetCode) => {
           </div>
         </body>
         </html>
+      `,
+      // Add plain text fallback
+      text: `
+        Hello ${name},
+        
+        We received a request to reset your password for your RideShare account.
+        
+        Your verification code is: ${resetCode}
+        
+        Enter this code in the password reset page to continue.
+        
+        Important:
+        - This code will expire in 15 minutes
+        - If you didn't request this reset, please ignore this email
+        - Never share this code with anyone
+        
+        Best regards,
+        The RideShare Team
       `
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent:', info.messageId);
+    console.log('Email sent successfully:', {
+      messageId: info.messageId,
+      to: email,
+      accepted: info.accepted,
+      response: info.response
+    });
+    
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('Error sending email:', error);
-    throw new Error('Failed to send email');
+    console.error('Detailed email error:', {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode
+    });
+    
+    // Throw more specific error messages
+    if (error.message.includes('Invalid login')) {
+      throw new Error('Email authentication failed. Please check EMAIL_USER and EMAIL_PASSWORD');
+    } else if (error.message.includes('ECONNECTION') || error.message.includes('ETIMEDOUT')) {
+      throw new Error('Cannot connect to email server. Check your network connection');
+    } else if (error.code === 'EAUTH') {
+      throw new Error('Email authentication failed. Make sure you are using an App Password for Gmail');
+    } else {
+      throw new Error(error.message || 'Failed to send email');
+    }
   }
 };
 
