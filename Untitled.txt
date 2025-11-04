@@ -1,0 +1,32 @@
+// Basic approach
+const numbers = [3, 67, 23, 89, 12, 45, 98, 34];
+
+const largest = numbers.reduce((max, current) => {
+  return current > max ? current : max;
+});
+
+console.log(largest); // Output: 98
+
+// More concise with ternary operator
+const largestConcise = numbers.reduce((max, curr) => curr > max ? curr : max);
+console.log(largestConcise); // Output: 98
+
+// Using Math.max
+const largestWithMath = numbers.reduce((max, curr) => Math.max(max, curr));
+console.log(largestWithMath); // Output: 98
+
+// With initial value (useful for negative numbers)
+const negativeNumbers = [-5, -12, -3, -8, -1];
+const largestNegative = negativeNumbers.reduce((max, curr) => {
+  return curr > max ? curr : max;
+}, -Infinity); // Starting with -Infinity ensures any number will be larger
+
+console.log(largestNegative); // Output: -1
+
+// Handling empty arrays safely
+const emptyArray = [];
+const safeMax = emptyArray.reduce((max, curr) => 
+  curr > max ? curr : max, 
+  -Infinity
+);
+console.log(safeMax); // Output: -Infinity

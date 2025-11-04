@@ -274,18 +274,36 @@ const forgotPassword = async (req, res) => {
     const resetToken = user.generateResetToken();
     await user.save();
 
-    // Send email with reset code
-    await sendPasswordResetEmail(user.email, user.name, resetToken);
-
-    res.status(200).json({
-      success: true,
-      message: 'Password reset code sent to your email'
-    });
+    // Send email with reset code with proper error handling
+    try {
+      await sendPasswordResetEmail(user.email, user.name, resetToken);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Password reset code sent to your email'
+      });
+    } catch (emailError) {
+      // Log the specific email error
+      console.error('Email service error:', emailError);
+      
+      // Rollback: Clear the reset token since email failed
+      user.resetPasswordToken = null;
+      user.resetPasswordExpires = null;
+      await user.save();
+      
+      // Return more specific error
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to send email. Please check your email service configuration.',
+        error: process.env.NODE_ENV === 'development' ? emailError.message : undefined
+      });
+    }
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to send reset code. Please try again.' 
+      message: 'Failed to process reset request. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -305,7 +323,7 @@ const verifyResetCode = async (req, res) => {
     const user = await User.findOne({ 
       email: email.toLowerCase(),
       resetPasswordToken: code,
-      resetPasswordExpires: { $gt: Date.now() } // Check if not expired
+      resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
