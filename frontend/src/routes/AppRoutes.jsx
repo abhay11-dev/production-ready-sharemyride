@@ -1,5 +1,5 @@
-import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import React from 'react';
 import Home from '../pages/Home/Home';
 import Login from '../pages/Auth/Login';
 import Signup from '../pages/Auth/Signup';
@@ -15,10 +15,8 @@ import { useAuth } from '../hooks/useAuth';
 import PaymentSetupForm from '../pages/PaymentSetupForm.jsx';
 import UpcomingRides from '../pages/rides/UpcomingRides';
 import DriverUpcomingRides from '../pages/driver/DriverUpcomingRides';
-
 import PaymentSuccess from "../pages/PaymentSuccess.jsx";
 import PaymentFailed from "../pages/PaymentFailed.jsx";
-// Add these routes
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -38,7 +36,7 @@ const ProtectedRoute = ({ children }) => {
   return user ? children : <Navigate to="/login" replace />;
 };
 
-// Public Route Component (redirects to home if already logged in)
+// Public Route Component
 const PublicRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
@@ -62,7 +60,7 @@ function AppRoutes() {
       {/* Public Routes */}
       <Route path="/" element={<Home />} />
       
-      {/* Auth Routes - Redirect to home if already logged in */}
+      {/* Auth Routes */}
       <Route 
         path="/login" 
         element={
@@ -72,7 +70,7 @@ function AppRoutes() {
         } 
       />
 
-       <Route 
+      <Route 
         path="/terms" 
         element={
           <PublicRoute>
@@ -81,7 +79,7 @@ function AppRoutes() {
         } 
       />
 
-       <Route 
+      <Route 
         path="/forgot-password" 
         element={
           <PublicRoute>
@@ -99,11 +97,10 @@ function AppRoutes() {
         } 
       />
 
-
       <Route path="/upcoming-rides" element={<UpcomingRides />} />
-<Route path="/driver/upcoming-rides" element={<DriverUpcomingRides />} />
+      <Route path="/driver/upcoming-rides" element={<DriverUpcomingRides />} />
       
-      {/* Protected Routes - Require authentication */}
+      {/* Protected Routes */}
       <Route 
         path="/ride/search" 
         element={
@@ -129,7 +126,6 @@ function AppRoutes() {
         } 
       />
 
-      {/* Notification Routes */}
       <Route 
         path="/notifications" 
         element={
@@ -139,7 +135,6 @@ function AppRoutes() {
         } 
       />
 
-      {/* Booking Routes */}
       <Route 
         path="/bookings/my-bookings" 
         element={
@@ -156,13 +151,13 @@ function AppRoutes() {
           </ProtectedRoute>
         } 
       />
-<Route 
-  path="/payment/setup" 
-  element={<ProtectedRoute><PaymentSetupForm /></ProtectedRoute>} 
-/>
+      <Route 
+        path="/payment/setup" 
+        element={<ProtectedRoute><PaymentSetupForm /></ProtectedRoute>} 
+      />
 
-<Route path="/payment-success/:bookingId" element={<PaymentSuccess />} />
-<Route path="/payment-failed/:bookingId" element={<PaymentFailed />} />
+      <Route path="/payment-success/:bookingId" element={<PaymentSuccess />} />
+      <Route path="/payment-failed/:bookingId" element={<PaymentFailed />} />
 
       {/* 404 Not Found Route */}
       <Route 
@@ -194,10 +189,6 @@ function AppRoutes() {
         } 
       />
     </Routes>
-
-
-
-
   );
 }
 

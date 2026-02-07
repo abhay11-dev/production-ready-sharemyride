@@ -12,17 +12,38 @@ function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchNotifications = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const bookings = await getDriverBookings();
-      setNotifications(bookings);
+      const response = await getDriverBookings();
+      console.log('📬 Bookings response:', response);
+      
+      let bookingsArray = [];
+      
+      if (Array.isArray(response)) {
+        bookingsArray = response;
+      } else if (response.data && Array.isArray(response.data)) {
+        bookingsArray = response.data;
+      } else if (response.bookings && Array.isArray(response.bookings)) {
+        bookingsArray = response.bookings;
+      } else {
+        console.warn('⚠️ Unexpected response format:', response);
+        bookingsArray = [];
+      }
+      
+      console.log('📋 Bookings array:', bookingsArray);
+      console.log('🔔 Pending notifications:', bookingsArray.filter(b => b.status === 'pending').length);
+      
+      setNotifications(bookingsArray);
     } catch (err) {
       setError('Failed to load notifications');
-      console.error(err);
+      console.error('❌ Fetch notifications error:', err);
+      setNotifications([]);
     } finally {
       setIsLoading(false);
     }
@@ -32,32 +53,216 @@ function NotificationsPage() {
     setProcessingId(bookingId);
     try {
       await updateBookingStatus(bookingId, 'accepted');
+      
       setNotifications(notifications.map(n => 
-        n._id === bookingId ? { ...n, status: 'accepted' } : n
+        n._id === bookingId ? { ...n, status: 'accepted', confirmedAt: new Date() } : n
       ));
+      
+      alert('✅ Booking accepted successfully!');
+      
     } catch (error) {
-      alert('Failed to accept booking: ' + error.message);
+      console.error('Error accepting booking:', error);
+      alert('Failed to accept booking: ' + (error.response?.data?.message || error.message));
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleReject = async (bookingId) => {
-    if (!window.confirm('Are you sure you want to reject this booking?')) {
-      return;
-    }
+    const reason = prompt('Please provide a reason for rejection (optional):');
+    if (reason === null) return;
+    
     setProcessingId(bookingId);
     try {
-      await updateBookingStatus(bookingId, 'rejected');
+      await updateBookingStatus(bookingId, 'rejected', reason);
+      
       setNotifications(notifications.map(n => 
-        n._id === bookingId ? { ...n, status: 'rejected' } : n
+        n._id === bookingId ? { ...n, status: 'rejected', rejectedAt: new Date(), rejectionReason: reason } : n
       ));
+      
+      alert('❌ Booking rejected');
+      
     } catch (error) {
-      alert('Failed to reject booking: ' + error.message);
+      console.error('Error rejecting booking:', error);
+      alert('Failed to reject booking: ' + (error.response?.data?.message || error.message));
     } finally {
       setProcessingId(null);
     }
   };
+
+  // ✅ FIXED PAYMENT CALCULATION - Matches RideCard Logic Exactly
+ // ✅ ENHANCED PAYMENT CALCULATION - Fixed to Handle Backend Data Issues
+const calculatePaymentDetails = (notification) => {
+  const ride = notification.ride || notification.rideId || {};
+  const seatsBooked = notification.seatsBooked || 1;
+  const fareMode = ride.fareMode || notification.fareMode || 'fixed';
+  const perKmRate = ride.perKmRate || notification.perKmRate || 0;
+  const matchType = ride.matchType || notification.matchType;
+  const segmentFare = ride.segmentFare || notification.segmentFare;
+  const userSearchDistance = ride.userSearchDistance || notification.userSearchDistance;
+  const totalDistance = ride.totalDistance || notification.totalDistance || 0;
+  
+  // 🔍 DEBUG: Log all available data
+  console.log('🔍 Payment Calculation Debug:', {
+    matchType,
+    userSearchDistance,
+    perKmRate,
+    segmentFare,
+    fareMode,
+    'notification.baseFare': notification.baseFare,
+    'ride.fare': ride.fare,
+    totalDistance,
+    seatsBooked
+  });
+  
+  let baseFare = 0;
+  let platformFee = 0;
+  let gst = 0;
+  let totalPassengerPays = 0;
+  let driverReceives = 0;
+  let fareType = 'Fixed';
+
+  // 🎯 PRIORITY 1: SEGMENT FARE (Route-Matched Ride)
+  // Check for segment booking indicators
+  if (matchType === 'on_route' || userSearchDistance) {
+    // We have a segment booking - need to calculate from per km rate
+    if (perKmRate && userSearchDistance) {
+      fareType = 'Segment';
+      
+      // ✅ CORRECT: Calculate base fare from per km rate × user's segment distance
+     baseFare = perKmRate * userSearchDistance * seatsBooked;
+      platformFee = baseFare * 0.08;
+      gst = platformFee * 0.18;
+      
+      // Total passenger pays = base + platform fee + GST
+      totalPassengerPays = baseFare + platformFee + gst;
+      
+      // Driver receives the full base fare for their segment service
+      driverReceives = baseFare;
+      
+      console.log('✅ Segment Pricing Calculated:', {
+        perKmRate,
+        userSearchDistance,
+        seatsBooked,
+        baseFare,
+        platformFee,
+        gst,
+        totalPassengerPays,
+        driverReceives
+      });
+      
+      return {
+        fareType,
+        baseFare,
+        platformFee,
+        gst,
+        totalPassengerPays,
+        driverReceives,
+        perKmRate,
+        distance: userSearchDistance,
+        seatsBooked,
+        isSegment: true
+      };
+    } else {
+      // Segment booking but missing data - try to extract from segmentFare
+      console.warn('⚠️ Segment booking detected but missing perKmRate or userSearchDistance');
+      
+      if (segmentFare) {
+        // Reverse calculate from segmentFare (which includes all fees)
+        // segmentFare = base + (base * 0.08) + (base * 0.08 * 0.18)
+        // segmentFare = base * (1 + 0.08 + 0.0144) = base * 1.0944
+        baseFare = segmentFare / 1.0944 * seatsBooked;
+        platformFee = baseFare * 0.08;
+        gst = platformFee * 0.18;
+        totalPassengerPays = segmentFare * seatsBooked;
+        driverReceives = baseFare;
+        
+        return {
+          fareType: 'Segment',
+          baseFare,
+          platformFee,
+          gst,
+          totalPassengerPays,
+          driverReceives,
+          perKmRate: perKmRate || 0,
+          distance: userSearchDistance || 0,
+          seatsBooked,
+          isSegment: true
+        };
+      }
+    }
+  }
+  
+  // 📏 PRIORITY 2: PER KM PRICING (Full Route)
+  if (fareMode === 'per_km' && perKmRate > 0 && totalDistance > 0) {
+    fareType = 'Per KM';
+    
+    baseFare = perKmRate * totalDistance * seatsBooked;
+    platformFee = baseFare * 0.08;
+    gst = platformFee * 0.18;
+    totalPassengerPays = baseFare + platformFee + gst;
+    driverReceives = baseFare;
+    
+    return {
+      fareType,
+      baseFare,
+      platformFee,
+      gst,
+      totalPassengerPays,
+      driverReceives,
+      perKmRate,
+      distance: totalDistance,
+      seatsBooked,
+      isSegment: false
+    };
+  }
+  
+  // 💵 PRIORITY 3: FIXED FARE (Fallback)
+  // Only use this if we're sure it's NOT a segment booking
+  if (!matchType || matchType !== 'on_route') {
+    const fixedFarePerSeat = notification.baseFare 
+      ? notification.baseFare / (notification.seatsBooked || 1) 
+      : (ride.fare || 0);
+      
+    baseFare = fixedFarePerSeat * seatsBooked;
+    platformFee = baseFare * 0.08;
+    gst = platformFee * 0.18;
+    totalPassengerPays = baseFare + platformFee + gst;
+    driverReceives = baseFare;
+    
+    return {
+      fareType: 'Fixed',
+      baseFare,
+      platformFee,
+      gst,
+      totalPassengerPays,
+      driverReceives,
+      perKmRate: 0,
+      distance: totalDistance,
+      seatsBooked,
+      isSegment: false
+    };
+  }
+  
+  // 🚨 FALLBACK: If we get here, something is wrong - return safe defaults
+  console.error('❌ Could not determine payment calculation method', {
+    notification,
+    ride
+  });
+  
+  return {
+    fareType: 'Unknown',
+    baseFare: 0,
+    platformFee: 0,
+    gst: 0,
+    totalPassengerPays: 0,
+    driverReceives: 0,
+    perKmRate: 0,
+    distance: 0,
+    seatsBooked,
+    isSegment: false
+  };
+};
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -79,6 +284,7 @@ function NotificationsPage() {
   };
 
   const getTimeAgo = (date) => {
+    if (!date) return '';
     const seconds = Math.floor((new Date() - new Date(date)) / 1000);
     
     let interval = seconds / 31536000;
@@ -100,35 +306,38 @@ function NotificationsPage() {
   };
 
   const getStatusBadge = (notification) => {
-    const isCompleted = notification.paymentStatus === 'completed' || notification.status === 'paid';
+    const isCompleted = notification.paymentStatus === 'completed' || notification.status === 'completed';
     
     if (isCompleted) return 'bg-blue-100 text-blue-700 border-blue-300';
     
     const badges = {
       pending: 'bg-yellow-100 text-yellow-700 border-yellow-300',
       accepted: 'bg-green-100 text-green-700 border-green-300',
-      rejected: 'bg-red-100 text-red-700 border-red-300'
+      rejected: 'bg-red-100 text-red-700 border-red-300',
+      cancelled: 'bg-gray-100 text-gray-700 border-gray-300'
     };
     return badges[notification.status] || badges.pending;
   };
 
   const getDisplayStatus = (notification) => {
-    if (notification.paymentStatus === 'completed' || notification.status === 'paid') {
+    if (notification.paymentStatus === 'completed' || notification.status === 'completed') {
       return 'completed';
     }
     return notification.status;
   };
 
-  const filteredNotifications = filter === 'all' 
-    ? notifications 
-    : filter === 'completed'
-    ? notifications.filter(n => n.paymentStatus === 'completed' || n.status === 'paid')
-    : notifications.filter(n => n.status === filter && n.paymentStatus !== 'completed');
+  const safeNotifications = Array.isArray(notifications) ? notifications : [];
 
-  const pendingCount = notifications.filter(n => n.status === 'pending').length;
-  const acceptedCount = notifications.filter(n => n.status === 'accepted' && n.paymentStatus !== 'completed').length;
-  const rejectedCount = notifications.filter(n => n.status === 'rejected').length;
-  const completedCount = notifications.filter(n => n.paymentStatus === 'completed' || n.status === 'paid').length;
+  const filteredNotifications = filter === 'all' 
+    ? safeNotifications 
+    : filter === 'completed'
+    ? safeNotifications.filter(n => n.paymentStatus === 'completed' || n.status === 'completed')
+    : safeNotifications.filter(n => n.status === filter && n.paymentStatus !== 'completed');
+
+  const pendingCount = safeNotifications.filter(n => n.status === 'pending').length;
+  const acceptedCount = safeNotifications.filter(n => n.status === 'accepted' && n.paymentStatus !== 'completed').length;
+  const rejectedCount = safeNotifications.filter(n => n.status === 'rejected').length;
+  const completedCount = safeNotifications.filter(n => n.paymentStatus === 'completed' || n.status === 'completed').length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-green-50 py-8">
@@ -156,7 +365,7 @@ function NotificationsPage() {
                 </svg>
               </div>
               <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Total Requests</p>
-              <p className="text-2xl md:text-3xl font-bold text-blue-600">{notifications.length}</p>
+              <p className="text-2xl md:text-3xl font-bold text-blue-600">{safeNotifications.length}</p>
             </div>
           </div>
 
@@ -167,7 +376,7 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Pending </p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Pending</p>
               <p className="text-2xl md:text-3xl font-bold text-yellow-600">{pendingCount}</p>
             </div>
           </div>
@@ -179,7 +388,7 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Accepted </p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Accepted</p>
               <p className="text-2xl md:text-3xl font-bold text-green-600">{acceptedCount}</p>
             </div>
           </div>
@@ -191,7 +400,7 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Completed </p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Completed</p>
               <p className="text-2xl md:text-3xl font-bold text-blue-600">{completedCount}</p>
             </div>
           </div>
@@ -203,36 +412,36 @@ function NotificationsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Rejected </p>
+              <p className="text-xs md:text-sm text-gray-600 mb-1 font-medium">Rejected</p>
               <p className="text-2xl md:text-3xl font-bold text-red-600">{rejectedCount}</p>
             </div>
           </div>
         </div>
 
-     {/* Filter Tabs */}
-<div className="bg-white rounded-xl shadow-lg p-2 mb-6">
-  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-    {[
-      { value: 'pending', label: 'Pending', color: 'yellow' },
-      { value: 'accepted', label: 'Accepted', color: 'green' },
-      { value: 'completed', label: 'Completed', color: 'blue' },
-      { value: 'rejected', label: 'Rejected', color: 'red' },
-      { value: 'all', label: 'All', color: 'gray' }
-    ].map((tab) => (
-      <button
-        key={tab.value}
-        onClick={() => setFilter(tab.value)}
-        className={`px-3 py-2.5 md:px-4 md:py-3 rounded-lg font-semibold transition-all text-sm md:text-base ${
-          filter === tab.value
-            ? 'bg-blue-600 text-white shadow-lg transform scale-105'
-            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md'
-        }`}
-      >
-        {tab.label}
-      </button>
-    ))}
-  </div>
-</div>
+        {/* Filter Tabs */}
+        <div className="bg-white rounded-xl shadow-lg p-2 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {[
+              { value: 'pending', label: 'Pending', color: 'yellow' },
+              { value: 'accepted', label: 'Accepted', color: 'green' },
+              { value: 'completed', label: 'Completed', color: 'blue' },
+              { value: 'rejected', label: 'Rejected', color: 'red' },
+              { value: 'all', label: 'All', color: 'gray' }
+            ].map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => setFilter(tab.value)}
+                className={`px-3 py-2.5 md:px-4 md:py-3 rounded-lg font-semibold transition-all text-sm md:text-base ${
+                  filter === tab.value
+                    ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Error Message */}
         {error && (
@@ -257,6 +466,13 @@ function NotificationsPage() {
             {filteredNotifications.map((notification) => {
               const displayStatus = getDisplayStatus(notification);
               const isCompleted = displayStatus === 'completed';
+              
+              const passenger = notification.passenger || notification.passengerId || {};
+              const driver = notification.driver || notification.driverId || {};
+              const ride = notification.ride || notification.rideId || {};
+              
+              // ✅ CALCULATE PAYMENT DETAILS WITH FIXED LOGIC
+              const payment = calculatePaymentDetails(notification);
 
               return (
                 <div
@@ -268,14 +484,14 @@ function NotificationsPage() {
                     <div className="flex flex-col sm:flex-row items-start justify-between mb-4 gap-3">
                       <div className="flex items-center gap-3 md:gap-4">
                         <div className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-purple-500 via-blue-500 to-pink-500 flex items-center justify-center text-white font-bold text-xl md:text-2xl shadow-lg flex-shrink-0">
-                          {notification.passengerId?.name?.charAt(0).toUpperCase() || 'U'}
+                          {passenger.name?.charAt(0).toUpperCase() || 'U'}
                         </div>
                         <div>
                           <h3 className="text-lg md:text-xl font-bold text-gray-900">
-                            {notification.passengerId?.name || 'Unknown User'}
+                            {passenger.name || 'Unknown User'}
                           </h3>
                           <p className="text-xs md:text-sm text-gray-500">
-                            {notification.passengerId?.email}
+                            {passenger.email || 'No email'}
                           </p>
                           <p className="text-xs text-gray-400 mt-1">
                             Requested {getTimeAgo(notification.createdAt)}
@@ -297,12 +513,23 @@ function NotificationsPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           <div>
-                            <p className="text-blue-800 font-bold text-base">Payment Completed Successfully! 🎉</p>
+<p className="text-blue-800 font-bold text-base">Payment Completed Successfully! 🎉</p>
                             <p className="text-blue-600 text-sm mt-1">
-                              Amount Received: ₹{notification.baseFare?.toFixed(2)} (Base Fare)
+                              You Received: ₹{payment.driverReceives.toFixed(2)}
                             </p>
-                            
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Segment Booking Badge */}
+                    {payment.isSegment && (
+                      <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-3 mb-4 border-2 border-green-300">
+                        <div className="flex items-center justify-center gap-2 text-sm font-bold text-green-800">
+                          <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span>Segment Booking - Passenger traveled {payment.distance} km of your route</span>
                         </div>
                       </div>
                     )}
@@ -315,7 +542,7 @@ function NotificationsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
                         <p className="font-bold text-gray-900 text-base md:text-lg">
-                          {notification.rideId?.start}
+                          {ride.start || 'Not specified'}
                         </p>
                       </div>
                       <div className="flex items-center gap-3 pl-8 my-1">
@@ -330,48 +557,175 @@ function NotificationsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
                         <p className="font-bold text-gray-900 text-base md:text-lg">
-                          {notification.rideId?.end}
+                          {ride.end || 'Not specified'}
                         </p>
                       </div>
+                      {ride.date && (
+                        <div className="mt-3 pt-3 border-t border-blue-200">
+                           <div className="flex items-center gap-2">
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <p className="text-sm text-gray-600">
+                            {formatDate(ride.date)} {ride.time && `at ${formatTime(ride.time)}`}
+                          </p>
+                        </div>
+                      </div>
+                      )}
                     </div>
 
-                   {/* Booking Details Grid - around line 400 */}
-<div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-3 text-center border border-blue-200">
-    <p className="text-xs text-gray-600 mb-1">Seats Booked</p>
-    <p className="text-xl md:text-2xl font-bold text-blue-600">{notification.seatsBooked}</p>
-  </div>
-  <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-3 text-center border border-green-200">
-    <p className="text-xs text-gray-600 mb-1">Base Fare</p>
-    <p className="text-lg md:text-xl font-bold text-green-600">₹{notification.baseFare?.toFixed(2)}</p>
-  </div>
-  <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-3 text-center border border-red-200">
-    <p className="text-xs text-gray-600 mb-1">Your Fee</p>
-    <p className="text-sm font-bold text-red-600">
-      -₹{((notification.baseFare * 0.08) + (notification.baseFare * 0.08 * 0.18)).toFixed(2)}
-    </p>
-  </div>
-  <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-3 text-center border border-yellow-200">
-    <p className="text-xs text-gray-600 mb-1">You Receive</p>
-    <p className="text-lg md:text-xl font-bold text-yellow-600">
-      ₹{(notification.baseFare - (notification.baseFare * 0.08) - (notification.baseFare * 0.08 * 0.18)).toFixed(2)}
-    </p>
-  </div>
-</div>
+                    {/* ✅ ENHANCED BOOKING DETAILS - PAYMENT BREAKDOWN */}
+                    <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-xl p-5 mb-4 border-2 border-green-200">
+                      <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                       
+                        💰 Payment Breakdown ({payment.fareType})
+                      </h4>
+
+                      {/* Fare Type Badge */}
+                      <div className="mb-4">
+                        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
+                          payment.isSegment 
+                            ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                            : payment.fareType === 'Per KM'
+                            ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                            : 'bg-purple-100 text-purple-700 border-2 border-purple-300'
+                        }`}>
+                          {payment.isSegment ? ' Segment Pricing' : payment.fareType === 'Per KM' ? '📏 Per KM Pricing' : '💵 Fixed Fare'}
+                        </span>
+                      </div>
+
+                      {/* Pricing Details */}
+                      {payment.isSegment && (
+                        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg p-4 mb-3 border-2 border-indigo-200">
+                          <div className="text-xs font-semibold text-indigo-800 mb-3 uppercase tracking-wide">
+                            Segment Details
+                          </div>
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-700">Your Per KM Rate:</span>
+                              <span className="font-bold text-indigo-700">₹{payment.perKmRate}/km</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-700">Passenger's Distance:</span>
+                              <span className="font-bold text-indigo-700">{payment.distance} km</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-700">Seats Booked:</span>
+                              <span className="font-bold text-indigo-700">{payment.seatsBooked}</span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t border-indigo-200">
+                              <span className="text-gray-700">Calculation:</span>
+                              <span className="font-bold text-indigo-900">
+                                ₹{payment.perKmRate} × {payment.distance} km × {payment.seatsBooked} seat{payment.seatsBooked > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {payment.fareType === 'Per KM' && !payment.isSegment && (
+                        <div className="bg-blue-50 rounded-lg p-3 mb-3 border border-blue-200">
+                          <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-700">Your Rate:</span>
+                              <span className="font-bold text-blue-700">₹{payment.perKmRate}/km</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-700">Distance:</span>
+                              <span className="font-bold text-blue-700">{payment.distance} km</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-700">Seats:</span>
+                              <span className="font-bold text-blue-700">{payment.seatsBooked}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Financial Breakdown */}
+                      <div className="bg-white rounded-lg p-4 border-2 border-gray-200 space-y-3">
+                        <div className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                          Financial Summary
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-600">Base Fare:</span>
+                            <span className="font-semibold text-gray-900">₹{payment.baseFare.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-red-600">
+                            <span>Platform Fee (8%):</span>
+                            <span className="font-semibold">-₹{payment.platformFee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-red-600">
+                            <span>GST (18% on fee):</span>
+                            <span className="font-semibold">-₹{payment.gst.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between items-center pt-2 border-t-2 border-gray-300">
+                            <span className="text-gray-600">Driver Receives:</span>
+<span className="font-bold text-blue-600">
+  ₹{(payment.baseFare - payment.platformFee - payment.gst).toFixed(2)}
+</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Driver Receives */}
+                      <div className="bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg p-4 shadow-lg mt-3">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="text-xs opacity-90 mb-1">💰 You Receive</div>
+                            <div className="text-2xl font-bold"> ₹{(payment.baseFare - payment.platformFee - payment.gst).toFixed(2)}</div>
+                            <div className="text-xs opacity-80 mt-1">
+                              {payment.isSegment 
+                                ? `(Fare for ${payment.distance} km segment)` 
+                                : '(Fare for your service)'}
+                            </div>
+                          </div>
+                          <svg className="w-12 h-12 opacity-20" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      </div>
+
+                      {/* Info Box */}
+                      <div className="bg-blue-50 rounded-lg p-3 mt-3 border border-blue-200">
+                        <div className="flex items-start gap-2">
+                          <svg className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                          <div className="text-xs text-blue-800">
+                            <strong>Note:</strong> Platform fee & GST are deducted from total payment. You receive the full base fare for your service.
+                            {payment.isSegment && (
+                              <span className="block mt-1">
+                                <strong>Segment Booking:</strong> Payment calculated for passenger's {payment.distance} km journey only.
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
 
                     {/* Pickup/Drop Locations */}
                     {(notification.pickupLocation || notification.dropLocation) && (
                       <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
                         {notification.pickupLocation && (
                           <div className="mb-2">
-                            <p className="text-xs text-gray-500 mb-1">Pickup Location</p>
-                            <p className="text-sm font-semibold text-gray-900">{notification.pickupLocation}</p>
+                            <p className="text-xs text-gray-500 mb-1">📍 Pickup Location</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {typeof notification.pickupLocation === 'object' 
+                                ? notification.pickupLocation.address 
+                                : notification.pickupLocation}
+                            </p>
                           </div>
                         )}
                         {notification.dropLocation && (
                           <div>
-                            <p className="text-xs text-gray-500 mb-1">Drop Location</p>
-                            <p className="text-sm font-semibold text-gray-900">{notification.dropLocation}</p>
+                            <p className="text-xs text-gray-500 mb-1"> 🎯 Drop Location</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {typeof notification.dropLocation === 'object' 
+                                ? notification.dropLocation.address 
+                                : notification.dropLocation}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -385,7 +739,7 @@ function NotificationsPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                           </svg>
                           <div>
-                            <p className="font-semibold text-yellow-800 text-sm mb-1">Passenger Notes:</p>
+                            <p className="font-semibold text-yellow-800 text-sm mb-1">💬 Passenger Notes:</p>
                             <p className="text-sm text-yellow-700">{notification.passengerNotes}</p>
                           </div>
                         </div>
@@ -413,7 +767,7 @@ function NotificationsPage() {
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                               </svg>
-                              <span>Accept</span>
+                              <span>Accept (₹{payment.driverReceives.toFixed(2)})</span>
                             </>
                           )}
                         </button>
@@ -442,8 +796,16 @@ function NotificationsPage() {
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                           </svg>
-                          Booking Accepted - Awaiting Payment
+                           Booking Accepted - Awaiting Payment
                         </p>
+                        <p className="text-green-600 text-sm mt-2">
+                          You'll receive your earning once passenger completes payment
+                        </p>
+                        {notification.confirmedAt && (
+                          <p className="text-green-600 text-xs mt-1">
+                            Confirmed {getTimeAgo(notification.confirmedAt)}
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -453,8 +815,39 @@ function NotificationsPage() {
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                           </svg>
-                          You Rejected This Request
+                          ❌ You Rejected This Request
                         </p>
+                        {notification.rejectionReason && (
+                          <p className="text-red-600 text-sm mt-2">
+                            Reason: {notification.rejectionReason}
+                          </p>
+                        )}
+                        {notification.rejectedAt && (
+                          <p className="text-red-500 text-xs mt-1">
+                            Rejected {getTimeAgo(notification.rejectedAt)}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {notification.status === 'cancelled' && (
+                      <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-4 text-center">
+                        <p className="text-gray-700 font-bold flex items-center justify-center gap-2">
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                          ⊘ Booking Cancelled
+                        </p>
+                        {notification.cancellationReason && (
+                          <p className="text-gray-600 text-sm mt-2">
+                            Reason: {notification.cancellationReason}
+                          </p>
+                        )}
+                        {notification.cancelledAt && (
+                          <p className="text-gray-500 text-xs mt-1">
+                            Cancelled {getTimeAgo(notification.cancelledAt)} by {notification.cancelledBy || 'user'}
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

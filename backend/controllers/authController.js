@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const { sendPasswordResetEmail } = require('../services/utils/emailService');
+const { sendPasswordResetEmail } = require('../services/emailService');
 
 // Generate JWT Token
 const generateToken = (userId) => {

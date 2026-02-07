@@ -40,9 +40,9 @@ rideAPI.interceptors.response.use(
         localStorage.removeItem('user');
         window.location.href = '/login';
       } else if (status === 404) {
-        return Promise.reject('Resource not found');
+        return Promise.reject(data?.message || 'Resource not found');
       } else if (status === 500) {
-        return Promise.reject('Server error. Please try again later.');
+        return Promise.reject(data?.message || 'Server error. Please try again later.');
       }
       
       return Promise.reject(data?.message || 'An error occurred');
@@ -58,14 +58,7 @@ rideAPI.interceptors.response.use(
 
 /**
  * Post a new ride
- * @param {Object} rideData - Ride details
- * @param {string} rideData.start - Starting location
- * @param {string} rideData.end - Destination
- * @param {string} rideData.date - Ride date
- * @param {string} rideData.time - Ride time
- * @param {number} rideData.seats - Available seats
- * @param {number} rideData.fare - Fare per seat
- * @param {number} rideData.driverId - Driver user ID
+ * @param {Object} rideData - Ride details (matching schema structure)
  * @returns {Promise<Object>} Created ride data
  */
 export const postRide = async (rideData) => {
@@ -82,21 +75,30 @@ export const postRide = async (rideData) => {
  * Search for available rides
  * @param {string} start - Starting location
  * @param {string} end - Destination
- * @param {Object} filters - Optional filters
- * @param {string} filters.date - Specific date
- * @param {number} filters.minSeats - Minimum seats required
- * @param {number} filters.maxFare - Maximum fare
+ * @param {string} [date] - Optional specific date (YYYY-MM-DD)
+ * @param {Object} [additionalFilters] - Additional optional filters
+ * @param {number} additionalFilters.minSeats - Minimum seats required
+ * @param {number} additionalFilters.maxFare - Maximum fare
+ * @param {string} additionalFilters.vehicleType - Vehicle type filter
+ * @param {boolean} additionalFilters.acAvailable - AC availability
  * @returns {Promise<Array>} Array of matching rides
  */
-export const searchRides = async (start, end, filters = {}) => {
+export const searchRides = async (start, end, date = null, additionalFilters = {}) => {
   try {
-    const response = await rideAPI.get('/search', {
-      params: { 
-        start, 
-        end,
-        ...filters
-      },
-    });
+    const params = { 
+      start, 
+      end,
+    };
+    
+    // Add date if provided
+    if (date) {
+      params.date = date;
+    }
+    
+    // Merge additional filters
+    Object.assign(params, additionalFilters);
+    
+    const response = await rideAPI.get('/search', { params });
     return response.data;
   } catch (error) {
     console.error('Search Rides error:', error);
@@ -107,7 +109,7 @@ export const searchRides = async (start, end, filters = {}) => {
 /**
  * Get a specific ride by ID
  * @param {string|number} rideId - Ride ID
- * @returns {Promise<Object>} Ride details
+ * @returns {Promise<Object>} Ride details with populated driver and booking info
  */
 export const getRideById = async (rideId) => {
   try {
@@ -121,11 +123,13 @@ export const getRideById = async (rideId) => {
 
 /**
  * Get all rides posted by the current user
+ * @param {Object} [filters] - Optional filters
+ * @param {string} filters.status - Filter by ride status (active, completed, cancelled)
  * @returns {Promise<Array>} Array of user's rides
  */
-export const getMyRides = async () => {
+export const getMyRides = async (filters = {}) => {
   try {
-    const response = await rideAPI.get('/my-rides');
+    const response = await rideAPI.get('/my-rides', { params: filters });
     return response.data;
   } catch (error) {
     console.error('Get My Rides error:', error);
@@ -136,7 +140,7 @@ export const getMyRides = async () => {
 /**
  * Update an existing ride
  * @param {string|number} rideId - Ride ID
- * @param {Object} updateData - Updated ride data
+ * @param {Object} updateData - Updated ride data (partial update supported)
  * @returns {Promise<Object>} Updated ride data
  */
 export const updateRide = async (rideId, updateData) => {
@@ -150,13 +154,16 @@ export const updateRide = async (rideId, updateData) => {
 };
 
 /**
- * Delete a ride
+ * Delete/Cancel a ride
  * @param {string|number} rideId - Ride ID
+ * @param {string} [reason] - Cancellation reason
  * @returns {Promise<Object>} Deletion confirmation
  */
-export const deleteRide = async (rideId) => {
+export const deleteRide = async (rideId, reason = '') => {
   try {
-    const response = await rideAPI.delete(`/${rideId}`);
+    const response = await rideAPI.delete(`/${rideId}`, {
+      data: { cancellationReason: reason }
+    });
     return response.data;
   } catch (error) {
     console.error('Delete Ride error:', error);
@@ -169,6 +176,9 @@ export const deleteRide = async (rideId) => {
  * @param {string|number} rideId - Ride ID
  * @param {Object} bookingData - Booking details
  * @param {number} bookingData.seatsRequested - Number of seats to book
+ * @param {string} [bookingData.pickupLocation] - Specific pickup location
+ * @param {string} [bookingData.dropLocation] - Specific drop location
+ * @param {string} [bookingData.passengerNotes] - Additional notes
  * @returns {Promise<Object>} Booking confirmation
  */
 export const requestRide = async (rideId, bookingData) => {
@@ -182,9 +192,9 @@ export const requestRide = async (rideId, bookingData) => {
 };
 
 /**
- * Get ride requests for a specific ride
+ * Get ride requests/bookings for a specific ride (Driver view)
  * @param {string|number} rideId - Ride ID
- * @returns {Promise<Array>} Array of ride requests
+ * @returns {Promise<Array>} Array of ride requests/bookings
  */
 export const getRideRequests = async (rideId) => {
   try {
@@ -199,13 +209,18 @@ export const getRideRequests = async (rideId) => {
 /**
  * Accept or reject a ride request
  * @param {string|number} rideId - Ride ID
- * @param {string|number} requestId - Request ID
- * @param {string} status - 'accepted' or 'rejected'
+ * @param {string|number} requestId - Request/Booking ID
+ * @param {string} status - 'confirmed', 'cancelled', or 'rejected'
+ * @param {string} [reason] - Reason for rejection (if applicable)
  * @returns {Promise<Object>} Updated request data
  */
-export const updateRideRequest = async (rideId, requestId, status) => {
+export const updateRideRequest = async (rideId, requestId, status, reason = '') => {
   try {
-    const response = await rideAPI.put(`/${rideId}/requests/${requestId}`, { status });
+    const payload = { status };
+    if (reason) {
+      payload.cancellationReason = reason;
+    }
+    const response = await rideAPI.put(`/${rideId}/requests/${requestId}`, payload);
     return response.data;
   } catch (error) {
     console.error('Update Ride Request error:', error);
@@ -214,14 +229,17 @@ export const updateRideRequest = async (rideId, requestId, status) => {
 };
 
 /**
- * Cancel a ride booking
+ * Cancel a ride booking (Passenger cancellation)
  * @param {string|number} rideId - Ride ID
  * @param {string|number} bookingId - Booking ID
+ * @param {string} [reason] - Cancellation reason
  * @returns {Promise<Object>} Cancellation confirmation
  */
-export const cancelBooking = async (rideId, bookingId) => {
+export const cancelBooking = async (rideId, bookingId, reason = '') => {
   try {
-    const response = await rideAPI.delete(`/${rideId}/bookings/${bookingId}`);
+    const response = await rideAPI.delete(`/${rideId}/bookings/${bookingId}`, {
+      data: { cancellationReason: reason }
+    });
     return response.data;
   } catch (error) {
     console.error('Cancel Booking error:', error);
@@ -230,12 +248,16 @@ export const cancelBooking = async (rideId, bookingId) => {
 };
 
 /**
- * Get user's booking history
+ * Get user's booking history (Passenger view)
+ * @param {Object} [filters] - Optional filters
+ * @param {string} filters.status - Filter by booking status
+ * @param {string} filters.fromDate - Start date for filtering
+ * @param {string} filters.toDate - End date for filtering
  * @returns {Promise<Array>} Array of user's bookings
  */
-export const getMyBookings = async () => {
+export const getMyBookings = async (filters = {}) => {
   try {
-    const response = await rideAPI.get('/my-bookings');
+    const response = await rideAPI.get('/my-bookings', { params: filters });
     return response.data;
   } catch (error) {
     console.error('Get My Bookings error:', error);
@@ -246,17 +268,100 @@ export const getMyBookings = async () => {
 /**
  * Rate a completed ride
  * @param {string|number} rideId - Ride ID
+ * @param {string|number} bookingId - Booking ID
  * @param {Object} ratingData - Rating details
- * @param {number} ratingData.rating - Rating (1-5)
- * @param {string} ratingData.review - Optional review text
+ * @param {number} ratingData.score - Rating score (1-5)
+ * @param {string} [ratingData.review] - Optional review text
  * @returns {Promise<Object>} Rating confirmation
  */
-export const rateRide = async (rideId, ratingData) => {
+export const rateRide = async (rideId, bookingId, ratingData) => {
   try {
-    const response = await rideAPI.post(`/${rideId}/rate`, ratingData);
+    const response = await rideAPI.post(`/${rideId}/bookings/${bookingId}/rate`, ratingData);
     return response.data;
   } catch (error) {
     console.error('Rate Ride error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update ride status (for drivers)
+ * @param {string|number} rideId - Ride ID
+ * @param {string} status - New status ('active', 'in_progress', 'completed', 'cancelled')
+ * @returns {Promise<Object>} Updated ride data
+ */
+export const updateRideStatus = async (rideId, status) => {
+  try {
+    const response = await rideAPI.patch(`/${rideId}/status`, { rideStatus: status });
+    return response.data;
+  } catch (error) {
+    console.error('Update Ride Status error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get available seats for a specific segment of the ride
+ * @param {string|number} rideId - Ride ID
+ * @param {string} pickupPoint - Pickup location
+ * @param {string} dropPoint - Drop location
+ * @returns {Promise<Object>} Available seats info
+ */
+export const checkSegmentAvailability = async (rideId, pickupPoint, dropPoint) => {
+  try {
+    const response = await rideAPI.get(`/${rideId}/availability`, {
+      params: { pickupPoint, dropPoint }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Check Segment Availability error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Increment view count for a ride
+ * @param {string|number} rideId - Ride ID
+ * @returns {Promise<void>}
+ */
+export const incrementViewCount = async (rideId) => {
+  try {
+    await rideAPI.post(`/${rideId}/view`);
+  } catch (error) {
+    console.error('Increment View Count error:', error);
+    // Don't throw error for view count - it's not critical
+  }
+};
+
+/**
+ * Get featured/verified rides
+ * @param {Object} [filters] - Optional filters
+ * @returns {Promise<Array>} Array of featured rides
+ */
+export const getFeaturedRides = async (filters = {}) => {
+  try {
+    const response = await rideAPI.get('/featured', { params: filters });
+    return response.data;
+  } catch (error) {
+    console.error('Get Featured Rides error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get rides with partial route matching
+ * @param {string} start - Starting location
+ * @param {string} end - Destination
+ * @returns {Promise<Array>} Array of rides that pass through or near the route
+ */
+export const searchPartialRoutes = async (start, end) => {
+  try {
+    const response = await rideAPI.get('/search/partial', {
+      params: { start, end }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Search Partial Routes error:', error);
     throw error;
   }
 };

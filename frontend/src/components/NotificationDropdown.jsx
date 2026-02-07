@@ -16,13 +16,11 @@ function NotificationDropdown() {
   useEffect(() => {
     if (user) {
       fetchNotifications();
-      // Refresh every 30 seconds
       const interval = setInterval(fetchNotifications, 30000);
       return () => clearInterval(interval);
     }
   }, [user]);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -35,59 +33,82 @@ function NotificationDropdown() {
 
   const fetchNotifications = async () => {
     try {
-      const bookings = await getDriverBookings();
-      // Only show pending bookings as notifications
-      const pendingBookings = bookings.filter(b => b.status === 'pending');
+      setLoading(true);
+      const response = await getDriverBookings();
+      
+      console.log('📬 Bookings response:', response);
+      
+      // CRITICAL FIX: Handle different response formats
+      let bookingsArray = [];
+      
+      if (Array.isArray(response)) {
+        // Direct array response
+        bookingsArray = response;
+      } else if (response?.data && Array.isArray(response.data)) {
+        // Wrapped in data property
+        bookingsArray = response.data;
+      } else if (response?.bookings && Array.isArray(response.bookings)) {
+        // Wrapped in bookings property
+        bookingsArray = response.bookings;
+      } else {
+        console.warn('⚠️ Unexpected response format:', response);
+        bookingsArray = [];
+      }
+      
+      console.log('📋 Bookings array:', bookingsArray);
+      
+      // Filter for pending bookings
+      const pendingBookings = bookingsArray.filter(b => b.status === 'pending');
+      
+      console.log('🔔 Pending notifications:', pendingBookings.length);
+      
       setNotifications(pendingBookings);
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.error('❌ Error fetching notifications:', error);
+      setNotifications([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleAccept = async (bookingId, e) => {
     e.stopPropagation();
     setProcessingId(bookingId);
+    
     try {
+      // CRITICAL: Use 'accepted' to match backend validation
       await updateBookingStatus(bookingId, 'accepted');
       
-      // Show success toast
-      toast.success(
-        'Ride request accepted successfully',
-        {
-          duration: 3000,
-          position: 'top-center',
-          style: {
-            background: '#10B981',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-          iconTheme: {
-            primary: '#fff',
-            secondary: '#10B981',
-          },
-        }
-      );
+      toast.success('Ride request accepted successfully', {
+        duration: 3000,
+        position: 'top-center',
+        style: {
+          background: '#10B981',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+        iconTheme: {
+          primary: '#fff',
+          secondary: '#10B981',
+        },
+      });
       
-      // Remove from notifications
       setNotifications(notifications.filter(n => n._id !== bookingId));
     } catch (error) {
-      // Show error toast
-      toast.error(
-        'Failed to accept ride request',
-        {
-          duration: 4000,
-          position: 'top-center',
-          style: {
-            background: '#EF4444',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        }
-      );
+      console.error('Error accepting booking:', error);
+      toast.error(error.response?.data?.message || 'Failed to accept ride request', {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setProcessingId(null);
     }
@@ -98,48 +119,44 @@ function NotificationDropdown() {
     if (!window.confirm('Are you sure you want to reject this booking?')) {
       return;
     }
+    
     setProcessingId(bookingId);
+    
     try {
-      await updateBookingStatus(bookingId, 'rejected');
+      await updateBookingStatus(bookingId, 'rejected', { 
+        reason: 'Driver rejected the booking' 
+      });
       
-      // Show success toast
-      toast.success(
-        'Ride request rejected',
-        {
-          duration: 3000,
-          position: 'top-center',
-          style: {
-            background: '#10B981',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-          iconTheme: {
-            primary: '#fff',
-            secondary: '#10B981',
-          },
-        }
-      );
+      toast.success('Ride request rejected', {
+        duration: 3000,
+        position: 'top-center',
+        style: {
+          background: '#10B981',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+        iconTheme: {
+          primary: '#fff',
+          secondary: '#10B981',
+        },
+      });
       
-      // Remove from notifications
       setNotifications(notifications.filter(n => n._id !== bookingId));
     } catch (error) {
-      // Show error toast
-      toast.error(
-        'Failed to reject ride request',
-        {
-          duration: 4000,
-          position: 'top-center',
-          style: {
-            background: '#EF4444',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        }
-      );
+      console.error('Error rejecting booking:', error);
+      toast.error(error.response?.data?.message || 'Failed to reject ride request', {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
     } finally {
       setProcessingId(null);
     }
@@ -185,7 +202,6 @@ function NotificationDropdown() {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Notification Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-gray-700 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
@@ -205,7 +221,6 @@ function NotificationDropdown() {
           />
         </svg>
         
-        {/* Badge */}
         {notifications.length > 0 && (
           <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full animate-pulse">
             {notifications.length > 9 ? '9+' : notifications.length}
@@ -213,10 +228,8 @@ function NotificationDropdown() {
         )}
       </button>
 
-      {/* Dropdown - Responsive positioning and width */}
       {isOpen && (
         <div className="fixed sm:absolute right-0 left-0 sm:left-auto mt-2 sm:w-96 bg-white rounded-xl shadow-2xl border-2 border-gray-200 z-50 max-h-[600px] sm:max-h-[600px] max-h-[calc(100vh-80px)] overflow-hidden flex flex-col mx-2 sm:mx-0">
-          {/* Header */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-3 sm:px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -229,7 +242,6 @@ function NotificationDropdown() {
             </span>
           </div>
 
-          {/* Notifications List */}
           <div className="overflow-y-auto flex-1">
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -252,14 +264,14 @@ function NotificationDropdown() {
                     key={booking._id}
                     className="p-3 sm:p-4 hover:bg-gray-50 transition-colors"
                   >
-                    {/* User Info */}
                     <div className="flex items-start gap-2 sm:gap-3 mb-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                        {booking.passengerId?.name?.charAt(0).toUpperCase() || 'U'}
+                        {booking.passenger?.name?.charAt(0).toUpperCase() || 
+                         booking.passengerId?.name?.charAt(0).toUpperCase() || 'U'}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 truncate text-sm sm:text-base">
-                          {booking.passengerId?.name || 'Unknown User'}
+                          {booking.passenger?.name || booking.passengerId?.name || 'Unknown User'}
                         </p>
                         <p className="text-xs text-gray-500">
                           {getTimeAgo(booking.createdAt)}
@@ -267,14 +279,13 @@ function NotificationDropdown() {
                       </div>
                     </div>
 
-                    {/* Ride Details */}
                     <div className="bg-blue-50 rounded-lg p-2 sm:p-3 mb-3">
                       <div className="flex items-center gap-2 mb-2">
                         <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         </svg>
                         <p className="font-semibold text-blue-900 text-xs sm:text-sm break-words">
-                          {booking.rideId?.start}
+                          {booking.ride?.start || booking.rideId?.start || booking.pickupLocation}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 pl-6">
@@ -287,12 +298,11 @@ function NotificationDropdown() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                         </svg>
                         <p className="font-semibold text-blue-900 text-xs sm:text-sm break-words">
-                          {booking.rideId?.end}
+                          {booking.ride?.end || booking.rideId?.end || booking.dropLocation}
                         </p>
                       </div>
                     </div>
 
-                    {/* Booking Info - Responsive grid */}
                     <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mb-3">
                       <div className="bg-gray-50 rounded-lg p-1.5 sm:p-2 text-center">
                         <p className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">Seats</p>
@@ -301,16 +311,17 @@ function NotificationDropdown() {
                       <div className="bg-gray-50 rounded-lg p-1.5 sm:p-2 text-center">
                         <p className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">Date</p>
                         <p className="font-bold text-gray-900 text-[10px] sm:text-xs leading-tight">
-                          {formatDate(booking.rideId?.date)}
+                          {formatDate(booking.ride?.date || booking.rideId?.date)}
                         </p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-1.5 sm:p-2 text-center">
                         <p className="text-[10px] sm:text-xs text-gray-500 mb-0.5 sm:mb-1">Fare</p>
-                        <p className="font-bold text-green-600 text-sm sm:text-base">₹{booking.totalFare?.toFixed(2)}</p>
+                        <p className="font-bold text-green-600 text-sm sm:text-base">
+                          ₹{booking.totalFare?.toFixed(2) || 0}
+                        </p>
                       </div>
                     </div>
 
-                    {/* Passenger Notes */}
                     {booking.passengerNotes && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mb-3">
                         <p className="text-xs text-yellow-800">
@@ -319,7 +330,6 @@ function NotificationDropdown() {
                       </div>
                     )}
 
-                    {/* Action Buttons - Stack on very small screens */}
                     <div className="flex flex-col xs:flex-row gap-2">
                       <button
                         onClick={(e) => handleAccept(booking._id, e)}
@@ -366,7 +376,6 @@ function NotificationDropdown() {
             )}
           </div>
 
-          {/* Footer */}
           {notifications.length > 0 && (
             <div className="border-t border-gray-200 p-3 bg-gray-50">
               <Link

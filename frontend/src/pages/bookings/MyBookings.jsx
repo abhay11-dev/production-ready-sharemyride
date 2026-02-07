@@ -14,15 +14,31 @@ const MyBookings = () => {
 
   useEffect(() => {
     fetchBookings();
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(fetchBookings, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchBookings = async () => {
     try {
       setLoading(true);
-      const data = await getMyBookings();
-      setBookings(data);
+      const response = await getMyBookings();
+      
+      // ✅ Handle multiple response formats
+      let bookingsArray = [];
+      if (Array.isArray(response)) {
+        bookingsArray = response;
+      } else if (response.data && Array.isArray(response.data)) {
+        bookingsArray = response.data;
+      } else if (response.bookings && Array.isArray(response.bookings)) {
+        bookingsArray = response.bookings;
+      }
+      
+      console.log('📋 My bookings loaded:', bookingsArray.length);
+      setBookings(bookingsArray);
     } catch (error) {
       console.error('Error fetching bookings:', error);
+      setBookings([]); // ✅ Set empty array on error
       toast.error('Failed to load bookings', {
         duration: 3000,
         position: 'top-center',
@@ -39,75 +55,55 @@ const MyBookings = () => {
     }
   };
 
-  const handleMakePayment = async (booking) => {
-    if (!window.Razorpay) {
-      toast.error('Payment service is not available. Please refresh the page.', {
-        duration: 4000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
+  // In MyBookings.jsx, update the handleMakePayment function:
+
+const handleMakePayment = async (booking) => {
+  if (!window.Razorpay) {
+    toast.error('Payment service is not available. Please refresh the page.', {
+      duration: 4000,
+      position: 'top-center',
+    });
+    return;
+  }
+
+  setProcessingPayment(booking._id);
+
+  try {
+    console.log('Creating payment order for booking:', booking._id);
+
+    // ✅ Extract rideId from booking
+    const rideId = booking.ride?._id || booking.rideId?._id || booking.rideId;
+    
+    if (!rideId) {
+      toast.error('Ride information is missing. Please try again.');
+      setProcessingPayment(null);
       return;
     }
 
-    setProcessingPayment(booking._id);
+    // ✅ Pass both bookingId and rideId
+    const response = await createPaymentOrder(booking._id, rideId);
 
-    try {
-      console.log('Creating payment order for booking:', booking._id);
-
-      const response = await createPaymentOrder(booking._id);
-
-      if (!response.success) {
-        toast.error('Failed to create payment order: ' + response.message, {
-          duration: 4000,
-          position: 'top-center',
-          style: {
-            background: '#EF4444',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        });
-        setProcessingPayment(null);
-        return;
-      }
+    if (!response.success) {
+      toast.error('Failed to create payment order: ' + response.message);
+      setProcessingPayment(null);
+      return;
+    }
 
       const orderData = response.data;
-      console.log('Payment order created:', orderData.orderId);
-      console.log('Order details:', {
-        key: orderData.razorpayKeyId,
-        amount: orderData.amount,
-        currency: orderData.currency,
-        orderId: orderData.orderId
-      });
 
       const options = {
         key: orderData.razorpayKeyId,
         amount: orderData.amount,
         currency: orderData.currency,
-        name: 'RideShare',
+        name: 'ShareMyRide',
         description: `${booking.pickupLocation} → ${booking.dropLocation}`,
         order_id: orderData.orderId,
         handler: async function(razorpayResponse) {
           console.log('Payment successful:', razorpayResponse.razorpay_payment_id);
 
           try {
-            // Show loading toast while verifying
             const verifyingToast = toast.loading('Verifying payment...', {
               position: 'top-center',
-              style: {
-                background: '#3B82F6',
-                color: '#fff',
-                fontWeight: '600',
-                padding: '16px',
-                borderRadius: '12px',
-              },
             });
 
             const verifyData = await verifyPayment({
@@ -120,84 +116,32 @@ const MyBookings = () => {
             toast.dismiss(verifyingToast);
 
             if (verifyData.success) {
-              console.log('Payment verified successfully');
-              
-              toast.success(
-                `Payment Successful!`,
-                {
-                  duration: 5000,
-                  position: 'top-center',
-                  style: {
-                    background: '#10B981',
-                    color: '#fff',
-                    fontWeight: '600',
-                    padding: '16px',
-                    borderRadius: '12px',
-                  },
-                  iconTheme: {
-                    primary: '#fff',
-                    secondary: '#10B981',
-                  },
-                }
-              );
-              
-              await fetchBookings();
-            } else {
-              toast.error('Payment verification failed. Please contact support.', {
-                duration: 4000,
+              toast.success('Payment Successful! ', {
+                duration: 5000,
                 position: 'top-center',
                 style: {
-                  background: '#EF4444',
+                  background: '#10B981',
                   color: '#fff',
                   fontWeight: '600',
                   padding: '16px',
                   borderRadius: '12px',
                 },
               });
+              
+              await fetchBookings();
+            } else {
+              toast.error('Payment verification failed. Please contact support.');
             }
           } catch (error) {
             console.error('Payment verification error:', error);
             
-            // Check if it's a timeout error
             if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-              toast.success(
-                'Payment successful! Verification in progress. Please refresh in a moment.',
-                {
-                  duration: 6000,
-                  position: 'top-center',
-                  style: {
-                    background: '#10B981',
-                    color: '#fff',
-                    fontWeight: '600',
-                    padding: '16px',
-                    borderRadius: '12px',
-                  },
-                  iconTheme: {
-                    primary: '#fff',
-                    secondary: '#10B981',
-                  },
-                }
-              );
-              
-              // Refresh bookings after a delay
-              setTimeout(() => {
-                fetchBookings();
-              }, 3000);
+              toast.success('Payment successful! Verification in progress.', {
+                duration: 6000,
+              });
+              setTimeout(() => fetchBookings(), 3000);
             } else {
-              toast.error(
-                'Payment completed but verification failed. Your booking will be updated shortly.',
-                {
-                  duration: 5000,
-                  position: 'top-center',
-                  style: {
-                    background: '#F59E0B',
-                    color: '#fff',
-                    fontWeight: '600',
-                    padding: '16px',
-                    borderRadius: '12px',
-                  },
-                }
-              );
+              toast.error('Payment completed but verification failed. Your booking will be updated shortly.');
             }
           } finally {
             setProcessingPayment(null);
@@ -213,31 +157,10 @@ const MyBookings = () => {
         },
         modal: {
           ondismiss: function() {
-            console.log('Payment cancelled by user');
-            toast((t) => (
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0">
-                  <svg className="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900">Payment Cancelled</p>
-                  <p className="text-sm text-gray-600 mt-0.5">You closed the payment window. Your booking is still pending.</p>
-                </div>
-              </div>
-            ), {
+            toast('Payment Cancelled', {
+              icon: '⚠️',
               duration: 4000,
               position: 'top-center',
-              style: {
-                background: '#fff',
-                color: '#1F2937',
-                padding: '16px',
-                borderRadius: '12px',
-                border: '2px solid #F59E0B',
-                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
-                maxWidth: '500px',
-              },
             });
             setProcessingPayment(null);
           }
@@ -248,20 +171,7 @@ const MyBookings = () => {
       
       rzp.on('payment.failed', function (response) {
         console.error('Payment failed:', response.error);
-        toast.error(
-          `Payment failed: ${response.error.description || 'Please try again'}`,
-          {
-            duration: 4000,
-            position: 'top-center',
-            style: {
-              background: '#EF4444',
-              color: '#fff',
-              fontWeight: '600',
-              padding: '16px',
-              borderRadius: '12px',
-            },
-          }
-        );
+        toast.error(`Payment failed: ${response.error.description || 'Please try again'}`);
         setProcessingPayment(null);
       });
       
@@ -269,26 +179,12 @@ const MyBookings = () => {
 
     } catch (error) {
       console.error('Payment error:', error);
-      toast.error(
-        'Failed to initiate payment: ' + (error.response?.data?.message || error.message),
-        {
-          duration: 4000,
-          position: 'top-center',
-          style: {
-            background: '#EF4444',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        }
-      );
+      toast.error('Failed to initiate payment: ' + (error.response?.data?.message || error.message));
       setProcessingPayment(null);
     }
   };
 
   const handleCancelBooking = async (bookingId) => {
-    // Show custom confirmation toast
     toast((t) => (
       <div className="flex flex-col gap-3">
         <div className="flex items-start gap-3">
@@ -299,7 +195,7 @@ const MyBookings = () => {
           </div>
           <div className="flex-1">
             <p className="font-semibold text-gray-900">Cancel Booking</p>
-            <p className="text-sm text-gray-600 mt-0.5">Are you sure you want to cancel this booking? This action cannot be undone.</p>
+            <p className="text-sm text-gray-600 mt-0.5">Are you sure? This action cannot be undone.</p>
           </div>
         </div>
         <div className="flex gap-2 justify-end">
@@ -314,10 +210,8 @@ const MyBookings = () => {
               toast.dismiss(t.id);
               try {
                 await cancelBooking(bookingId);
-                
                 toast.success('Booking cancelled successfully', {
                   duration: 3000,
-                  position: 'top-center',
                   style: {
                     background: '#10B981',
                     color: '#fff',
@@ -325,25 +219,10 @@ const MyBookings = () => {
                     padding: '16px',
                     borderRadius: '12px',
                   },
-                  iconTheme: {
-                    primary: '#fff',
-                    secondary: '#10B981',
-                  },
                 });
-                
                 await fetchBookings();
               } catch (error) {
-                toast.error('Failed to cancel booking: ' + error.message, {
-                  duration: 4000,
-                  position: 'top-center',
-                  style: {
-                    background: '#EF4444',
-                    color: '#fff',
-                    fontWeight: '600',
-                    padding: '16px',
-                    borderRadius: '12px',
-                  },
-                });
+                toast.error('Failed to cancel booking: ' + error.message);
               }
             }}
             className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors duration-200"
@@ -357,7 +236,6 @@ const MyBookings = () => {
       position: 'top-center',
       style: {
         background: '#fff',
-        color: '#1F2937',
         padding: '20px',
         borderRadius: '12px',
         border: '2px solid #EF4444',
@@ -387,7 +265,7 @@ const MyBookings = () => {
     if (isPaid) {
       return (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       );
     }
@@ -424,7 +302,10 @@ const MyBookings = () => {
     return booking.status.charAt(0).toUpperCase() + booking.status.slice(1);
   };
 
-  const filteredBookings = bookings.filter(booking => {
+  // ✅ Safe array handling
+  const safeBookings = Array.isArray(bookings) ? bookings : [];
+
+  const filteredBookings = safeBookings.filter(booking => {
     if (filter === 'all') return true;
     if (filter === 'paid') {
       return booking.paymentStatus === 'completed' || booking.status === 'completed';
@@ -433,12 +314,12 @@ const MyBookings = () => {
   });
 
   const stats = {
-    total: bookings.length,
-    pending: bookings.filter(b => b.status === 'pending').length,
-    accepted: bookings.filter(b => b.status === 'accepted' && b.paymentStatus !== 'completed').length,
-    rejected: bookings.filter(b => b.status === 'rejected').length,
-    cancelled: bookings.filter(b => b.status === 'cancelled').length,
-    paid: bookings.filter(b => b.status === 'completed' || b.paymentStatus === 'completed').length
+    total: safeBookings.length,
+    pending: safeBookings.filter(b => b.status === 'pending').length,
+    accepted: safeBookings.filter(b => b.status === 'accepted' && b.paymentStatus !== 'completed').length,
+    rejected: safeBookings.filter(b => b.status === 'rejected').length,
+    cancelled: safeBookings.filter(b => b.status === 'cancelled').length,
+    paid: safeBookings.filter(b => b.status === 'completed' || b.paymentStatus === 'completed').length
   };
 
   if (loading) {
@@ -558,24 +439,32 @@ const MyBookings = () => {
               const isPaid = booking.paymentStatus === 'completed' || booking.status === 'completed';
               const isExpanded = expandedBooking === booking._id;
               
+              // ✅ NEW SCHEMA: Safe access to nested data
+              const driver = booking.driver || booking.driverId || {};
+              const ride = booking.ride || booking.rideId || {};
+              
+              // ✅ NEW PAYMENT SYSTEM: Platform takes 8% from base fare + 18% GST on that 8%
               const baseFare = booking.baseFare || 0;
-              const passengerServiceFee = 10;
-              const gstOnServiceFee = 1.80;
-              const totalPassengerPays = baseFare + passengerServiceFee + gstOnServiceFee;
+              const platformDeduction = baseFare * 0.08; // 8% of base fare
+              const gstOnPlatformFee = platformDeduction * 0.18; // 18% GST on the 8%
+              const driverReceives = baseFare - platformDeduction - gstOnPlatformFee;
+              
+              // Passenger pays the full base fare (platform fee is deducted from driver's earnings)
+              const totalPassengerPays = baseFare;
 
               return (
                 <div key={booking._id} className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 border-2 border-gray-200 hover:shadow-2xl transition-all">
                   <div className="flex flex-col sm:flex-row items-start justify-between mb-4 gap-3">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-xl shadow-lg">
-                        {booking.rideId?.driverId?.name?.charAt(0).toUpperCase() || 'D'}
+                        {(driver.name || 'D').charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <p className="font-bold text-gray-900 text-base sm:text-lg">
-                          {booking.rideId?.driverId?.name || 'Unknown Driver'}
+                          {driver.name || 'Unknown Driver'}
                         </p>
                         <p className="text-xs sm:text-sm text-gray-600">
-                          {booking.rideId?.driverId?.email}
+                          {driver.email || 'No email'}
                         </p>
                         <p className="text-xs text-gray-500 flex items-center gap-1">
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -598,7 +487,7 @@ const MyBookings = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
-                      <p className="font-bold text-gray-900">{booking.pickupLocation}</p>
+                      <p className="font-bold text-gray-900">{booking.pickupLocation || 'Not specified'}</p>
                     </div>
                     <div className="flex items-center gap-2 ml-7 my-1">
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -611,8 +500,26 @@ const MyBookings = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
-                      <p className="font-bold text-gray-900">{booking.dropLocation}</p>
+                      <p className="font-bold text-gray-900">{booking.dropLocation || 'Not specified'}</p>
                     </div>
+                    {ride.date && (
+                      <div className="mt-3 pt-3 border-t border-blue-200 flex items-center gap-4 text-sm text-gray-600">
+                        <div className="flex items-center gap-1">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          {new Date(ride.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                        {ride.time && (
+                          <div className="flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                             {ride.time}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Booking Details */}
@@ -624,36 +531,34 @@ const MyBookings = () => {
                         </svg>
                       </div>
                       <p className="text-xs text-gray-600 mb-1">Seats</p>
-                      <p className="font-bold text-gray-900 text-lg">{booking.seatsBooked}</p>
+                      <p className="font-bold text-gray-900 text-lg">{booking.seatsBooked || 1}</p>
                     </div>
                     <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-3 text-center border border-purple-200">
                       <div className="flex items-center justify-center mb-1">
                         <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                       </div>
-                      <p className="text-xs text-gray-600 mb-1">Date</p>
-                      <p className="font-bold text-gray-900 text-xs sm:text-sm">
-                        {new Date(booking.rideId?.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </p>
+                      <p className="text-xs text-gray-600 mb-1">Base Fare</p>
+                      <p className="font-bold text-purple-900 text-lg">₹{baseFare.toFixed(2)}</p>
                     </div>
                     <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-3 text-center border border-orange-200">
                       <div className="flex items-center justify-center mb-1">
                         <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
                         </svg>
                       </div>
-                      <p className="text-xs text-gray-600 mb-1">Time</p>
-                      <p className="font-bold text-gray-900">{booking.rideId?.time}</p>
+                      <p className="text-xs text-gray-600 mb-1">Platform Fee + GST</p>
+                      <p className="font-bold text-yellow-600 text-lg">₹{(platformDeduction + gstOnPlatformFee).toFixed(2)}</p>
                     </div>
                     <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3 text-center border border-green-200">
                       <div className="flex items-center justify-center mb-1">
                         <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
                       </div>
                       <p className="text-xs text-gray-600 mb-1">You Pay</p>
-                      <p className="font-bold text-green-600 text-lg">₹{totalPassengerPays.toFixed(2)}</p>
+                      <p className="font-bold text-green-600 text-lg">₹{(baseFare + (platformDeduction + gstOnPlatformFee)).toFixed(2)}</p>
                     </div>
                   </div>
 
@@ -665,13 +570,13 @@ const MyBookings = () => {
                           <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="text-blue-800 font-bold text-base sm:text-lg">Payment Successful!</p>
+                          <p className="text-blue-800 font-bold text-base sm:text-lg">Payment Successful! 🎉</p>
                         </div>
                         <button
                           onClick={() => setExpandedBooking(isExpanded ? null : booking._id)}
                           className="text-blue-600 cursor-pointer hover:text-blue-800 font-semibold text-sm flex items-center gap-1 transition-colors duration-200"
                         >
-                          {isExpanded ? 'Hide Details' : 'View Details'}
+                          {isExpanded ? 'Hide' : 'Details'}
                           <svg 
                             className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
                             fill="none" 
@@ -685,66 +590,73 @@ const MyBookings = () => {
 
                       {isExpanded && (
                         <div className="space-y-3 pt-3 border-t-2 border-blue-200">
-                          <div className="bg-white rounded-lg p-3 shadow-sm">
-                            <div className="flex items-center gap-2 mb-1">
-                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
-                              </svg>
-                              <p className="text-xs text-gray-500">Payment ID</p>
+                          {booking.razorpayPaymentId && (
+                            <div className="bg-white rounded-lg p-3 shadow-sm">
+                              <div className="flex items-center gap-2 mb-1">
+                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                                </svg>
+                                <p className="text-xs text-gray-500">Payment ID</p>
+                              </div>
+                              <p className="text-sm font-mono font-bold text-gray-900">{booking.razorpayPaymentId}</p>
                             </div>
-                            <p className="text-sm font-mono font-bold text-gray-900">{booking.razorpayPaymentId || 'N/A'}</p>
-                          </div>
+                          )}
+                          
                           <div className="bg-white rounded-lg p-3 shadow-sm">
                             <div className="flex items-center gap-2 mb-1">
                               <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                               </svg>
-                              <p className="text-xs text-gray-500">Transaction ID</p>
+                              <p className="text-xs text-gray-500">Booking ID</p>
                             </div>
                             <p className="text-sm font-mono font-bold text-gray-900">{booking._id}</p>
                           </div>
-                          <div className="bg-white rounded-lg p-3 shadow-sm">
-                            <div className="flex items-center gap-2 mb-1">
-                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <p className="text-xs text-gray-500">Payment Date</p>
+                          
+                          {booking.paymentCompletedAt && (
+                            <div className="bg-white rounded-lg p-3 shadow-sm">
+                              <div className="flex items-center gap-2 mb-1">
+                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p className="text-xs text-gray-500">Payment Date</p>
+                              </div>
+                              <p className="text-sm font-bold text-gray-900">
+                                {new Date(booking.paymentCompletedAt).toLocaleString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
                             </div>
-                            <p className="text-sm font-bold text-gray-900">
-                              {booking.paymentCompletedAt ? new Date(booking.paymentCompletedAt).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              }) : 'N/A'}
-                            </p>
-                          </div>
+                          )}
                           
                           <div className="bg-white rounded-lg p-4 shadow-sm">
                             <div className="flex items-center gap-2 mb-3">
                               <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                               </svg>
                               <p className="text-sm font-bold text-gray-700">Fare Breakdown:</p>
                             </div>
                             <div className="space-y-2">
                               <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Base Fare (to Driver):</span>
+                                <span className="text-gray-600">Base Fare (Trip Cost):</span>
                                 <span className="font-semibold">₹{baseFare.toFixed(2)}</span>
                               </div>
-                              <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">Service Fee:</span>
-                                <span className="font-semibold">₹{passengerServiceFee.toFixed(2)}</span>
+                              <div className="flex justify-between text-sm text-gray-500">
+                                <span className="pl-4">+ Platform Fee (8%):</span>
+                                <span>₹{platformDeduction.toFixed(2)}</span>
                               </div>
-                              <div className="flex justify-between text-sm">
-                                <span className="text-gray-600">GST on Service Fee (18%):</span>
-                                <span className="font-semibold">₹{gstOnServiceFee.toFixed(2)}</span>
+                              <div className="flex justify-between text-sm text-gray-500">
+                                <span className="pl-4">+ GST on Platform Fee (18%):</span>
+                                <span>₹{gstOnPlatformFee.toFixed(2)}</span>
                               </div>
-                              <div className="border-t-2 border-gray-200 pt-2 mt-2 flex justify-between">
-                                <span className="font-bold text-gray-800">Total Paid:</span>
+                             
+                              <div className="border-t-2 border-gray-300 pt-2 mt-2 flex justify-between">
+                                <span className="font-bold text-gray-800">You Paid:</span>
                                 <span className="font-bold text-green-600 text-lg">
-                                  ₹{totalPassengerPays.toFixed(2)}
+                                  ₹{(baseFare + platformDeduction + gstOnPlatformFee).toFixed(2)}
                                 </span>
                               </div>
                             </div>
@@ -757,7 +669,7 @@ const MyBookings = () => {
                               </svg>
                               <p className="text-green-800 text-sm font-semibold">Your ride is confirmed!</p>
                             </div>
-                            <p className="text-green-700 text-xs mt-1 ml-7">Driver will contact you at: {booking.rideId?.driverId?.email}</p>
+                            <p className="text-green-700 text-xs mt-1 ml-7">Driver: {driver.name} ({driver.email})</p>
                           </div>
                         </div>
                       )}
@@ -774,9 +686,14 @@ const MyBookings = () => {
                         <p className="text-green-800 font-bold">Booking Confirmed!</p>
                       </div>
                       <p className="text-green-700 text-sm mb-2">
-                        Driver: {booking.rideId?.driverId?.name} ({booking.rideId?.driverId?.email})
+                        Driver: {driver.name} ({driver.email})
                       </p>
-                      <div className="bg-white rounded-lg p-3 mt-2">
+                      {booking.confirmedAt && (
+                        <p className="text-green-600 text-xs mb-2">
+                          Confirmed {new Date(booking.confirmedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      )}
+                      {/* <div className="bg-white rounded-lg p-3 mt-2">
                         <div className="flex items-center gap-2 mb-2">
                           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -785,29 +702,27 @@ const MyBookings = () => {
                         </div>
                         <div className="space-y-1 text-sm">
                           <div className="flex justify-between">
-                            <span className="text-gray-600">Base Fare:</span>
+                            <span className="text-gray-600">Trip Fare:</span>
                             <span>₹{baseFare.toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Service Fee:</span>
-                            <span>₹{passengerServiceFee.toFixed(2)}</span>
+                          <div className="flex justify-between text-xs text-gray-500 pl-4">
+                            <span>Platform deducts from driver (8%):</span>
+                            <span>-₹{platformDeduction.toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">GST (18%):</span>
-                            <span>₹{gstOnServiceFee.toFixed(2)}</span>
+                          <div className="flex justify-between text-xs text-gray-500 pl-4">
+                            <span>GST on platform fee (18%):</span>
+                            <span>-₹{gstOnPlatformFee.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs text-blue-600 pl-4 pt-1">
+                            <span>Driver receives:</span>
+                            <span>₹{driverReceives.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between border-t pt-1 font-bold text-green-600">
-                            <span>Total:</span>
+                            <span>You Pay (Total Trip Cost):</span>
                             <span>₹{totalPassengerPays.toFixed(2)}</span>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2 mt-2 text-green-600 text-xs">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                        <p>Please complete payment to confirm your ride</p>
-                      </div>
+                      </div> */}
                     </div>
                   )}
 
@@ -820,6 +735,9 @@ const MyBookings = () => {
                         <p className="text-red-800 font-bold">Request Rejected</p>
                       </div>
                       <p className="text-red-700 text-sm mt-1 ml-8">Driver was unable to accept your booking</p>
+                      {booking.rejectionReason && (
+                        <p className="text-red-600 text-xs mt-2 ml-8">Reason: {booking.rejectionReason}</p>
+                      )}
                     </div>
                   )}
 
@@ -844,6 +762,14 @@ const MyBookings = () => {
                         <p className="text-gray-800 font-bold">Booking Cancelled</p>
                       </div>
                       <p className="text-gray-700 text-sm mt-1 ml-8">This booking was cancelled</p>
+                      {booking.cancellationReason && (
+                        <p className="text-gray-600 text-xs mt-2 ml-8">Reason: {booking.cancellationReason}</p>
+                      )}
+                      {booking.cancelledAt && (
+                        <p className="text-gray-500 text-xs mt-1 ml-8">
+                          Cancelled {new Date(booking.cancelledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -868,7 +794,7 @@ const MyBookings = () => {
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                             </svg>
-                            Make Payment ₹{totalPassengerPays.toFixed(2)}
+                            Pay ₹{(baseFare + (platformDeduction + gstOnPlatformFee)).toFixed(2)}
                           </>
                         )}
                       </button>

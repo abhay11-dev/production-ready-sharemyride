@@ -1,0 +1,107 @@
+// Update booking status (accept/reject by driver)
+exports.updateBookingStatus = async (req, res) => {
+  try {
+    const { id } = req.params; // This should be rideId
+    const { bookingId, status } = req.body; // Need bookingId to identify which booking
+    const userId = req.user._id;
+
+    // Validate status (using schema's enum values)
+    const validStatuses = ['pending', 'confirmed', 'cancelled', 'completed', 'no_show'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+      });
+    }
+
+    // Validate bookingId is provided
+    if (!bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking ID is required'
+      });
+    }
+
+    // Find the ride with the booking
+    const ride = await Ride.findById(id);
+    
+    if (!ride) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ride not found'
+      });
+    }
+
+    // Check authorization - only ride owner (driver) can update booking status
+    if (ride.driverId.toString() !== userId.toString() && 
+        ride.postedBy.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the ride driver can update booking status'
+      });
+    }
+
+    // Find the specific booking within the ride
+    const booking = ride.bookings.id(bookingId);
+    
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found in this ride'
+      });
+    }
+
+    // Store old status for logic
+    const oldStatus = booking.status;
+
+    // Update booking status
+    booking.status = status;
+
+    // Handle status-specific logic
+    if (status === 'cancelled') {
+      booking.cancelledAt = new Date();
+      // Optionally set cancellation reason from request body
+      if (req.body.cancellationReason) {
+        booking.cancellationReason = req.body.cancellationReason;
+      }
+    }
+
+    if (status === 'completed') {
+      // Increment completed rides count
+      ride.completedRides = (ride.completedRides || 0) + 1;
+    }
+
+    // If booking was confirmed/pending and now cancelled, seats become available again
+    if ((oldStatus === 'confirmed' || oldStatus === 'pending') && 
+        status === 'cancelled') {
+      // Seats will automatically be recalculated via the virtual 'availableSeats'
+      console.log(`Booking cancelled. ${booking.seatsBooked} seats now available.`);
+    }
+
+    // Save the ride with updated booking
+    await ride.save();
+
+    // Populate passenger details for response
+    await ride.populate('bookings.passengerId', 'name email phoneNumber');
+
+    res.status(200).json({
+      success: true,
+      message: `Booking ${status} successfully`,
+      data: {
+        rideId: ride._id,
+        booking: booking,
+        availableSeats: ride.availableSeats,
+        totalBookings: ride.bookings.length,
+        confirmedBookings: ride.bookings.filter(b => b.status === 'confirmed').length
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating booking status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update booking status',
+      error: error.message
+    });
+  }
+};

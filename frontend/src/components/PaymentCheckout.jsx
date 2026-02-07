@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { createPaymentOrder, verifyPayment } from '../services/paymentService';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { PaymentCalculator } from '../utils/paymentCalculator';
+import PaymentBreakdownCard from './PaymentBreakdownCard';
 
 function PaymentCheckout({ booking, onSuccess, onCancel }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -23,20 +25,20 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
     };
   }, []);
 
-  // Calculate passenger-side breakdown
+  // Calculate passenger-side breakdown using new 8% fee structure
   const calculatePassengerBreakdown = () => {
     if (!booking) return null;
     
-    // Assuming booking has baseFare (driver's desired amount per seat)
-    const baseFare = booking.baseFare || booking.totalFare / 1.2818; // Reverse calc if needed
-    const passengerServiceFee = booking.passengerServiceFee || 10 * booking.seatsBooked;
-    const passengerServiceFeeGST = booking.passengerServiceFeeGST || passengerServiceFee * 0.18;
+    // Use the base fare from booking or calculate from total
+    const baseFare = booking.baseFare || (booking.totalFare / (1 + 0.08 + (0.08 * 0.18))); // Reverse calc with 8% + GST
+    const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare);
     
     return {
       baseFare: baseFare,
-      passengerServiceFee: passengerServiceFee,
-      passengerServiceFeeGST: passengerServiceFeeGST,
-      total: booking.totalFare
+      passengerServiceFee: passengerCalc.passengerServiceFee,
+      passengerServiceFeeGST: passengerCalc.gstOnServiceFee,
+      total: passengerCalc.totalPassengerPays,
+      seatsBooked: booking.seatsBooked || 1
     };
   };
 
@@ -232,22 +234,32 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
           </div>
         </div>
 
-        {/* Price Breakdown - PASSENGER VIEW */}
+        {/* Professional Payment Breakdown */}
         <div className="border-t border-gray-200 pt-4">
-          <div className="space-y-2">
+          <PaymentBreakdownCard
+            baseFare={passengerBreakdown?.baseFare || 0}
+            seatsBooked={booking.seatsBooked || 1}
+            showPassengerView={true}
+            showDriverView={false}
+            compact={true}
+            className="mb-4"
+          />
+          
+          {/* Detailed breakdown */}
+          <div className="space-y-2 text-sm">
             <div className="flex justify-between text-gray-600">
               <span>Base Fare ({booking.seatsBooked} seat{booking.seatsBooked > 1 ? 's' : ''})</span>
-              <span>₹{passengerBreakdown?.baseFare.toFixed(2)}</span>
+              <span>₹{(passengerBreakdown?.baseFare * (booking.seatsBooked || 1)).toFixed(2)}</span>
             </div>
             
             <div className="flex justify-between text-gray-600">
-              <span>Passenger Service Fee</span>
-              <span>₹{passengerBreakdown?.passengerServiceFee.toFixed(2)}</span>
+              <span>Service Fee (8%)</span>
+              <span>₹{(passengerBreakdown?.passengerServiceFee * (booking.seatsBooked || 1)).toFixed(2)}</span>
             </div>
             
             <div className="flex justify-between text-gray-600">
-              <span>GST (18% on service fee)</span>
-              <span>₹{passengerBreakdown?.passengerServiceFeeGST.toFixed(2)}</span>
+              <span>GST on Service Fee (18%)</span>
+              <span>₹{(passengerBreakdown?.passengerServiceFeeGST * (booking.seatsBooked || 1)).toFixed(2)}</span>
             </div>
             
             <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t">
@@ -257,15 +269,22 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
           </div>
         </div>
 
-        {/* Info Note */}
-        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-start gap-2">
-            <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
+        {/* Enhanced Info Note */}
+        <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </div>
             <div className="text-sm text-blue-800">
-              <p className="font-semibold mb-1">Secure Payment with Automatic Payout</p>
-              <p>Your payment is processed securely through Razorpay. The driver will automatically receive their earnings (after platform fees) within 1-2 business days.</p>
+              <p className="font-semibold mb-2">🔒 Secure Payment with Automatic Payout</p>
+              <div className="space-y-1 text-xs">
+                <p>• Your payment is processed securely through Razorpay</p>
+                <p>• Driver receives earnings (after 8% platform fee + GST) within 1-2 business days</p>
+                <p>• 256-bit SSL encryption protects your payment data</p>
+                <p>• Full refund available if ride is cancelled by driver</p>
+              </div>
             </div>
           </div>
         </div>
@@ -317,14 +336,58 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
         </button>
       </div>
 
-      {/* Payment Methods */}
-      <div className="mt-6 flex items-center justify-center gap-4 text-sm text-gray-500">
-        <span>We accept:</span>
-        <div className="flex items-center gap-3">
-          <span className="px-2 py-1 bg-gray-100 rounded">UPI</span>
-          <span className="px-2 py-1 bg-gray-100 rounded">Cards</span>
-          <span className="px-2 py-1 bg-gray-100 rounded">NetBanking</span>
-          <span className="px-2 py-1 bg-gray-100 rounded">Wallets</span>
+      {/* Enhanced Payment Methods */}
+      <div className="mt-6 bg-gray-50 rounded-xl p-4 border border-gray-200">
+        <div className="text-center mb-3">
+          <p className="text-sm font-semibold text-gray-700 mb-2">Accepted Payment Methods</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="flex items-center justify-center gap-2 bg-white rounded-lg p-3 border border-gray-200">
+              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+              </svg>
+              <span className="text-xs font-medium text-gray-700">UPI</span>
+            </div>
+            <div className="flex items-center justify-center gap-2 bg-white rounded-lg p-3 border border-gray-200">
+              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+              </svg>
+              <span className="text-xs font-medium text-gray-700">Cards</span>
+            </div>
+            <div className="flex items-center justify-center gap-2 bg-white rounded-lg p-3 border border-gray-200">
+              <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <span className="text-xs font-medium text-gray-700">NetBanking</span>
+            </div>
+            <div className="flex items-center justify-center gap-2 bg-white rounded-lg p-3 border border-gray-200">
+              <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              <span className="text-xs font-medium text-gray-700">Wallets</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Security badges */}
+        <div className="flex items-center justify-center gap-4 pt-3 border-t border-gray-200">
+          <div className="flex items-center gap-1">
+            <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span className="text-xs text-gray-600">SSL Secured</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-4 4-4-4 4-4 .257-.257A6 6 0 1118 8zm-6-2a1 1 0 11-2 0 1 1 0 012 0z" clipRule="evenodd" />
+            </svg>
+            <span className="text-xs text-gray-600">PCI Compliant</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <svg className="w-4 h-4 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span className="text-xs text-gray-600">RBI Approved</span>
+          </div>
         </div>
       </div>
     </div>

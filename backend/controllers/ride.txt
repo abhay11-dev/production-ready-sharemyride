@@ -1,0 +1,719 @@
+const Ride = require('../models/Ride');
+
+// ========================================
+// POST A NEW RIDE (DRIVER)
+// ========================================
+exports.postRide = async (req, res) => {
+  const { 
+    start, 
+    end, 
+    date, 
+    time, 
+    seats, 
+    fare, 
+    phoneNumber, 
+    address, 
+    vehicleNumber,
+    fareMode,
+    perKmRate,
+    totalDistance,
+    estimatedDuration,
+    waypoints,
+    routeCoordinates,
+    routeMapURL,
+    vehicle,
+    driver,
+    preferences,
+    notes,
+    pickupInstructions,
+    dropInstructions,
+    tollIncluded,
+    negotiableFare,
+    recurringRide,
+    recurringDays,
+    allowPartialRoute,
+    maxDetourAllowed,
+    liveLocationSharing
+  } = req.body;
+
+  // Validate required fields
+  if (!start || !end || !date || !time || !seats || fare === undefined || !phoneNumber || !address || !vehicleNumber) {
+    return res.status(400).json({ 
+      success: false,
+      message: 'All required fields must be provided' 
+    });
+  }
+
+  try {
+    const rideData = {
+      driverId: req.user._id,
+      postedBy: req.user._id,
+      start: start.trim(),
+      end: end.trim(),
+      date,
+      time,
+      seats: parseInt(seats),
+      fare: parseFloat(fare),
+      phoneNumber,
+      address,
+      vehicleNumber: vehicleNumber.toUpperCase().trim(),
+      
+      // Pricing fields
+      fareMode: fareMode || 'fixed',
+      perKmRate: parseFloat(perKmRate) || 0,
+      totalDistance: parseFloat(totalDistance) || 0,
+      estimatedDuration: parseInt(estimatedDuration) || 0,
+      
+      // Route fields
+      waypoints: waypoints || [],
+      routeCoordinates: routeCoordinates || [],
+      routeMapURL: routeMapURL || '',
+      allowPartialRoute: allowPartialRoute || false,
+      maxDetourAllowed: parseFloat(maxDetourAllowed) || 0,
+      
+      // Vehicle details
+      vehicle: {
+        number: vehicleNumber.toUpperCase().trim(),
+        type: vehicle?.type || 'Sedan',
+        model: vehicle?.model || '',
+        color: vehicle?.color || '',
+        acAvailable: vehicle?.acAvailable !== false,
+        luggageSpace: vehicle?.luggageSpace || 'Medium'
+      },
+      
+      // Driver details
+      driver: {
+        name: driver?.name || req.user.name || '',
+        phone: phoneNumber,
+        photoURL: driver?.photoURL || req.user.photoURL || '',
+        gender: driver?.gender || '',
+        age: driver?.age || null,
+        drivingLicenseNumber: driver?.drivingLicenseNumber || '',
+        emergencyContact: driver?.emergencyContact || '',
+        emergencyContactName: driver?.emergencyContactName || '',
+        verified: driver?.verified || false
+      },
+      
+      // Preferences
+      preferences: preferences || {
+        smokingAllowed: false,
+        musicAllowed: true,
+        petFriendly: false,
+        talkative: true,
+        pickupFlexibility: true,
+        luggageAllowed: true,
+        childSeatAvailable: false,
+        womenOnly: false
+      },
+      
+      // Additional info
+      notes: notes || '',
+      pickupInstructions: pickupInstructions || '',
+      dropInstructions: dropInstructions || '',
+      tollIncluded: tollIncluded || false,
+      negotiableFare: negotiableFare || false,
+      
+      // Recurring ride
+      recurringRide: recurringRide || false,
+      recurringDays: recurringDays || [],
+      
+      // Safety
+      liveLocationSharing: liveLocationSharing || false,
+      
+      // Status
+      rideStatus: 'active',
+      isActive: true
+    };
+
+    const ride = new Ride(rideData);
+    await ride.save();
+    
+    const populatedRide = await Ride.findById(ride._id)
+      .populate('driverId', 'name email phoneNumber')
+      .populate('postedBy', 'name email phoneNumber');
+    
+    res.status(201).json(populatedRide);
+  } catch (error) {
+    console.error('❌ Ride creation error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+};
+
+// ========================================
+// SEARCH RIDES BY LOCATION & DATE
+// ========================================
+// ========================================
+// SEARCH RIDES BY LOCATION & DATE
+// ========================================
+exports.searchRides = async (req, res) => {
+  console.log('\n========================================');
+  console.log('🔍 SEARCH RIDES ENDPOINT HIT');
+  console.log('========================================');
+  
+  try {
+    const { 
+      start, 
+      end, 
+      date, 
+      minSeats, 
+      maxFare, 
+      vehicleType,
+      acAvailable,
+      petFriendly,
+      womenOnly
+    } = req.query;
+
+    console.log('1️⃣ Query params received:', req.query);
+
+    if (!start || !end) {
+      console.log('❌ Missing required fields');
+      return res.status(400).json({ 
+        success: false,
+        message: 'Start and end locations are required' 
+      });
+    }
+
+    // Build query with case-insensitive regex
+    const query = {
+      start: { $regex: new RegExp(start.trim(), 'i') },
+      end: { $regex: new RegExp(end.trim(), 'i') },
+      isActive: true,
+      rideStatus: 'active'
+    };
+
+    console.log('2️⃣ Initial query built:', JSON.stringify(query, null, 2));
+
+    // Date filter
+    if (date) {
+      const searchDate = new Date(date);
+      searchDate.setHours(0, 0, 0, 0);
+      const nextDay = new Date(searchDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      query.date = { 
+        $gte: searchDate, 
+        $lt: nextDay 
+      };
+      console.log('3️⃣ Date filter added:', { searchDate, nextDay });
+    } else {
+      query.date = { $gte: new Date() };
+      console.log('3️⃣ Future rides filter added');
+    }
+
+    // Additional filters
+    if (minSeats) query.seats = { $gte: parseInt(minSeats) };
+    if (maxFare) query.fare = { $lte: parseFloat(maxFare) };
+    if (vehicleType) query['vehicle.type'] = vehicleType;
+    if (acAvailable === 'true') query['vehicle.acAvailable'] = true;
+    if (petFriendly === 'true') query['preferences.petFriendly'] = true;
+    if (womenOnly === 'true') query['preferences.womenOnly'] = true;
+
+    console.log('4️⃣ Final MongoDB query:', JSON.stringify(query, null, 2));
+
+    const rides = await Ride.find(query)
+      .populate('driverId', 'name email phoneNumber')
+      .populate('postedBy', 'name email phoneNumber')
+      .sort({ date: 1, time: 1 })
+      .lean();
+
+    console.log(`5️⃣ Database returned ${rides.length} rides`);
+    
+    if (rides.length > 0) {
+      console.log('📊 Sample ride:', {
+        id: rides[0]._id,
+        start: rides[0].start,
+        end: rides[0].end,
+        date: rides[0].date,
+        isActive: rides[0].isActive,
+        rideStatus: rides[0].rideStatus
+      });
+    }
+
+    console.log('6️⃣ Sending response as DIRECT ARRAY');
+    console.log('========================================\n');
+
+    // CRITICAL: Send JUST the array
+    res.json(rides);
+
+  } catch (error) {
+    console.error('\n❌❌❌ SEARCH ERROR ❌❌❌');
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+    console.error('❌❌❌❌❌❌❌❌❌❌❌❌❌\n');
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+
+// ========================================
+// SEARCH PARTIAL ROUTES (WAYPOINTS)
+// ========================================
+exports.searchPartialRoutes = async (req, res) => {
+  try {
+    const { start, end, date } = req.query;
+
+    if (!start || !end) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Start and end locations are required' 
+      });
+    }
+
+    const query = {
+      $or: [
+        {
+          start: { $regex: new RegExp(start, 'i') },
+          end: { $regex: new RegExp(end, 'i') }
+        },
+        {
+          'waypoints.location': { $regex: new RegExp(start, 'i') },
+          end: { $regex: new RegExp(end, 'i') }
+        },
+        {
+          start: { $regex: new RegExp(start, 'i') },
+          'waypoints.location': { $regex: new RegExp(end, 'i') }
+        },
+        {
+          $and: [
+            { 'waypoints.location': { $regex: new RegExp(start, 'i') } },
+            { 'waypoints.location': { $regex: new RegExp(end, 'i') } }
+          ]
+        }
+      ],
+      isActive: true,
+      rideStatus: 'active',
+      allowPartialRoute: true
+    };
+
+    if (date) {
+      const searchDate = new Date(date);
+      searchDate.setHours(0, 0, 0, 0);
+      const nextDay = new Date(searchDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      query.date = { $gte: searchDate, $lt: nextDay };
+    } else {
+      query.date = { $gte: new Date() };
+    }
+
+    const rides = await Ride.find(query)
+      .populate('driverId', 'name email phoneNumber')
+      .populate('postedBy', 'name email phoneNumber')
+      .sort({ date: 1, time: 1 })
+      .lean();
+
+    res.json(rides);
+
+  } catch (error) {
+    console.error('❌ Search partial routes error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// GET MY RIDES (DRIVER)
+// ========================================
+exports.getMyRides = async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+
+    if (!userId) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'User ID not found' 
+      });
+    }
+
+    const { status } = req.query;
+
+    const query = { 
+      $or: [
+        { driverId: userId },
+        { postedBy: userId }
+      ]
+    };
+    
+    if (status) {
+      query.rideStatus = status;
+    }
+
+    const rides = await Ride.find(query)
+      .populate('driverId', 'name email phoneNumber')
+      .populate('postedBy', 'name email phoneNumber')
+      .populate('bookings.passengerId', 'name email phoneNumber')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    console.log(`✅ Found ${rides.length} rides for user ${userId}`);
+
+    // Return JUST the array
+    res.json(rides);
+
+  } catch (error) {
+    console.error('❌ getMyRides error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching rides',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+// ========================================
+// GET RIDE BY ID
+// ========================================
+exports.getRideById = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id)
+      .populate('driverId', 'name email phoneNumber')
+      .populate('postedBy', 'name email phoneNumber')
+      .populate('bookings.passengerId', 'name email phoneNumber')
+      .lean();
+
+    if (!ride) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Ride not found' 
+      });
+    }
+
+    res.json(ride);
+  } catch (error) {
+    console.error('❌ Get ride error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// UPDATE RIDE
+// ========================================
+exports.updateRide = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+
+    if (!ride) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Ride not found' 
+      });
+    }
+
+    // Check authorization
+    if (ride.driverId.toString() !== req.user._id.toString() && 
+        ride.postedBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Not authorized' 
+      });
+    }
+
+    // Update allowed fields
+    const allowedUpdates = [
+      'start', 'end', 'date', 'time', 'seats', 'fare', 'phoneNumber', 'address', 
+      'vehicleNumber', 'isActive', 'fareMode', 'perKmRate', 'totalDistance',
+      'estimatedDuration', 'waypoints', 'vehicle', 'driver', 'preferences', 
+      'notes', 'pickupInstructions', 'tollIncluded', 'negotiableFare', 
+      'recurringRide', 'recurringDays', 'allowPartialRoute', 'maxDetourAllowed',
+      'liveLocationSharing'
+    ];
+
+    allowedUpdates.forEach(field => {
+      if (req.body[field] !== undefined) {
+        if (field === 'vehicleNumber') {
+          ride[field] = req.body[field].toUpperCase().trim();
+        } else {
+          ride[field] = req.body[field];
+        }
+      }
+    });
+
+    await ride.save();
+
+    const updatedRide = await Ride.findById(ride._id)
+      .populate('driverId', 'name email phoneNumber')
+      .populate('postedBy', 'name email phoneNumber')
+      .lean();
+
+    res.json(updatedRide);
+  } catch (error) {
+    console.error('❌ Update ride error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// DELETE/CANCEL RIDE
+// ========================================
+exports.deleteRide = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+
+    if (!ride) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Ride not found' 
+      });
+    }
+
+    // Check authorization
+    if (ride.driverId.toString() !== req.user._id.toString() && 
+        ride.postedBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Not authorized to delete this ride' 
+      });
+    }
+
+    // Soft delete
+    const { cancellationReason } = req.body;
+    
+    ride.rideStatus = 'cancelled';
+    ride.isActive = false;
+    ride.cancelledAt = new Date();
+    if (cancellationReason) {
+      ride.cancellationReason = cancellationReason;
+    }
+
+    // Cancel all bookings
+    ride.bookings.forEach(booking => {
+      if (booking.status !== 'cancelled') {
+        booking.status = 'cancelled';
+        booking.cancelledAt = new Date();
+        booking.cancellationReason = cancellationReason || 'Ride cancelled by driver';
+      }
+    });
+
+    await ride.save();
+
+    res.json({ 
+      success: true,
+      message: 'Ride cancelled successfully', 
+      data: ride 
+    });
+  } catch (error) {
+    console.error('❌ Delete ride error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// UPDATE RIDE STATUS
+// ========================================
+exports.updateRideStatus = async (req, res) => {
+  try {
+    const { rideStatus, cancellationReason } = req.body;
+    
+    const validStatuses = ['active', 'in_progress', 'completed', 'cancelled', 'expired'];
+    if (!rideStatus || !validStatuses.includes(rideStatus)) {
+      return res.status(400).json({ 
+        success: false,
+        message: `Invalid ride status. Must be one of: ${validStatuses.join(', ')}` 
+      });
+    }
+
+    const ride = await Ride.findById(req.params.id);
+
+    if (!ride) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Ride not found' 
+      });
+    }
+
+    // Check authorization
+    if (ride.driverId.toString() !== req.user._id.toString() && 
+        ride.postedBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Not authorized' 
+      });
+    }
+
+    ride.rideStatus = rideStatus;
+    
+    if (rideStatus === 'completed') {
+      ride.isActive = false;
+    } else if (rideStatus === 'cancelled') {
+      ride.isActive = false;
+      ride.cancelledAt = new Date();
+      if (cancellationReason) {
+        ride.cancellationReason = cancellationReason;
+      }
+    }
+
+    await ride.save();
+
+    res.json(ride);
+  } catch (error) {
+    console.error('❌ Update ride status error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// GET RIDE BOOKINGS (DRIVER VIEW)
+// ========================================
+exports.getRideBookings = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id)
+      .populate('bookings.passengerId', 'name email phoneNumber')
+      .lean();
+
+    if (!ride) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Ride not found' 
+      });
+    }
+
+    // Check authorization
+    if (ride.driverId.toString() !== req.user._id.toString() && 
+        ride.postedBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Not authorized' 
+      });
+    }
+
+    res.json(ride.bookings || []);
+  } catch (error) {
+    console.error('❌ Get ride bookings error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// CHECK SEGMENT AVAILABILITY
+// ========================================
+exports.checkSegmentAvailability = async (req, res) => {
+  try {
+    const { pickupPoint, dropPoint } = req.query;
+
+    if (!pickupPoint || !dropPoint) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Pickup and drop points are required' 
+      });
+    }
+
+    const ride = await Ride.findById(req.params.id);
+
+    if (!ride) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Ride not found' 
+      });
+    }
+
+    const pickupDist = ride.getDistanceForLocation(pickupPoint);
+    const dropDist = ride.getDistanceForLocation(dropPoint);
+
+    if (pickupDist === null || dropDist === null) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid pickup or drop location' 
+      });
+    }
+
+    const availableSeats = ride.getAvailableSeatsForSegment(pickupDist, dropDist);
+    const fareInfo = ride.calculateSegmentFare(pickupPoint, dropPoint);
+
+    res.json({
+      availableSeats,
+      ...fareInfo
+    });
+  } catch (error) {
+    console.error('❌ Check segment availability error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: error.message || 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// INCREMENT VIEW COUNT
+// ========================================
+exports.incrementViewCount = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+
+    if (!ride) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Ride not found' 
+      });
+    }
+
+    await ride.incrementViewCount();
+
+    res.json({ 
+      success: true,
+      message: 'View count updated'
+    });
+  } catch (error) {
+    console.error('❌ Increment view count error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+// ========================================
+// GET FEATURED RIDES
+// ========================================
+exports.getFeaturedRides = async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+
+    const rides = await Ride.find({
+      isActive: true,
+      rideStatus: 'active',
+      date: { $gte: new Date() },
+      $or: [
+        { featured: true },
+        { verified: true }
+      ]
+    })
+      .populate('driverId', 'name email phoneNumber')
+      .populate('postedBy', 'name email phoneNumber')
+      .sort({ featured: -1, verified: -1, ratingSummary: -1, createdAt: -1 })
+      .limit(parseInt(limit))
+      .lean();
+
+    res.json(rides);
+  } catch (error) {
+    console.error('❌ Get featured rides error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server Error' 
+    });
+  }
+};
+
+module.exports = exports;

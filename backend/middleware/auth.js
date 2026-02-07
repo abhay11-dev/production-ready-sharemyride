@@ -1,83 +1,147 @@
-// backend/middleware/auth.js (Corrected File)
-
+// backend/middleware/auth.js
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-// 1. Rename the main function to 'protect' and export it using 'exports.protect'
+/**
+ * Protect routes - Verify JWT token and attach user to request
+ */
 exports.protect = async (req, res, next) => {
-    try {
-        // Get token from header
-        const authHeader = req.header('Authorization');
-        
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            console.log('❌ No valid Authorization header');
-            return res.status(401).json({ 
-                success: false,
-                message: 'No token provided. Authorization denied.' 
-            });
-        }
+  console.log('\n🔐 Auth middleware triggered');
+  console.log('📍 Route:', req.method, req.originalUrl);
+  
+  try {
+    let token;
 
-        const token = authHeader.replace('Bearer ', '');
-        console.log('🔑 Token received:', token.substring(0, 20) + '...');
-
-        // Verify token
-        // Ensure process.env.JWT_SECRET is loaded (e.g., via dotenv in server.js)
-        const decoded = jwt.verify(token, process.env.JWT_SECRET); 
-        console.log('✅ Token verified for user:', decoded.id);
-        
-        // Find user
-        const user = await User.findById(decoded.id).select('-password');
-        
-        if (!user) {
-            console.log('❌ User not found:', decoded.id);
-            return res.status(401).json({ 
-                success: false,
-                message: 'User not found. Token invalid.' 
-            });
-        }
-
-        console.log('✅ User authenticated:', user.email);
-
-        // Attach user to request
-        req.user = user;
-        next();
-    } catch (error) {
-        console.error('❌ Auth Middleware Error:', error.message);
-        
-        if (error.name === 'JsonWebTokenError') {
-            return res.status(401).json({ 
-                success: false,
-                message: 'Token is invalid.' 
-            });
-        }
-        
-        if (error.name === 'TokenExpiredError') {
-            return res.status(401).json({ 
-                success: false,
-                message: 'Token has expired. Please login again.' 
-            });
-        }
-        
-        res.status(500).json({ 
-            success: false,
-            message: 'Server error in authentication.' 
-        });
+    // Check for Authorization header
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+      console.log('✅ Token found:', token.substring(0, 20) + '...');
     }
-};
 
-// 2. Add the 'authorize' function and export it
-exports.authorize = (...roles) => (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-        console.log(`❌ Authorization failed for role: ${req.user.role}. Required: ${roles.join(', ')}`);
-        return res.status(403).json({
-            success: false,
-            message: `User role ${req.user.role || 'none'} is not authorized to access this route`
-        });
+    // No token found
+    if (!token) {
+      console.log('❌ No token in Authorization header');
+      return res.status(401).json({ 
+        success: false,
+        message: 'Not authorized, no token provided' 
+      });
     }
-    console.log(`✅ User authorized: ${req.user.role}`);
+
+    // Verify token
+    console.log('🔍 Verifying token with JWT_SECRET...');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('✅ Token verified. User ID from token:', decoded.id);
+
+    // Get user from database (excluding password)
+    console.log('🔍 Finding user in database...');
+    const user = await User.findById(decoded.id).select('-password');
+
+    if (!user) {
+      console.log('❌ User not found in database:', decoded.id);
+      return res.status(401).json({ 
+        success: false,
+        message: 'User not found - token invalid' 
+      });
+    }
+
+    console.log('✅ User authenticated:', {
+      id: user._id,
+      email: user.email,
+      name: user.name
+    });
+
+    // Attach user to request object
+    req.user = user;
+    
+    console.log('✅ Auth middleware complete - proceeding to route handler\n');
     next();
+
+  } catch (error) {
+    console.error('❌ Auth Middleware Error:', {
+      name: error.name,
+      message: error.message
+    });
+
+    // Handle specific JWT errors
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid token' 
+      });
+    }
+
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Token expired - please login again' 
+      });
+    }
+
+    // Generic error
+    return res.status(401).json({ 
+      success: false,
+      message: 'Not authorized, token failed',
+      error: error.message 
+    });
+  }
 };
 
-// 3. Set module.exports to the exports object to ensure all are available
-// This line is optional but ensures consistency if other modules rely on it
-module.exports = exports;
+/**
+ * Authorize specific roles
+ * Usage: router.get('/admin', protect, authorize('admin'), handler)
+ */
+exports.authorize = (...roles) => {
+  return (req, res, next) => {
+    console.log('🔒 Checking authorization for roles:', roles);
+    
+    if (!req.user) {
+      console.log('❌ No user in request - auth middleware must run first');
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      console.log(`❌ Authorization denied. User role: ${req.user.role}, Required: ${roles.join(', ')}`);
+      return res.status(403).json({
+        success: false,
+        message: `User role '${req.user.role}' is not authorized to access this route`
+      });
+    }
+
+    console.log(`✅ User authorized with role: ${req.user.role}`);
+    next();
+  };
+};
+
+/**
+ * Optional middleware - Check if user is authenticated but don't fail if not
+ * Useful for routes that work differently for authenticated vs non-authenticated users
+ */
+exports.optionalAuth = async (req, res, next) => {
+  try {
+    let token;
+
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decoded.id).select('-password');
+      console.log('✅ Optional auth: User authenticated:', req.user?.email);
+    } else {
+      console.log('ℹ️ Optional auth: No token provided - continuing without auth');
+    }
+
+    next();
+  } catch (error) {
+    console.log('ℹ️ Optional auth: Token invalid - continuing without auth');
+    next();
+  }
+};
+
+// Export all functions
+module.exports = {
+  protect: exports.protect,
+  authorize: exports.authorize,
+  optionalAuth: exports.optionalAuth
+};

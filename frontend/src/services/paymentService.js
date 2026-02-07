@@ -1,7 +1,12 @@
 import api from '../config/api';
 
-export const createPaymentOrder = async (bookingId) => {
-  const response = await api.post('/payments/create-order', { bookingId });
+// services/paymentService.js
+
+export const createPaymentOrder = async (bookingId, rideId) => {
+  const response = await api.post('/payments/create-order', { 
+    bookingId,
+    rideId 
+  });
   return response.data;
 };
 

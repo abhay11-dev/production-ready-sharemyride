@@ -99,8 +99,6 @@ const connectDB = async () => {
   }
 };
 
-
-
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const rideRoutes = require('./routes/rideRoutes');
@@ -110,6 +108,8 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const payoutRoutes = require('./routes/payoutRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const receiptRoutes = require('./routes/receipts');
+const ratingRoutes = require('./routes/ratingRoutes'); // ✅ NEW: Rating routes
+const statsRoutes = require('./routes/statsRoutes');   // ✅ NEW: Stats routes
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -133,8 +133,8 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/payouts', payoutRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/receipts', receiptRoutes);
-
-
+app.use('/api/ratings', ratingRoutes);  // ✅ NEW: Rating endpoints
+app.use('/api/stats', statsRoutes);     // ✅ NEW: Stats endpoints
 
 app.get('/api', (req, res) => {
   res.json({ 
@@ -159,7 +159,9 @@ app.get('/api-info', (req, res) => {
       payments: '/api/payments',
       payouts: '/api/payouts',
       webhooks: '/api/webhooks',
-      receipts: '/api/receipts'
+      receipts: '/api/receipts',
+      ratings: '/api/ratings',  // ✅ NEW
+      stats: '/api/stats'       // ✅ NEW
     }
   });
 });
@@ -198,8 +200,24 @@ if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📊 Rating API: http://localhost:${PORT}/api/ratings`);
+    console.log(`📈 Stats API: http://localhost:${PORT}/api/stats`);
   });
 }
 
-// Export for Vercel
+// Add these debug logs
+console.log('=== ENVIRONMENT CHECK ===');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('RAZORPAY_KEY_ID from env:', process.env.RAZORPAY_KEY_ID);
+console.log('RAZORPAY_KEY_SECRET from env:', process.env.RAZORPAY_KEY_SECRET ? 'EXISTS' : 'MISSING');
+console.log('========================\n');
+
+// Test routes (if exists)
+try {
+  const testRoutes = require('./routes/testRoutes');
+  app.use('/api/test', testRoutes);
+} catch (err) {
+  // Test routes not found, skip
+}
+
 module.exports = app;

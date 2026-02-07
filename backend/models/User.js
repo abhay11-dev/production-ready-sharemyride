@@ -1,3 +1,6 @@
+// ===========================
+// USER MODEL
+// ===========================
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -24,7 +27,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Password is required'],
     minlength: [6, 'Password must be at least 6 characters'],
-    select: false // Don't include password in queries by default
+    select: false
   },
   role: {
     type: String,
@@ -42,6 +45,51 @@ const userSchema = new mongoose.Schema({
   isVerified: {
     type: Boolean,
     default: false
+  },
+  verified: {
+    type: Boolean,
+    default: false
+  },
+  gender: {
+    type: String,
+    enum: ['male', 'female', 'other'],
+    default: null
+  },
+  age: {
+    type: Number,
+    min: 18,
+    max: 100
+  },
+  emergencyContact: {
+    type: String,
+    trim: true
+  },
+  emergencyContactName: {
+    type: String,
+    trim: true
+  },
+  // Driver-specific fields
+  drivingLicense: {
+    number: String,
+    expiryDate: Date,
+    verified: {
+      type: Boolean,
+      default: false
+    }
+  },
+  ratingSummary: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
+  },
+  totalRidesAsDriver: {
+    type: Number,
+    default: 0
+  },
+  totalRidesAsPassenger: {
+    type: Number,
+    default: 0
   },
   // Password reset fields
   resetPasswordToken: {
@@ -61,12 +109,11 @@ const userSchema = new mongoose.Schema({
     default: Date.now
   }
 }, {
-  timestamps: true // Automatically manage createdAt and updatedAt
+  timestamps: true
 });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
-  // Only hash if password is modified or new
   if (!this.isModified('password')) {
     return next();
   }
@@ -95,15 +142,13 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 
 // Generate reset token method
 userSchema.methods.generateResetToken = function() {
-  // Generate 6-digit code
   const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
   this.resetPasswordToken = resetToken;
-  // Token expires in 15 minutes
   this.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
   return resetToken;
 };
 
-// Method to get public user data (without sensitive info)
+// Method to get public user data
 userSchema.methods.toJSON = function() {
   const user = this.toObject();
   delete user.password;
@@ -114,5 +159,4 @@ userSchema.methods.toJSON = function() {
 };
 
 const User = mongoose.model('User', userSchema);
-
 module.exports = User;

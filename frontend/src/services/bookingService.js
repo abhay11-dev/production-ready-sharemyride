@@ -1,68 +1,27 @@
 import axios from 'axios';
 
-// Works for both Create React App and Vite
-const getApiUrl = () => {
-  // For Vite
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    return import.meta.env.VITE_API_URL || 'https://share-my-ride-backend-aioz8wnlr-abhays-projects-cdb9056e.vercel.app/';
-  }
-  // For Create React App
-  if (typeof process !== 'undefined' && process.env) {
-    return process.env.REACT_APP_API_URL || 'https://share-my-ride-backend-aioz8wnlr-abhays-projects-cdb9056e.vercel.app/';
-  }
-  return import.meta.env.VITE_API_URL || 
-       'https://share-my-ride-backend-aioz8wnlr-abhays-projects-cdb9056e.vercel.app/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+// Get auth token from localStorage
+const getAuthToken = () => {
+  return localStorage.getItem('token');
 };
 
-const API_BASE_URL = getApiUrl();
-
-// Create axios instance with default config
-const api = axios.create({
-  baseURL: API_BASE_URL,
+// Create axios instance with auth headers
+const apiClient = axios.create({
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Add token to requests
-api.interceptors.request.use(
+// Add auth token to requests
+apiClient.interceptors.request.use(
   (config) => {
-    // Try multiple token locations for compatibility
-    let token = null;
-    
-    // 1. Check authToken (primary)
-    token = localStorage.getItem('authToken');
-    
-    // 2. Check token (backup)
-    if (!token) {
-      token = localStorage.getItem('token');
-    }
-    
-    // 3. Check user object
-    if (!token) {
-      const user = localStorage.getItem('user');
-      if (user) {
-        try {
-          const userData = JSON.parse(user);
-          if (userData.token) {
-            token = userData.token;
-            // Save for next time
-            localStorage.setItem('authToken', userData.token);
-          }
-        } catch (error) {
-          console.error('Error parsing user token:', error);
-        }
-      }
-    }
-    
-    // Add token to request if found
+    const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-    } else {
-      console.warn('No authentication token found!');
     }
-    
     return config;
   },
   (error) => {
@@ -70,93 +29,330 @@ api.interceptors.request.use(
   }
 );
 
-// Handle response errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      console.error('Authentication failed - redirecting to login');
-      localStorage.removeItem('user');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('token');
-      // Redirect to login
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
+// ========================================
+// BOOKING OPERATIONS
+// ========================================
 
-// Create a new booking request
+/**
+ * Create a new booking
+ * @param {Object} bookingData - Booking details
+ * @returns {Promise} Booking response
+ */
 export const createBooking = async (bookingData) => {
   try {
-    const response = await api.post('/bookings', bookingData);
-    return response.data;
+    console.log('📝 Creating booking:', bookingData);
+    const response = await apiClient.post('/bookings', bookingData);
+    console.log('✅ Booking created:', response.data);
+    return response.data.data || response.data;
   } catch (error) {
-    console.error('Error creating booking:', error);
+    console.error('❌ Create booking error:', error.response?.data || error);
     throw error;
   }
 };
 
-// Get all bookings for the current user (passenger)
-export const getMyBookings = async () => {
+/**
+ * Get user's bookings (as passenger)
+ * @param {Object} params - Query parameters (status, limit, page)
+ * @returns {Promise} Bookings array
+ */
+export const getMyBookings = async (params = {}) => {
   try {
-    const response = await api.get('/bookings/my-bookings');
-    return response.data;
+    console.log('📞 Fetching my bookings...');
+    const response = await apiClient.get('/bookings/my', { params });
+    console.log('✅ My bookings response:', response.data);
+    
+    // ✅ Always return an array
+    if (Array.isArray(response.data)) {
+      return response.data;
+    }
+    
+    // Backend returns: { success, data: [...], bookings: [...] }
+    const bookings = response.data.bookings || response.data.data || [];
+    console.log('✅ Extracted bookings array:', bookings.length, 'items');
+    return bookings;
+    
   } catch (error) {
-    console.error('Error fetching user bookings:', error);
+    console.error('❌ Error fetching my bookings:', error);
     throw error;
   }
 };
 
-// Get all booking requests for rides posted by the current user (driver)
-export const getDriverBookings = async () => {
+/**
+ * Get driver's bookings
+ * @param {Object} params - Query parameters (status, limit, page)
+ * @returns {Promise} Bookings array
+ */
+export const getDriverBookings = async (params = {}) => {
   try {
-    const response = await api.get('/bookings/driver-bookings');
-    return response.data;
+    console.log('📞 Fetching driver bookings...');
+    const response = await apiClient.get('/bookings/driver', { params });
+    console.log('✅ Driver bookings response:', response.data);
+    
+    // ✅ Always return an array
+    if (Array.isArray(response.data)) {
+      return response.data;
+    }
+    
+    const bookings = response.data.bookings || response.data.data || [];
+    console.log('✅ Extracted driver bookings array:', bookings.length, 'items');
+    return bookings;
   } catch (error) {
-    console.error('Error fetching driver bookings:', error);
+    console.error('❌ Get driver bookings error:', error.response?.data || error);
     throw error;
   }
 };
 
-// Update booking status (accept/reject by driver)
-export const updateBookingStatus = async (bookingId, status) => {
-  try {
-    const response = await api.patch(`/bookings/${bookingId}/status`, { status });
-    return response.data;
-  } catch (error) {
-    console.error('Error updating booking status:', error);
-    throw error;
-  }
-};
-
-// Cancel booking (by passenger)
-export const cancelBooking = async (bookingId) => {
-  try {
-    const response = await api.delete(`/bookings/${bookingId}`);
-    return response.data;
-  } catch (error) {
-    console.error('Error cancelling booking:', error);
-    throw error;
-  }
-};
-
-// Get booking by ID
+/**
+ * Get single booking by ID
+ * @param {string} bookingId - Booking ID
+ * @returns {Promise} Booking details
+ */
 export const getBookingById = async (bookingId) => {
   try {
-    const response = await api.get(`/bookings/${bookingId}`);
-    return response.data;
+    const response = await apiClient.get(`/bookings/${bookingId}`);
+    return response.data.data || response.data;
   } catch (error) {
-    console.error('Error fetching booking:', error);
+    console.error('❌ Get booking error:', error.response?.data || error);
     throw error;
   }
+};
+
+/**
+ * Update booking status (Driver action)
+ * @param {string} bookingId - Booking ID
+ * @param {string} status - New status (accepted, rejected, completed, etc.)
+ * @param {string} reason - Optional reason
+ * @param {string} message - Optional message
+ * @returns {Promise} Updated booking
+ */
+export const updateBookingStatus = async (bookingId, status, reason = '', message = '') => {
+  try {
+    console.log(`🔄 Updating booking ${bookingId} status to:`, status);
+    const response = await apiClient.patch(`/bookings/${bookingId}/status`, {
+      status,
+      reason,
+      message
+    });
+    console.log('✅ Booking status updated:', response.data);
+    return response.data.data || response.data;
+  } catch (error) {
+    console.error('❌ Update booking status error:', error.response?.data || error);
+    throw error;
+  }
+};
+
+/**
+ * Cancel booking (Passenger action)
+ * @param {string} bookingId - Booking ID
+ * @param {string} reason - Cancellation reason
+ * @returns {Promise} Cancellation response
+ */
+export const cancelBooking = async (bookingId, reason = '') => {
+  try {
+    console.log(`❌ Cancelling booking ${bookingId}`);
+    const response = await apiClient.post(`/bookings/${bookingId}/cancel`, { reason });
+    console.log('✅ Booking cancelled:', response.data);
+    return response.data.data || response.data;
+  } catch (error) {
+    console.error('❌ Cancel booking error:', error.response?.data || error);
+    throw error;
+  }
+};
+
+/**
+ * Complete payment for booking
+ * @param {string} bookingId - Booking ID
+ * @param {Object} paymentDetails - Payment transaction details
+ * @returns {Promise} Payment response
+ */
+export const completePayment = async (bookingId, paymentDetails) => {
+  try {
+    console.log(`💳 Completing payment for booking ${bookingId}`);
+    const response = await apiClient.post(`/bookings/${bookingId}/payment`, paymentDetails);
+    console.log('✅ Payment completed:', response.data);
+    return response.data.data || response.data;
+  } catch (error) {
+    console.error('❌ Complete payment error:', error.response?.data || error);
+    throw error;
+  }
+};
+
+/**
+ * Add rating for completed booking
+ * @param {string} bookingId - Booking ID
+ * @param {number} rating - Rating (1-5)
+ * @param {string} review - Optional review text
+ * @param {Object} categories - Category ratings (punctuality, driving, etc.)
+ * @returns {Promise} Rating response
+ */
+export const addRating = async (bookingId, rating, review = '', categories = {}) => {
+  try {
+    console.log(`⭐ Adding rating for booking ${bookingId}`);
+    const response = await apiClient.post(`/bookings/${bookingId}/rating`, {
+      rating,
+      review,
+      categories
+    });
+    console.log('✅ Rating added:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Add rating error:', error.response?.data || error);
+    throw error;
+  }
+};
+
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+
+/**
+ * Calculate refund amount based on cancellation time
+ * @param {Date} rideDate - Ride date
+ * @param {number} totalFare - Total booking fare
+ * @returns {number} Refund amount
+ */
+export const calculateRefund = (rideDate, totalFare) => {
+  const now = new Date();
+  const ride = new Date(rideDate);
+  const hoursUntilRide = (ride - now) / (1000 * 60 * 60);
+
+  if (hoursUntilRide > 24) {
+    return totalFare; // 100% refund
+  } else if (hoursUntilRide > 12) {
+    return totalFare * 0.75; // 75% refund
+  } else if (hoursUntilRide > 6) {
+    return totalFare * 0.50; // 50% refund
+  } else if (hoursUntilRide > 2) {
+    return totalFare * 0.25; // 25% refund
+  }
+  
+  return 0; // No refund
+};
+
+/**
+ * Format booking status for display
+ * @param {string} status - Booking status
+ * @returns {Object} Status display info
+ */
+export const formatBookingStatus = (status) => {
+  const statusMap = {
+    pending: {
+      label: 'Pending',
+      color: 'yellow',
+      icon: '⏳',
+      description: 'Waiting for driver approval'
+    },
+    accepted: {
+      label: 'Accepted',
+      color: 'green',
+      icon: '✅',
+      description: 'Driver has accepted your booking'
+    },
+    rejected: {
+      label: 'Rejected',
+      color: 'red',
+      icon: '❌',
+      description: 'Driver declined this booking'
+    },
+    cancelled: {
+      label: 'Cancelled',
+      color: 'gray',
+      icon: '🚫',
+      description: 'Booking was cancelled'
+    },
+    completed: {
+      label: 'Completed',
+      color: 'blue',
+      icon: '🎉',
+      description: 'Trip completed successfully'
+    },
+    no_show: {
+      label: 'No Show',
+      color: 'orange',
+      icon: '⚠️',
+      description: 'Passenger did not show up'
+    }
+  };
+
+  return statusMap[status] || {
+    label: status,
+    color: 'gray',
+    icon: '❓',
+    description: 'Unknown status'
+  };
+};
+
+/**
+ * Format payment status for display
+ * @param {string} status - Payment status
+ * @returns {Object} Payment status display info
+ */
+export const formatPaymentStatus = (status) => {
+  const statusMap = {
+    pending: {
+      label: 'Payment Pending',
+      color: 'yellow',
+      icon: '💳'
+    },
+    initiated: {
+      label: 'Payment Initiated',
+      color: 'blue',
+      icon: '🔄'
+    },
+    completed: {
+      label: 'Paid',
+      color: 'green',
+      icon: '✅'
+    },
+    failed: {
+      label: 'Payment Failed',
+      color: 'red',
+      icon: '❌'
+    },
+    refunded: {
+      label: 'Refunded',
+      color: 'purple',
+      icon: '↩️'
+    }
+  };
+
+  return statusMap[status] || {
+    label: status,
+    color: 'gray',
+    icon: '❓'
+  };
+};
+
+/**
+ * Check if booking can be cancelled
+ * @param {Object} booking - Booking object
+ * @returns {boolean} Can cancel
+ */
+export const canCancelBooking = (booking) => {
+  return ['pending', 'accepted'].includes(booking.status);
+};
+
+/**
+ * Check if booking can be rated
+ * @param {Object} booking - Booking object
+ * @returns {boolean} Can rate
+ */
+export const canRateBooking = (booking) => {
+  return booking.status === 'completed' && !booking.rating?.driverRating?.score;
 };
 
 export default {
   createBooking,
   getMyBookings,
   getDriverBookings,
+  getBookingById,
   updateBookingStatus,
   cancelBooking,
-  getBookingById
+  completePayment,
+  addRating,
+  calculateRefund,
+  formatBookingStatus,
+  formatPaymentStatus,
+  canCancelBooking,
+  canRateBooking
 };

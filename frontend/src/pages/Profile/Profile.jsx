@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { updateUserProfile } from '../../services/userService';
+import api from '../../config/api.js';
 import toast from 'react-hot-toast';
 
 function Profile() {
@@ -14,6 +15,14 @@ function Profile() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [totalRides, setTotalRides] = useState(0);
+  const [ridesLoading, setRidesLoading] = useState(true);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [feedback, setFeedback] = useState('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [userRating, setUserRating] = useState(null);
 
   // Initialize profile data when user loads
   useEffect(() => {
@@ -22,8 +31,111 @@ function Profile() {
         name: user.name || '',
         email: user.email || '',
       });
+      fetchUserRides();
+      fetchUserRating();
     }
   }, [user]);
+
+  // Fetch total rides for the user
+  const fetchUserRides = async () => {
+    try {
+      console.log('📊 Fetching user rides...');
+      setRidesLoading(true);
+      
+      const response = await api.get('/rides/user/stats');
+      
+      console.log('✅ User rides received:', response.data);
+      
+      const data = response.data.data || response.data;
+      setTotalRides(data.totalRides || 0);
+      
+    } catch (error) {
+      console.error('❌ Error fetching user rides:', error);
+      setTotalRides(0);
+    } finally {
+      setRidesLoading(false);
+    }
+  };
+
+  // Fetch user's existing rating
+  const fetchUserRating = async () => {
+    try {
+      const response = await api.get('/ratings/user/my-rating');
+      const data = response.data.data || response.data;
+      
+      if (data.rating) {
+        setUserRating(data.rating);
+      }
+    } catch (error) {
+      console.log('No existing rating found');
+    }
+  };
+
+  // Handle rating submission
+  const handleRatingSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (rating === 0) {
+      toast.error('Please select a rating', {
+        duration: 3000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
+      return;
+    }
+
+    setIsSubmittingRating(true);
+
+    try {
+      const response = await api.post('/ratings/submit', {
+        rating,
+        feedback: feedback.trim() || undefined,
+      });
+
+      toast.success('Thank you for your rating!', {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#10B981',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
+
+      setUserRating({ rating, feedback });
+      setShowRatingModal(false);
+      setRating(0);
+      setFeedback('');
+      setHoverRating(0);
+      
+    } catch (error) {
+      console.error('❌ Error submitting rating:', error);
+      
+      const errorMessage = error.response?.data?.message || 'Failed to submit rating. Please try again.';
+      
+      toast.error(errorMessage, {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#EF4444',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
 
   // Track if there are unsaved changes
   useEffect(() => {
@@ -362,7 +474,13 @@ function Profile() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-gray-500 mb-1">Total Rides</p>
-                        <p className="text-gray-900 font-medium">Coming soon</p>
+                        {ridesLoading ? (
+                          <div className="animate-pulse">
+                            <div className="h-6 bg-gray-300 rounded w-16"></div>
+                          </div>
+                        ) : (
+                          <p className="text-gray-900 font-medium text-2xl">{totalRides}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -446,6 +564,39 @@ function Profile() {
 
           </div>
 
+          {/* User Rating Display */}
+          {userRating && (
+            <div className="mt-8 bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-800">Your Rating</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    {[...Array(5)].map((_, index) => (
+                      <svg
+                        key={index}
+                        className={`w-5 h-5 ${index < userRating.rating ? 'text-yellow-500' : 'text-gray-300'}`}
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    ))}
+                    <span className="text-gray-600 ml-2">{userRating.rating}/5</span>
+                  </div>
+                  {userRating.feedback && (
+                    <p className="text-gray-600 mt-2 italic">"{userRating.feedback}"</p>
+                  )}
+                </div>
+              </div>
+              <p className="text-sm text-gray-500">Thank you for rating ShareMyRide! Your feedback helps us improve.</p>
+            </div>
+          )}
+
           {/* Coming Soon Section */}
           <div className="mt-8 bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -455,12 +606,160 @@ function Profile() {
             </div>
             <h3 className="text-xl font-bold text-gray-800 mb-2">More Features Coming Soon!</h3>
             <p className="text-gray-600">
-              We're working on adding ride history, reviews, and payment settings.
+              We're working on adding ride history, detailed reviews, and payment settings.
             </p>
           </div>
 
         </div>
       </div>
+
+      {/* Floating Rate Us Button */}
+      {!userRating && (
+        <button
+          onClick={() => setShowRatingModal(true)}
+          className="fixed bottom-8 right-8 w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 text-white rounded-full shadow-2xl hover:shadow-yellow-500/50 hover:scale-110 transition-all duration-300 flex items-center justify-center z-50 animate-bounce"
+          aria-label="Rate Us"
+        >
+          <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+          </svg>
+        </button>
+      )}
+
+      {/* Rating Modal */}
+      {showRatingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-scale-in">
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setShowRatingModal(false);
+                setRating(0);
+                setHoverRating(0);
+                setFeedback('');
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            {/* Modal Header */}
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Rate ShareMyRide</h3>
+              <p className="text-gray-600">How would you rate your experience?</p>
+            </div>
+
+            {/* Rating Form */}
+            <form onSubmit={handleRatingSubmit}>
+              {/* Star Rating */}
+              <div className="flex justify-center gap-2 mb-6">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setRating(star)}
+                    onMouseEnter={() => setHoverRating(star)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    className="focus:outline-none transform hover:scale-110 transition-transform"
+                  >
+                    <svg
+                      className={`w-12 h-12 ${
+                        star <= (hoverRating || rating)
+                          ? 'text-yellow-500'
+                          : 'text-gray-300'
+                      } transition-colors`}
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+
+              {/* Rating Text */}
+              {rating > 0 && (
+                <p className="text-center text-gray-700 font-medium mb-4">
+                  {rating === 5 && '🌟 Amazing!'}
+                  {rating === 4 && '😊 Great!'}
+                  {rating === 3 && '👍 Good'}
+                  {rating === 2 && '😐 Okay'}
+                  {rating === 1 && '😞 Poor'}
+                </p>
+              )}
+
+              {/* Feedback Textarea */}
+              <div className="mb-6">
+                <label htmlFor="feedback" className="block text-sm font-semibold text-gray-700 mb-2">
+                  Additional Feedback (Optional)
+                </label>
+                <textarea
+                  id="feedback"
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  placeholder="Tell us more about your experience..."
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none resize-none"
+                  rows="4"
+                  maxLength="500"
+                  disabled={isSubmittingRating}
+                />
+                <p className="text-xs text-gray-500 mt-1 text-right">
+                  {feedback.length}/500 characters
+                </p>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={isSubmittingRating || rating === 0}
+                className="w-full bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-yellow-500 hover:to-orange-600 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmittingRating ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>Submit Rating</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CSS Animation */}
+      <style jsx>{`
+        @keyframes scale-in {
+          from {
+            transform: scale(0.9);
+            opacity: 0;
+          }
+          to {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+        
+        .animate-scale-in {
+          animation: scale-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }

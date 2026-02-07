@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
 import { loginUser as loginAPI, signupUser as signupAPI } from '../services/authService';
 
 export const UserContext = createContext();
@@ -51,7 +51,6 @@ export const UserProvider = ({ children }) => {
       console.log('🔄 Logging in with:', { email: credentials.email });
       
       const response = await loginAPI(credentials);
-      
       console.log('📦 Login API response:', response);
       
       if (response.success === false) {
@@ -105,7 +104,6 @@ export const UserProvider = ({ children }) => {
       console.log('🔄 Signing up with:', { name: details.name, email: details.email });
       
       const response = await signupAPI(details);
-      
       console.log('📦 Signup API response:', response);
       
       const token = response.token || response.data?.token;
@@ -148,7 +146,6 @@ export const UserProvider = ({ children }) => {
       localStorage.removeItem('authToken');
       
       console.log('✅ User logged out');
-      
       return { success: true };
     } catch (err) {
       console.error('❌ Logout error:', err);
@@ -156,7 +153,6 @@ export const UserProvider = ({ children }) => {
     }
   }, []);
 
-  // ✅ COMPLETELY FIXED: updateUser now properly handles the backend response
   const updateUser = useCallback((updatedData) => {
     try {
       console.log('🔄 Updating user with data:', updatedData);
@@ -165,7 +161,6 @@ export const UserProvider = ({ children }) => {
         throw new Error('No user logged in');
       }
 
-      // Get the current token - CRITICAL!
       const currentToken = localStorage.getItem('token');
       
       if (!currentToken) {
@@ -173,19 +168,15 @@ export const UserProvider = ({ children }) => {
         throw new Error('Authentication token missing. Please log in again.');
       }
 
-      // ✅ FIX: Create updated user object, ensuring we preserve the ID
       const updatedUser = { 
-        ...updatedData, // Use the backend response data as primary source
+        ...updatedData,
         id: updatedData.id || updatedData._id || user.id || user._id,
         updatedAt: new Date().toISOString()
       };
       
       console.log('✅ Updated user object:', updatedUser);
       
-      // Update React state
       setUser(updatedUser);
-      
-      // ✅ CRITICAL: Save updated user data to localStorage, token remains unchanged
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
       console.log('✅ User updated successfully in state and localStorage');
@@ -224,7 +215,7 @@ export const UserProvider = ({ children }) => {
 };
 
 export const useUser = () => {
-  const context = React.useContext(UserContext);
+  const context = useContext(UserContext);
   if (!context) {
     throw new Error('useUser must be used within a UserProvider');
   }
