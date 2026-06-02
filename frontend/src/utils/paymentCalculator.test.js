@@ -1,5 +1,5 @@
 // src/utils/paymentCalculator.test.js
-import { PaymentCalculator } from './paymentCalculator';
+import  PaymentCalculator  from './paymentCalculator';
 
 describe('PaymentCalculator with 8% Platform Fee', () => {
   const baseFare = 100; // ₹100 base fare for testing

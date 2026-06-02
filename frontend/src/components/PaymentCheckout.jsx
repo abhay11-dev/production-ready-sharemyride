@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { createPaymentOrder, verifyPayment } from '../services/paymentService';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { PaymentCalculator } from '../utils/paymentCalculator';
+import  PaymentCalculator from '../utils/paymentCalculator';
 import PaymentBreakdownCard from './PaymentBreakdownCard';
 
 function PaymentCheckout({ booking, onSuccess, onCancel }) {

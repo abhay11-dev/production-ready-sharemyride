@@ -15,6 +15,7 @@
     "axios": "^1.12.2",
     "fuse.js": "^7.0.0",
     "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "leaflet": "^1.9.4",
     "mongoose": "^8.19.2",
     "pdfkit": "^0.17.2",

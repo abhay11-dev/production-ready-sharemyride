@@ -3,7 +3,7 @@ import RideForm from '../../components/ride/RideForm';
 import { postRide, getMyRides, deleteRide } from '../../services/rideService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
-import { PaymentCalculator } from '../../utils/paymentCalculator';
+import PaymentCalculator from '../../utils/paymentCalculator';
 import PaymentBreakdownCard from '../../components/PaymentBreakdownCard';
 
 function RidePost() {

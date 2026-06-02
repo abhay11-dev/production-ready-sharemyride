@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getDriverBookings, updateBookingStatus } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
-import { PaymentCalculator } from '../../utils/paymentCalculator';
+import PaymentCalculator from '../../utils/paymentCalculator';
 
 function DriverBookings() {
   const { user } = useAuth();
