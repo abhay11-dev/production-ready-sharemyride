@@ -84,6 +84,11 @@ const connectDB = async () => {
     return;
   }
 
+  console.log(
+  "Mongo URI:",
+  process.env.MONGO_URI?.replace(/\/\/([^:]+):([^@]+)@/, "//$1:***@")
+  );
+
   try {
     const db = await mongoose.connect(process.env.MONGO_URI, {
       useNewUrlParser: true,
