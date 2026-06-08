@@ -51,14 +51,6 @@ const userSchema = new mongoose.Schema({
   resetPasswordExpires: {
     type: Date,
     default: null
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
 }, {
   timestamps: true // Automatically manage createdAt and updatedAt
@@ -106,6 +98,7 @@ userSchema.methods.generateResetToken = function() {
 // Method to get public user data (without sensitive info)
 userSchema.methods.toJSON = function() {
   const user = this.toObject();
+  user.id = user._id; // Map _id to id for frontend compatibility
   delete user.password;
   delete user.resetPasswordToken;
   delete user.resetPasswordExpires;

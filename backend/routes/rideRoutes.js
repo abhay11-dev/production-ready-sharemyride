@@ -1,66 +1,26 @@
+// routes/rideRoutes.js
 const express = require('express');
 const router = express.Router();
-const { 
-  postRide, 
-  searchRides, 
-  getMyRides, 
-  deleteRide, 
-  getRideById, 
-  updateRide,
-  updateRideStatus,
-  getRideBookings,
-  incrementViewCount,
-  getFeaturedRides,
-} = require('../controllers/rideController');
+const ctrl = require('../controllers/rideController');
+const { protect, requireVerifiedDriver } = require('../middleware/authMiddleware');
 
-const { protect } = require('../middleware/auth');
+// ── Public ─────────────────────────────────────────────────────────────────
+router.get('/search', ctrl.searchRides);
+router.get('/featured', ctrl.getFeaturedRides);
 
-// ========================================
-// PUBLIC ROUTES (No authentication required)
-// ========================================
+// ── Authenticated ──────────────────────────────────────────────────────────
+router.use(protect);
 
-// ⚠️ CRITICAL: Specific routes MUST come BEFORE /:id
+router.get('/my', ctrl.getMyRides);
+router.get('/:id', ctrl.getRideById);
+router.get('/:id/bookings', ctrl.getRideBookings);
+router.post('/:id/view', ctrl.incrementViewCount);
+router.put('/:id', ctrl.updateRide);
+router.patch('/:id/status', ctrl.updateRideStatus);
+router.delete('/:id', ctrl.deleteRide);
 
-// Search routes
-
-router.get('/search', searchRides);
-
-// Featured rides
-router.get('/featured', getFeaturedRides);
-
-// ========================================
-// PROTECTED ROUTES (Authentication required)
-// ========================================
-
-// POST /api/rides - Create a new ride
-router.post('/', protect, postRide);
-
-// ⚠️ CRITICAL: /my MUST come BEFORE /:id
-router.get('/my', protect, getMyRides);
-
-// ========================================
-// DYNAMIC ROUTES (Keep these AFTER specific routes)
-// ========================================
-
-// GET /api/rides/:id - Get ride by ID
-router.get('/:id', getRideById);
-
-// POST /api/rides/:id/view - Increment view count
-router.post('/:id/view', incrementViewCount);
-
-// PUT /api/rides/:id - Update a ride
-router.put('/:id', protect, updateRide);
-
-// PATCH /api/rides/:id/status - Update ride status
-router.patch('/:id/status', protect, updateRideStatus);
-
-// DELETE /api/rides/:id - Delete/Cancel a ride
-router.delete('/:id', protect, deleteRide);
-
-// GET /api/rides/:id/bookings - Get all bookings for a ride
-router.get('/:id/bookings', protect, getRideBookings);
-
-// GET /api/rides/:id/availability - Check segment availability
-
+// ── Verified drivers only ──────────────────────────────────────────────────
+// requireVerifiedDriver returns 403 with action code if not approved
+router.post('/', requireVerifiedDriver, ctrl.postRide);
 
 module.exports = router;

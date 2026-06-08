@@ -9,327 +9,387 @@ const generateToken = (userId) => {
   });
 };
 
-// Signup user
+// ─── Signup ──────────────────────────────────────────────────────────────────
 const signup = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Validation
     if (!name || !email || !password) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields' 
+        message: 'Please provide all required fields'
       });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'User already exists with this email' 
+        message: 'User already exists with this email'
       });
     }
 
-    // Create new user
     const user = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password
     });
 
-    // Generate token
-    const token = generateToken(user._id);
-
     res.status(201).json({
       success: true,
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        createdAt: user.createdAt
-      }
+      message: 'Account created successfully! Please sign in.',
+      user
     });
   } catch (error) {
     console.error('Signup error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Server error during signup' 
+      message: 'Server error during signup'
     });
   }
 };
 
-// Login user
+// ─── Login ───────────────────────────────────────────────────────────────────
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'Please provide email and password' 
+        message: 'Please provide email and password'
       });
     }
 
-    // Find user and include password field
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-    
+
     if (!user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid credentials' 
+        message: 'Invalid credentials'
       });
     }
 
-    // Check password
     const isPasswordCorrect = await user.comparePassword(password);
-    
+
     if (!isPasswordCorrect) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid credentials' 
+        message: 'Invalid credentials'
       });
     }
 
-    // Generate token
     const token = generateToken(user._id);
 
     res.json({
       success: true,
+      message: 'Welcome back! Login successful.',
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        createdAt: user.createdAt
-      }
+      user
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Server error during login' 
+      message: 'Server error during login'
     });
   }
 };
 
-// Get user profile
+// ─── Get Profile ─────────────────────────────────────────────────────────────
+// GET /api/auth/profile  [protected]
+// Returns the authenticated user's profile.
+// req.user is already populated and sanitized by the protect middleware
+// (password excluded via .select('-password'), toJSON() strips remaining
+//  sensitive fields like resetPasswordToken and S3 keys).
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('-password');
-    
+    // Re-fetch from DB so the response is always fresh (middleware may have
+    // cached a slightly stale object if requests arrive in quick succession).
+    const user = await User.findById(req.user._id);
+
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'User not found' 
+        message: 'User not found'
       });
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        createdAt: user.createdAt
-      }
+      user // toJSON() handles field filtering automatically
     });
   } catch (error) {
     console.error('Get profile error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Server error' 
+      message: 'Server error while fetching profile'
     });
   }
 };
 
-// Update user profile
+// ─── Update Profile ───────────────────────────────────────────────────────────
+// PUT /api/auth/profile  [protected]
+// Allowed fields: name, phone, avatar, gender, dateOfBirth,
+//                 emergencyContact, emergencyContactName
+//
+// NOT allowed via this endpoint (each has its own dedicated flow):
+//   email   → changing email requires re-verification (out of scope here)
+//   password → use the /reset-password flow
+//   role    → admin-only operation
+//   driverVerification → managed by the driver verification flow
 const updateProfile = async (req, res) => {
-  const { name, email } = req.body;
-
-  // Validation
-  if (!name || !email) {
-    return res.status(400).json({ 
-      success: false,
-      message: 'Name and email are required' 
-    });
-  }
-
-  if (name.trim().length < 2) {
-    return res.status(400).json({ 
-      success: false,
-      message: 'Name must be at least 2 characters long' 
-    });
-  }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ 
-      success: false,
-      message: 'Invalid email format' 
-    });
-  }
-
   try {
-    // Check if email is already taken by another user
-    if (email.toLowerCase() !== req.user.email.toLowerCase()) {
-      const existingUser = await User.findOne({ 
-        email: email.toLowerCase(),
-        _id: { $ne: req.user._id }
+    // Whitelist of fields the user may update themselves
+    const ALLOWED_FIELDS = [
+      'name',
+      'phone',
+      'avatar',
+      'gender',
+      'dateOfBirth',
+      'emergencyContact',
+      'emergencyContactName'
+    ];
+
+    // Build the update object from only the whitelisted fields present in body
+    const updates = {};
+    for (const field of ALLOWED_FIELDS) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid fields provided for update'
       });
-      
-      if (existingUser) {
-        return res.status(400).json({ 
+    }
+
+    // Field-level validation
+    if (updates.name !== undefined) {
+      const trimmed = updates.name.trim();
+      if (trimmed.length < 2 || trimmed.length > 50) {
+        return res.status(400).json({
           success: false,
-          message: 'Email already in use' 
+          message: 'Name must be between 2 and 50 characters'
+        });
+      }
+      updates.name = trimmed;
+    }
+
+    if (updates.phone !== undefined) {
+      const phoneRegex = /^[6-9]\d{9}$/;
+      if (updates.phone && !phoneRegex.test(updates.phone)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid 10-digit Indian mobile number'
         });
       }
     }
 
-    // Update user
-    const user = await User.findById(req.user._id);
-    
+    if (updates.gender !== undefined) {
+      const validGenders = ['male', 'female', 'other', null];
+      if (!validGenders.includes(updates.gender)) {
+        return res.status(400).json({
+          success: false,
+          message: "Gender must be one of: male, female, other"
+        });
+      }
+    }
+
+    if (updates.dateOfBirth !== undefined && updates.dateOfBirth !== null) {
+      const dob = new Date(updates.dateOfBirth);
+      if (isNaN(dob.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date of birth'
+        });
+      }
+      if (dob >= new Date()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Date of birth must be in the past'
+        });
+      }
+      updates.dateOfBirth = dob;
+    }
+
+    // runValidators: true ensures Mongoose schema-level validation also fires
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'User not found' 
+        message: 'User not found'
       });
     }
 
-    user.name = name.trim();
-    user.email = email.trim().toLowerCase();
-
-    await user.save();
-
-    res.json({
+    res.status(200).json({
       success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        createdAt: user.createdAt
-      }
+      message: 'Profile updated successfully',
+      user
     });
   } catch (error) {
     console.error('Update profile error:', error);
-    res.status(500).json({ 
-      success: false,
-      message: 'Server error' 
-    });
-  }
-};
 
-// Delete user account
-const deleteAccount = async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-
-    if (!user) {
-      return res.status(404).json({ 
+    // Mongoose validation error (e.g. schema-level phone regex failed)
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map((e) => e.message);
+      return res.status(400).json({
         success: false,
-        message: 'User not found' 
+        message: messages.join('. ')
       });
     }
 
-    await User.findByIdAndDelete(req.user._id);
-
-    res.json({ 
-      success: true,
-      message: 'Account deleted successfully' 
-    });
-  } catch (error) {
-    console.error('Delete account error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Server error' 
+      message: 'Server error while updating profile'
     });
   }
 };
 
-// Send password reset code
+// ─── Delete Account ───────────────────────────────────────────────────────────
+// DELETE /api/auth/account  [protected]
+//
+// Implements SOFT DELETE consistent with the isActive / suspendedAt pattern
+// already present on the User model. The account is deactivated rather than
+// physically removed so that:
+//   • Ride history and booking records stay intact for other participants.
+//   • The user can be reinstated by an admin if the deletion was accidental.
+//   • Audit trails remain in place.
+//
+// Requires the user's current password as confirmation to prevent accidental
+// or CSRF-triggered deletions.
+const deleteAccount = async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide your current password to confirm account deletion'
+      });
+    }
+
+    // Fetch with password field (excluded by default via select: false)
+    const user = await User.findById(req.user._id).select('+password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Verify password before deletion
+    const isPasswordCorrect = await user.comparePassword(password);
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
+        success: false,
+        message: 'Incorrect password. Account deletion cancelled.'
+      });
+    }
+
+    // Soft delete: mark as inactive with a timestamp
+    user.isActive = false;
+    user.suspendedAt = new Date();
+    user.suspensionReason = 'Account deleted by user';
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Your account has been deactivated successfully. Contact support if you wish to reactivate it.'
+    });
+  } catch (error) {
+    console.error('Delete account error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting account'
+    });
+  }
+};
+
+// ─── Forgot Password ──────────────────────────────────────────────────────────
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email is required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
       });
     }
 
-    // Find user by email
     const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'No account found with this email. Please register first.' 
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email. Please register first.'
       });
     }
 
-    // Generate reset token (6-digit code)
     const resetToken = user.generateResetToken();
     await user.save();
 
-    // Send email with reset code with proper error handling
     try {
       await sendPasswordResetEmail(user.email, user.name, resetToken);
-      
+
       res.status(200).json({
         success: true,
         message: 'Password reset code sent to your email'
       });
     } catch (emailError) {
-      // Log the specific email error
       console.error('Email service error:', emailError);
-      
-      // Rollback: Clear the reset token since email failed
+
       user.resetPasswordToken = null;
       user.resetPasswordExpires = null;
       await user.save();
-      
-      // Return more specific error
-      return res.status(500).json({ 
-        success: false, 
+
+      return res.status(500).json({
+        success: false,
         message: 'Failed to send email. Please check your email service configuration.',
         error: process.env.NODE_ENV === 'development' ? emailError.message : undefined
       });
     }
   } catch (error) {
     console.error('Forgot password error:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to process reset request. Please try again.',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-// Verify reset code
+// ─── Verify Reset Code ────────────────────────────────────────────────────────
 const verifyResetCode = async (req, res) => {
   try {
     const { email, code } = req.body;
 
     if (!email || !code) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email and code are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Email and code are required'
       });
     }
 
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       email: email.toLowerCase(),
       resetPasswordToken: code,
       resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid or expired verification code' 
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code'
       });
     }
 
@@ -339,47 +399,45 @@ const verifyResetCode = async (req, res) => {
     });
   } catch (error) {
     console.error('Verify code error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Verification failed. Please try again.' 
+    res.status(500).json({
+      success: false,
+      message: 'Verification failed. Please try again.'
     });
   }
 };
 
-// Reset password
+// ─── Reset Password ───────────────────────────────────────────────────────────
 const resetPassword = async (req, res) => {
   try {
     const { email, code, newPassword } = req.body;
 
     if (!email || !code || !newPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email, code, and new password are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Email, code, and new password are required'
       });
     }
 
     if (newPassword.length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Password must be at least 6 characters' 
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
       });
     }
 
-    // Find user with valid reset token
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       email: email.toLowerCase(),
       resetPasswordToken: code,
       resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid or expired verification code' 
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code'
       });
     }
 
-    // Update password
     user.password = newPassword;
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
@@ -391,14 +449,14 @@ const resetPassword = async (req, res) => {
     });
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to reset password. Please try again.' 
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password. Please try again.'
     });
   }
 };
 
-// Export all functions
+// ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
   signup,
   login,

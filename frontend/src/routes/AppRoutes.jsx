@@ -18,6 +18,10 @@ import DriverUpcomingRides from '../pages/driver/DriverUpcomingRides';
 import PaymentSuccess from "../pages/PaymentSuccess.jsx";
 import PaymentFailed from "../pages/PaymentFailed.jsx";
 
+// Admin pages
+import AdminLogin from '../pages/Admin/AdminLogin.jsx';
+import AdminDashboard from '../pages/Admin/AdminDashboard.jsx';
+
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -54,12 +58,29 @@ const PublicRoute = ({ children }) => {
   return !user ? children : <Navigate to="/" replace />;
 };
 
+// Admin Route Component
+const AdminRoute = ({ children }) => {
+  const isAdmin = localStorage.getItem('isAdminAuthenticated') === 'true';
+  return isAdmin ? children : <Navigate to="/admin/login" replace />;
+};
+
 function AppRoutes() {
   return (
     <Routes>
       {/* Public Routes */}
       <Route path="/" element={<Home />} />
       
+      {/* Admin Routes */}
+      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route 
+        path="/admin/dashboard" 
+        element={
+          <AdminRoute>
+            <AdminDashboard />
+          </AdminRoute>
+        } 
+      />
+
       {/* Auth Routes */}
       <Route 
         path="/login" 

@@ -1,765 +1,854 @@
 // src/pages/Profile/Profile.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { updateUserProfile } from '../../services/userService';
+import {
+  getVerificationStatus,
+  uploadProfilePhoto,
+  uploadAadhaar,
+  uploadDrivingLicense,
+  submitForReview
+} from '../../services/driverVerificationService';
 import api from '../../config/api.js';
 import toast from 'react-hot-toast';
 
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+const VerificationBadge = ({ status }) => {
+  const config = {
+    not_started: { label: 'Not Started', cls: 'bg-gray-100 text-gray-500 border border-gray-200' },
+    pending: { label: 'In Progress', cls: 'bg-amber-50 text-amber-600 border border-amber-200' },
+    submitted: { label: 'Under Review', cls: 'bg-blue-50 text-blue-600 border border-blue-200' },
+    approved: { label: '✓ Verified', cls: 'bg-green-50 text-green-600 border border-green-200' },
+    rejected: { label: 'Rejected', cls: 'bg-red-50 text-red-600 border border-red-200' },
+  };
+  const { label, cls } = config[status] || config.not_started;
+  return (
+    <span className={`text-xs font-semibold px-3 py-1 rounded-full ${cls}`}>{label}</span>
+  );
+};
+
+// ─── Step Check ───────────────────────────────────────────────────────────────
+const StepCheck = ({ done, label, sublabel }) => (
+  <div className="flex items-center gap-3">
+    <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${done ? 'bg-gradient-to-r from-green-500 to-green-400 shadow-md shadow-green-200' : 'bg-gray-200'}`}>
+      {done
+        ? <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+        : <span className="w-2 h-2 rounded-full bg-gray-400 block" />
+      }
+    </div>
+    <div>
+      <p className={`text-sm font-medium ${done ? 'text-gray-800' : 'text-gray-400'}`}>{label}</p>
+      {sublabel && <p className="text-xs text-gray-400">{sublabel}</p>}
+    </div>
+  </div>
+);
+
+// ─── Document Upload Card ─────────────────────────────────────────────────────
+const DocUploadField = ({ label, accept, file, onChange, uploaded, previewUrl }) => {
+  const inputRef = useRef();
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">{label}</p>
+      <div
+        onClick={() => inputRef.current?.click()}
+        className={`relative border-2 border-dashed rounded-xl p-3 cursor-pointer transition-all flex items-center gap-3 group
+          ${uploaded
+            ? 'border-green-300 bg-green-50/50'
+            : 'border-gray-200 bg-gray-50/50 hover:border-blue-400 hover:bg-blue-50/50'}`}
+      >
+        {previewUrl ? (
+          <img src={previewUrl} alt="preview" className="w-12 h-12 object-cover rounded-lg flex-shrink-0 ring-2 ring-white shadow" />
+        ) : (
+          <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${uploaded ? 'bg-green-100' : 'bg-gray-200 group-hover:bg-blue-100'}`}>
+            <svg className={`w-6 h-6 transition-colors ${uploaded ? 'text-green-500' : 'text-gray-400 group-hover:text-blue-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium truncate ${uploaded && !file ? 'text-green-700' : 'text-gray-700'}`}>
+            {file ? file.name : uploaded ? 'Uploaded ✓' : 'Tap to upload'}
+          </p>
+          <p className="text-xs text-gray-400">JPG, PNG, PDF · max 5MB</p>
+        </div>
+        {uploaded && !file && (
+          <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" />
+            </svg>
+          </div>
+        )}
+      </div>
+      <input ref={inputRef} type="file" accept={accept} className="hidden" onChange={onChange} />
+    </div>
+  );
+};
+
+// ─── Section Card ─────────────────────────────────────────────────────────────
+const SectionCard = ({ children, className = '' }) => (
+  <div className={`bg-white rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-300 border border-gray-100 p-5 ${className}`}>
+    {children}
+  </div>
+);
+
+// ─── Step Header ──────────────────────────────────────────────────────────────
+const StepHeader = ({ num, done, title, subtitle }) => (
+  <div className="flex items-center gap-3 mb-5">
+    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-all
+      ${done ? 'bg-gradient-to-r from-green-500 to-green-400 text-white shadow-md shadow-green-200' : 'bg-gray-100 text-gray-500'}`}>
+      {done ? (
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+      ) : num}
+    </div>
+    <div>
+      <h4 className="font-semibold text-gray-900">{title}</h4>
+      {subtitle && <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>}
+    </div>
+  </div>
+);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MAIN PROFILE COMPONENT
+// ═════════════════════════════════════════════════════════════════════════════
 function Profile() {
-  const { user, logout, updateUser } = useAuth();
-  
+  const { user, updateUser } = useAuth();
+  const [activeTab, setActiveTab] = useState('profile');
+
+  // ── Profile edit state ──────────────────────────────────────────────────
   const [isEditing, setIsEditing] = useState(false);
-  const [profileData, setProfileData] = useState({
-    name: '',
-    email: '',
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const [profileData, setProfileData] = useState({ name: '', email: '' });
+  const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [totalRides, setTotalRides] = useState(0);
-  const [ridesLoading, setRidesLoading] = useState(true);
-  const [showRatingModal, setShowRatingModal] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [hoverRating, setHoverRating] = useState(0);
-  const [feedback, setFeedback] = useState('');
-  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
-  const [userRating, setUserRating] = useState(null);
 
-  // Initialize profile data when user loads
+  // ── Verification state ──────────────────────────────────────────────────
+  const [verif, setVerif] = useState(null);
+  const [verifLoading, setVerifLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Profile photo
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+
+  // Aadhaar
+  const [aadhaarNumber, setAadhaarNumber] = useState('');
+  const [aadhaarFront, setAadhaarFront] = useState(null);
+  const [aadhaarBack, setAadhaarBack] = useState(null);
+  const [aadhaarUploading, setAadhaarUploading] = useState(false);
+
+  // Driving License
+  const [dlNumber, setDlNumber] = useState('');
+  const [dlExpiry, setDlExpiry] = useState('');
+  const [dlFront, setDlFront] = useState(null);
+  const [dlBack, setDlBack] = useState(null);
+  const [dlUploading, setDlUploading] = useState(false);
+
+  // ── Init ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (user) {
-      setProfileData({
-        name: user.name || '',
-        email: user.email || '',
-      });
-      fetchUserRides();
-      fetchUserRating();
+      setProfileData({ name: user.name || '', email: user.email || '' });
+      fetchTotalRides();
+      fetchVerificationStatus();
     }
   }, [user]);
 
-  // Fetch total rides for the user
-  const fetchUserRides = async () => {
-    try {
-      console.log('📊 Fetching user rides...');
-      setRidesLoading(true);
-      
-      const response = await api.get('/rides/user/stats');
-      
-      console.log('✅ User rides received:', response.data);
-      
-      const data = response.data.data || response.data;
-      setTotalRides(data.totalRides || 0);
-      
-    } catch (error) {
-      console.error('❌ Error fetching user rides:', error);
-      setTotalRides(0);
-    } finally {
-      setRidesLoading(false);
-    }
-  };
-
-  // Fetch user's existing rating
-  const fetchUserRating = async () => {
-    try {
-      const response = await api.get('/ratings/user/my-rating');
-      const data = response.data.data || response.data;
-      
-      if (data.rating) {
-        setUserRating(data.rating);
-      }
-    } catch (error) {
-      console.log('No existing rating found');
-    }
-  };
-
-  // Handle rating submission
-  const handleRatingSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (rating === 0) {
-      toast.error('Please select a rating', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-      return;
-    }
-
-    setIsSubmittingRating(true);
-
-    try {
-      const response = await api.post('/ratings/submit', {
-        rating,
-        feedback: feedback.trim() || undefined,
-      });
-
-      toast.success('Thank you for your rating!', {
-        duration: 4000,
-        position: 'top-center',
-        style: {
-          background: '#10B981',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-
-      setUserRating({ rating, feedback });
-      setShowRatingModal(false);
-      setRating(0);
-      setFeedback('');
-      setHoverRating(0);
-      
-    } catch (error) {
-      console.error('❌ Error submitting rating:', error);
-      
-      const errorMessage = error.response?.data?.message || 'Failed to submit rating. Please try again.';
-      
-      toast.error(errorMessage, {
-        duration: 4000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-    } finally {
-      setIsSubmittingRating(false);
-    }
-  };
-
-  // Track if there are unsaved changes
   useEffect(() => {
     if (user) {
-      const changed = 
+      setHasChanges(
         profileData.name !== (user.name || '') ||
-        profileData.email !== (user.email || '');
-      setHasChanges(changed);
+        profileData.email !== (user.email || '')
+      );
     }
   }, [profileData, user]);
 
-  // Handle input changes
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setProfileData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // Validate profile data
-  const validateProfile = () => {
-    if (!profileData.name.trim()) {
-      toast.error('Name is required', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-      return false;
-    }
-    
-    if (profileData.name.trim().length < 2) {
-      toast.error('Name must be at least 2 characters long', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-      return false;
-    }
-
-    if (!profileData.email.trim()) {
-      toast.error('Email is required', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-      return false;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(profileData.email)) {
-      toast.error('Please enter a valid email address', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-      return false;
-    }
-
-    return true;
-  };
-
-  // Handle profile update submission
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!validateProfile()) {
-      return;
-    }
-
-    if (!hasChanges) {
-      toast.error('No changes to save', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#F59E0B',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-      return;
-    }
-
-    setIsLoading(true);
-
+  const fetchTotalRides = async () => {
     try {
-      const updatedUser = await updateUserProfile(profileData);
-      
-      // Update the user in auth context
-      updateUser(updatedUser);
-      
-      // Show success toast
-      toast.success('Profile updated successfully!', {
-        duration: 3000,
-        position: 'top-center',
-        style: {
-          background: '#10B981',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-        iconTheme: {
-          primary: '#fff',
-          secondary: '#10B981',
-        },
-      });
-      
-      setIsEditing(false);
-      setHasChanges(false);
+      const res = await api.get('/rides/user/stats');
+      const data = res.data.data || res.data;
+      setTotalRides(data.totalRides || 0);
+    } catch { setTotalRides(0); }
+  };
+
+  const fetchVerificationStatus = async () => {
+    setVerifLoading(true);
+    try {
+      const res = await getVerificationStatus();
+      setVerif(res.data);
     } catch (err) {
-      console.error('Profile update error:', err);
-      
-      const errorMessage = err.response?.data?.message || err.message || 'Failed to update profile. Please try again.';
-      
-      // Show error toast
-      toast.error(errorMessage, {
-        duration: 4000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
+      console.error('Failed to fetch verification status:', err);
     } finally {
-      setIsLoading(false);
+      setVerifLoading(false);
     }
   };
 
-  // Handle cancel
-  const handleCancel = () => {
-    if (user) {
-      setProfileData({
-        name: user.name || '',
-        email: user.email || '',
-      });
-    }
-    setIsEditing(false);
-    setHasChanges(false);
-  };
-
-  // Warn user about unsaved changes
-  const handleEditToggle = () => {
-    if (isEditing && hasChanges) {
-      const confirmCancel = window.confirm('You have unsaved changes. Are you sure you want to cancel?');
-      if (!confirmCancel) return;
-      handleCancel();
-    } else {
-      setIsEditing(!isEditing);
+  // ── Profile save ────────────────────────────────────────────────────────
+  const handleProfileSave = async (e) => {
+    e.preventDefault();
+    if (!profileData.name.trim() || profileData.name.trim().length < 2)
+      return toast.error('Name must be at least 2 characters');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileData.email))
+      return toast.error('Enter a valid email address');
+    setIsSaving(true);
+    try {
+      const updated = await updateUserProfile(profileData);
+      updateUser(updated);
+      toast.success('Profile updated');
+      setIsEditing(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Update failed');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const displayUser = user || {
-    name: 'Guest User',
-    email: 'guest@example.com',
-    createdAt: new Date().toISOString(),
+  // ── Photo upload ─────────────────────────────────────────────────────────
+  const handlePhotoChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) return toast.error('File size must be under 5MB');
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
   };
 
+  const handlePhotoUpload = async () => {
+    if (!photoFile) return;
+    setPhotoUploading(true);
+    try {
+      await uploadProfilePhoto(photoFile);
+      toast.success('Profile photo uploaded');
+      setPhotoFile(null);
+      await fetchVerificationStatus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Photo upload failed');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  // ── Aadhaar upload ───────────────────────────────────────────────────────
+  const handleAadhaarUpload = async () => {
+    const clean = aadhaarNumber.replace(/\D/g, '');
+    if (clean.length !== 12) return toast.error('Aadhaar number must be exactly 12 digits');
+    if (!aadhaarFront) return toast.error('Upload the front of your Aadhaar');
+    if (!aadhaarBack) return toast.error('Upload the back of your Aadhaar');
+    setAadhaarUploading(true);
+    try {
+      await uploadAadhaar(clean, aadhaarFront, aadhaarBack);
+      toast.success('Aadhaar uploaded successfully');
+      setAadhaarFront(null);
+      setAadhaarBack(null);
+      await fetchVerificationStatus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Aadhaar upload failed');
+    } finally {
+      setAadhaarUploading(false);
+    }
+  };
+
+  // ── DL upload ────────────────────────────────────────────────────────────
+  const handleDLUpload = async () => {
+    const cleanDL = dlNumber.replace(/[\s-]/g, '').toUpperCase();
+    if (!cleanDL) return toast.error('Enter your driving license number');
+    if (!dlExpiry) return toast.error('Enter license expiry date');
+    if (new Date(dlExpiry) <= new Date()) return toast.error('License appears to be expired');
+    if (!dlFront) return toast.error('Upload the front of your driving license');
+    if (!dlBack) return toast.error('Upload the back of your driving license');
+    setDlUploading(true);
+    try {
+      await uploadDrivingLicense(cleanDL, dlExpiry, dlFront, dlBack);
+      toast.success('Driving license uploaded successfully');
+      setDlFront(null);
+      setDlBack(null);
+      await fetchVerificationStatus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'DL upload failed');
+    } finally {
+      setDlUploading(false);
+    }
+  };
+
+  // ── Submit for review ────────────────────────────────────────────────────
+  const handleSubmitForReview = async () => {
+    setSubmitting(true);
+    try {
+      await submitForReview();
+      toast.success('Documents submitted! Review takes 24–48 hours.');
+      await fetchVerificationStatus();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Submission failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  const formatAadhaar = (val) => {
+    const digits = val.replace(/\D/g, '').slice(0, 12);
+    return digits.replace(/(\d{4})(\d{0,4})(\d{0,4})/, (_, a, b, c) =>
+      [a, b, c].filter(Boolean).join('-')
+    );
+  };
+
+  const isLocked = verif && ['submitted', 'approved'].includes(verif.status);
+  const canSubmit = verif?.allStepsDone && !isLocked;
+  const profilePhotoUrl = photoPreview || verif?.profilePhotoUrl || user?.driverVerification?.profilePhoto?.url;
+
+  // ═════════════════════════════════════════════════════════════════════════
   return (
-    <div className="min-h-[85vh] bg-gradient-to-br from-gray-50 to-blue-50 py-12">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          
-          {/* Page Header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <h2 className="text-4xl font-bold text-gray-900">
-                {isEditing ? 'Edit Profile' : 'Profile'}
-              </h2>
-            </div>
-            <p className="text-gray-600">
-              {isEditing ? 'Update your personal details' : 'Manage your account information'}
-            </p>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+      <div className="max-w-2xl mx-auto px-4 py-8">
 
-          {/* Profile Card */}
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-            
-            {/* Header Section with Avatar */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-8 py-12 relative">
-              <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-                
-                {/* Avatar */}
-                <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-lg ring-4 ring-white ring-opacity-50">
-                  <svg className="w-16 h-16 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
+        {/* ── Page Header ─────────────────────────────────────────────── */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">My Account</h1>
+          <p className="text-gray-500 text-sm mt-0.5">Manage your profile and driver verification</p>
+        </div>
+
+        {/* ── Tabs ────────────────────────────────────────────────────── */}
+        <div className="flex gap-4 mb-6 bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100">
+          {[
+            { key: 'profile', label: 'Profile' },
+            {
+              key: 'verification',
+              label: (
+                <span className="flex items-center gap-5 ml-8">
+                  Driver Verification
+                  {verif && <VerificationBadge status={verif.status} />}
+                </span>
+              )
+            }
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`flex-1 mr-5 py-2.5 text-sm font-semibold rounded-xl transition-all ${activeTab === key
+                ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md transform scale-[1.02]'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-white'
+                }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════════
+            TAB: PROFILE
+        ══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'profile' && (
+          <div className="space-y-4">
+
+            {/* Profile hero */}
+            <SectionCard className="!p-0 overflow-hidden">
+              <div className="bg-gradient-to-r from-blue-600 to-green-600 px-6 pt-8 pb-6">
+                <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5">
+                  {/* Avatar */}
+                  <div className="relative">
+                    <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white/10 ring-2 ring-white/20 shadow-xl flex-shrink-0">
+                      {profilePhotoUrl ? (
+                        <img src={profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <svg className="w-10 h-10 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                    {user?.isDriverVerified && (
+                      <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-center sm:text-left">
+                    <h2 className="text-xl font-bold text-white">{user?.name || 'User'}</h2>
+                    <p className="text-gray-400 text-sm text-white">{user?.email}</p>
+                    <div className="flex items-center gap-2 mt-2 flex-wrap justify-center sm:justify-start">
+                      <span className="text-xs bg-white/10 text-gray-300 px-2.5 py-1 rounded-full">
+                        Member since {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2024'}
+                      </span>
+                      {user?.isDriverVerified && (
+                        <span className="text-xs bg-green-500/20 text-green-300 border border-green-500/30 px-2.5 py-1 rounded-full font-semibold">
+                          ✓ Verified Driver
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats strip */}
+              <div className="grid grid-cols-3 divide-x divide-gray-100 bg-white">
+                <div className="py-4 px-4 text-center">
+                  <p className="text-2xl font-bold text-gray-900">{totalRides}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Total Rides</p>
+                </div>
+                <div className="py-4 px-4 text-center">
+                  <p className="text-sm font-semibold text-green-600 flex items-center justify-center gap-1.5">
+                    <span className="w-2 h-2 bg-green-400 rounded-full" /> Active
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">Account</p>
+                </div>
+                <div className="py-4 px-4 text-center">
+                  <p className="text-sm font-semibold">
+                    {verif ? <VerificationBadge status={verif.status} /> : '—'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1.5">Driver Status</p>
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Verification prompt */}
+            {verif && verif.status !== 'approved' && (
+              <button
+                onClick={() => setActiveTab('verification')}
+                className={`w-full rounded-2xl p-4 border text-left flex items-start gap-3 transition-all hover:shadow-md active:scale-[0.99]
+                  ${verif.status === 'rejected' ? 'bg-red-50 border-red-200' :
+                    verif.status === 'submitted' ? 'bg-blue-50 border-blue-200' :
+                      'bg-amber-50 border-amber-200'}`}
+              >
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0
+                  ${verif.status === 'rejected' ? 'bg-red-100' :
+                    verif.status === 'submitted' ? 'bg-blue-100' : 'bg-amber-100'}`}>
+                  {verif.status === 'submitted'
+                    ? <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    : verif.status === 'rejected'
+                      ? <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      : <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">
+                    {verif.status === 'submitted' ? 'Verification under review' :
+                      verif.status === 'rejected' ? 'Verification rejected — action required' :
+                        'Complete driver verification to post rides'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {verif.status === 'submitted'
+                      ? 'Your documents are being reviewed. Usually takes 24–48 hours.'
+                      : verif.status === 'rejected'
+                        ? verif.rejectionReason || 'Please re-submit your documents.'
+                        : 'Upload your profile photo, Aadhaar, and driving license.'}
+                  </p>
+                </div>
+                <svg className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+
+            {/* Edit profile form */}
+            <SectionCard>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-900">Personal Details</h3>
+                {!isEditing && (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleProfileSave} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Full Name</label>
+                  {isEditing ? (
+                    <input
+                      value={profileData.name}
+                      onChange={e => setProfileData(p => ({ ...p, name: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                      placeholder="Your full name"
+                      required
+                    />
+                  ) : (
+                    <p className="text-sm font-medium text-gray-900 bg-gray-50 rounded-xl px-4 py-2.5 border border-gray-100">{user?.name || '—'}</p>
+                  )}
                 </div>
 
-                {/* User Info */}
-                <div className="text-center md:text-left flex-1">
-                  <h3 className="text-3xl font-bold text-white mb-2">
-                    {displayUser.name || 'User'}
-                  </h3>
-                  <p className="text-blue-100 text-lg mb-4">
-                    {displayUser.email || 'user@example.com'}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Email Address</label>
+                  {isEditing ? (
+                    <input
+                      type="email"
+                      value={profileData.email}
+                      onChange={e => setProfileData(p => ({ ...p, email: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-medium text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                      placeholder="you@example.com"
+                      required
+                    />
+                  ) : (
+                    <p className="text-sm font-medium text-gray-900 bg-gray-50 rounded-xl px-4 py-2.5 border border-gray-100">{user?.email || '—'}</p>
+                  )}
+                </div>
+
+                {isEditing && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="submit"
+                      disabled={isSaving || !hasChanges}
+                      className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-xl font-semibold text-sm hover:from-blue-700 hover:to-blue-600 hover:shadow-lg transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200"
+                    >
+                      {isSaving ? 'Saving…' : 'Save Changes'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditing(false);
+                        setProfileData({ name: user?.name || '', email: user?.email || '' });
+                      }}
+                      className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-semibold text-sm hover:bg-gray-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </form>
+            </SectionCard>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            TAB: DRIVER VERIFICATION
+        ══════════════════════════════════════════════════════════════ */}
+        {activeTab === 'verification' && (
+          <div className="space-y-4">
+
+            {/* Status overview */}
+            <SectionCard>
+              <div className="flex items-start justify-between mb-5">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-lg">Driver Verification</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">Required to post rides on ShareMyRide</p>
+                </div>
+                {verif && <VerificationBadge status={verif.status} />}
+              </div>
+
+              {verifLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="h-8 bg-gray-100 rounded-xl animate-pulse" />
+                  ))}
+                </div>
+              ) : verif ? (
+                <div className="space-y-3 bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <StepCheck done={verif.steps?.profilePhoto} label="Profile photo" sublabel="Clear face photo" />
+                  <StepCheck done={verif.steps?.aadhaar} label="Aadhaar card (KYC)" sublabel="12-digit Aadhaar, both sides" />
+                  <StepCheck done={verif.steps?.drivingLicense} label="Driving license" sublabel="Valid Indian DL, both sides" />
+                </div>
+              ) : null}
+
+              {verif?.status === 'rejected' && verif.rejectionReason && (
+                <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Rejection Reason
                   </p>
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                    <span className="px-4 py-1.5 bg-green-700 bg-opacity-20 text-white rounded-full text-sm font-medium inline-flex items-center gap-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      Member since {displayUser.createdAt ? new Date(displayUser.createdAt).getFullYear() : '2024'}
-                    </span>
-                    {hasChanges && isEditing && (
-                      <span className="px-4 py-1.5 bg-yellow-500 bg-opacity-90 text-white rounded-full text-sm font-medium animate-pulse inline-flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  <p className="text-sm text-red-600 mt-1">{verif.rejectionReason}</p>
+                </div>
+              )}
+
+              {verif?.status === 'approved' && (
+                <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-green-800">You're a verified driver!</p>
+                    <p className="text-xs text-green-600 mt-0.5">You can now post rides on ShareMyRide.</p>
+                  </div>
+                </div>
+              )}
+
+              {verif?.status === 'submitted' && (
+                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-blue-800">Documents submitted for review</p>
+                  <p className="text-xs text-blue-600 mt-1">Our team reviews documents within 24–48 hours. You'll be notified once approved.</p>
+                  {verif.submittedAt && (
+                    <p className="text-xs text-blue-400 mt-1">
+                      Submitted: {new Date(verif.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* ── Step 1: Profile Photo ─────────────────────────────── */}
+            {!isLocked && (
+              <SectionCard>
+                <StepHeader num="1" done={verif?.steps?.profilePhoto} title="Profile Photo" subtitle="A clear photo of your face. No sunglasses or hats." />
+
+                <div className="flex gap-4 items-start">
+                  <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200 shadow-sm">
+                    {profilePhotoUrl ? (
+                      <img src={profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>
-                        Unsaved changes
-                      </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <DocUploadField
+                      label="Select photo"
+                      accept="image/jpeg,image/png,image/webp"
+                      file={photoFile}
+                      onChange={handlePhotoChange}
+                      uploaded={verif?.steps?.profilePhoto}
+                    />
+                    {photoFile && (
+                      <button
+                        onClick={handlePhotoUpload}
+                        disabled={photoUploading}
+                        className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:from-blue-700 hover:to-blue-600 hover:shadow-lg transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200"
+                      >
+                        {photoUploading ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Uploading…
+                          </span>
+                        ) : 'Upload Photo'}
+                      </button>
                     )}
                   </div>
                 </div>
-              </div>
-            </div>
+              </SectionCard>
+            )}
 
-            {/* Profile Details/Edit Form Section */}
-            <form onSubmit={handleSubmit} id="profile-edit-form">
-              <div className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                  
-                  {/* Name Field */}
-                  <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-500 mb-1">Full Name</p>
-                        {isEditing ? (
-                          <input
-                            id="name"
-                            name="name"
-                            type="text"
-                            value={profileData.name}
-                            onChange={handleChange}
-                            className="w-full text-gray-900 font-medium p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                            required
-                            disabled={isLoading}
-                          />
-                        ) : (
-                          <p className="text-gray-900 font-medium">{displayUser.name || 'Not provided'}</p>
-                        )}
-                      </div>
-                    </div>
+            {/* ── Step 2: Aadhaar ───────────────────────────────────── */}
+            {!isLocked && (
+              <SectionCard>
+                <StepHeader num="2" done={verif?.steps?.aadhaar} title="Aadhaar Card" subtitle="Government-issued identity verification (KYC)" />
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                      Aadhaar Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="1234-5678-9012"
+                      value={aadhaarNumber}
+                      onChange={e => setAadhaarNumber(formatAadhaar(e.target.value))}
+                      maxLength={14}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                    />
+                    {verif?.aadhaarMasked && (
+                      <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
+                        Saved: {verif.aadhaarMasked}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Email Field */}
-                  <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-500 mb-1">Email Address</p>
-                        {isEditing ? (
-                          <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            value={profileData.email}
-                            onChange={handleChange}
-                            className="w-full text-gray-900 font-medium p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                            required
-                            disabled={isLoading}
-                          />
-                        ) : (
-                          <p className="text-gray-900 font-medium">{displayUser.email || 'Not provided'}</p>
-                        )}
-                      </div>
-                    </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <DocUploadField
+                      label="Front side *"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      file={aadhaarFront}
+                      onChange={e => setAadhaarFront(e.target.files[0])}
+                      uploaded={verif?.aadhaarFrontUploaded}
+                    />
+                    <DocUploadField
+                      label="Back side *"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      file={aadhaarBack}
+                      onChange={e => setAadhaarBack(e.target.files[0])}
+                      uploaded={verif?.aadhaarBackUploaded}
+                    />
                   </div>
 
-                  {/* Account Status */}
-                  <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <button
+                    onClick={handleAadhaarUpload}
+                    disabled={aadhaarUploading}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:from-blue-700 hover:to-blue-600 hover:shadow-lg transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200"
+                  >
+                    {aadhaarUploading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-500 mb-1">Account Status</p>
-                        <p className="text-gray-900 font-medium inline-flex items-center gap-2">
-                          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                          Active
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Total Rides */}
-                  <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-500 mb-1">Total Rides</p>
-                        {ridesLoading ? (
-                          <div className="animate-pulse">
-                            <div className="h-6 bg-gray-300 rounded w-16"></div>
-                          </div>
-                        ) : (
-                          <p className="text-gray-900 font-medium text-2xl">{totalRides}</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
+                        Uploading…
+                      </span>
+                    ) : verif?.steps?.aadhaar ? 'Re-upload Aadhaar' : 'Upload Aadhaar'}
+                  </button>
                 </div>
-              </div>
-            </form>
+              </SectionCard>
+            )}
 
-            {/* Action Buttons */}
-            <div className="px-8 pb-8">
-              <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
-                {isEditing ? (
-                  <>
-                    {/* Save Button */}
-                    <button
-                      type="submit"
-                      form="profile-edit-form"
-                      className="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={isLoading || !hasChanges}
-                    >
-                      {isLoading ? (
-                        <>
-                          <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          <span>Saving...</span>
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <span>Save Changes</span>
-                        </>
+            {/* ── Step 3: Driving License ───────────────────────────── */}
+            {!isLocked && (
+              <SectionCard>
+                <StepHeader num="3" done={verif?.steps?.drivingLicense} title="Driving License" subtitle="Valid Indian driving license — must not be expired" />
+
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                        DL Number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="PB0120200012345"
+                        value={dlNumber}
+                        onChange={e => setDlNumber(e.target.value.toUpperCase())}
+                        maxLength={20}
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-mono uppercase focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                      />
+                      {verif?.dlNumber && (
+                        <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
+                          Saved: {verif.dlNumber}
+                        </p>
                       )}
-                    </button>
-                    
-                    {/* Cancel Button */}
-                    <button
-                      type="button"
-                      onClick={handleCancel}
-                      className="flex-1 bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold hover:bg-gray-500 transition-colors duration-200 flex items-center justify-center gap-2"
-                      disabled={isLoading}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+                        Expiry Date <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={dlExpiry}
+                        onChange={e => setDlExpiry(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                      />
+                      {verif?.dlExpiry && (
+                        <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 00-1.414 0L8 12.586 4.707 9.293a1 1 0 00-1.414 1.414l4 4a1 1 0 001.414 0l8-8a1 1 0 000-1.414z" clipRule="evenodd" /></svg>
+                          Expires: {new Date(verif.dlExpiry).toLocaleDateString('en-IN')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <DocUploadField
+                      label="Front side *"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      file={dlFront}
+                      onChange={e => setDlFront(e.target.files[0])}
+                      uploaded={verif?.dlFrontUploaded}
+                    />
+                    <DocUploadField
+                      label="Back side *"
+                      accept="image/jpeg,image/png,image/webp,application/pdf"
+                      file={dlBack}
+                      onChange={e => setDlBack(e.target.files[0])}
+                      uploaded={verif?.dlBackUploaded}
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleDLUpload}
+                    disabled={dlUploading}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:from-blue-700 hover:to-blue-600 hover:shadow-lg transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200"
+                  >
+                    {dlUploading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Uploading…
+                      </span>
+                    ) : verif?.steps?.drivingLicense ? 'Re-upload DL' : 'Upload Driving License'}
+                  </button>
+                </div>
+              </SectionCard>
+            )}
+
+            {/* ── Submit for Review ─────────────────────────────────── */}
+            {!isLocked && (
+              <SectionCard>
+                <h4 className="font-semibold text-gray-900 mb-1">Submit for Review</h4>
+                <p className="text-xs text-gray-500 mb-4">
+                  Once all 3 steps are complete, submit your documents. Our team will review and approve within 24–48 hours.
+                </p>
+
+                {/* Progress bar */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+                    <span>Completion</span>
+                    <span>
+                      {[verif?.steps?.profilePhoto, verif?.steps?.aadhaar, verif?.steps?.drivingLicense].filter(Boolean).length}/3 steps
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-500"
+                      style={{
+                        width: `${([verif?.steps?.profilePhoto, verif?.steps?.aadhaar, verif?.steps?.drivingLicense].filter(Boolean).length / 3) * 100}%`
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSubmitForReview}
+                  disabled={!canSubmit || submitting}
+                  className={`w-full py-3 rounded-xl font-semibold text-sm transition-all
+                    ${canSubmit
+                      ? 'bg-gradient-to-r from-green-600 to-green-500 text-white hover:from-green-700 hover:to-green-600 shadow-lg hover:shadow-xl transform hover:scale-[1.02]'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                >
+                  {submitting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      <span>Cancel</span>
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* Edit Profile Button */}
-                    <button
-                      type="button"
-                      onClick={handleEditToggle}
-                      className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                      <span>Edit Profile</span>
-                    </button>
-                    
-                    {/* Logout Button */}
-                    <button
-                      type="button"
-                      onClick={logout}
-                      className="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors duration-200 flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      <span>Logout</span>
-                    </button>
-                  </>
+                      Submitting…
+                    </span>
+                  ) : 'Submit Documents for Review'}
+                </button>
+                {!verif?.allStepsDone && (
+                  <p className="text-xs text-center text-gray-400 mt-2">Complete all 3 steps above to enable submission</p>
                 )}
-              </div>
-            </div>
+              </SectionCard>
+            )}
 
-          </div>
-
-          {/* User Rating Display */}
-          {userRating && (
-            <div className="mt-8 bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+            {/* Locked — submitted */}
+            {isLocked && verif.status === 'submitted' && (
+              <div className="bg-blue-50 rounded-2xl border border-blue-200 p-8 text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-800">Your Rating</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    {[...Array(5)].map((_, index) => (
-                      <svg
-                        key={index}
-                        className={`w-5 h-5 ${index < userRating.rating ? 'text-yellow-500' : 'text-gray-300'}`}
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                      </svg>
-                    ))}
-                    <span className="text-gray-600 ml-2">{userRating.rating}/5</span>
-                  </div>
-                  {userRating.feedback && (
-                    <p className="text-gray-600 mt-2 italic">"{userRating.feedback}"</p>
-                  )}
-                </div>
-              </div>
-              <p className="text-sm text-gray-500">Thank you for rating ShareMyRide! Your feedback helps us improve.</p>
-            </div>
-          )}
-
-          {/* Coming Soon Section */}
-          <div className="mt-8 bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-gray-800 mb-2">More Features Coming Soon!</h3>
-            <p className="text-gray-600">
-              We're working on adding ride history, detailed reviews, and payment settings.
-            </p>
-          </div>
-
-        </div>
-      </div>
-
-      {/* Floating Rate Us Button */}
-      {!userRating && (
-        <button
-          onClick={() => setShowRatingModal(true)}
-          className="fixed bottom-8 right-8 w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 text-white rounded-full shadow-2xl hover:shadow-yellow-500/50 hover:scale-110 transition-all duration-300 flex items-center justify-center z-50 animate-bounce"
-          aria-label="Rate Us"
-        >
-          <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        </button>
-      )}
-
-      {/* Rating Modal */}
-      {showRatingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-scale-in">
-            {/* Close Button */}
-            <button
-              onClick={() => {
-                setShowRatingModal(false);
-                setRating(0);
-                setHoverRating(0);
-                setFeedback('');
-              }}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-
-            {/* Modal Header */}
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Rate ShareMyRide</h3>
-              <p className="text-gray-600">How would you rate your experience?</p>
-            </div>
-
-            {/* Rating Form */}
-            <form onSubmit={handleRatingSubmit}>
-              {/* Star Rating */}
-              <div className="flex justify-center gap-2 mb-6">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => setRating(star)}
-                    onMouseEnter={() => setHoverRating(star)}
-                    onMouseLeave={() => setHoverRating(0)}
-                    className="focus:outline-none transform hover:scale-110 transition-transform"
-                  >
-                    <svg
-                      className={`w-12 h-12 ${
-                        star <= (hoverRating || rating)
-                          ? 'text-yellow-500'
-                          : 'text-gray-300'
-                      } transition-colors`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  </button>
-                ))}
-              </div>
-
-              {/* Rating Text */}
-              {rating > 0 && (
-                <p className="text-center text-gray-700 font-medium mb-4">
-                  {rating === 5 && '🌟 Amazing!'}
-                  {rating === 4 && '😊 Great!'}
-                  {rating === 3 && '👍 Good'}
-                  {rating === 2 && '😐 Okay'}
-                  {rating === 1 && '😞 Poor'}
+                <h4 className="font-bold text-blue-900 text-lg">Documents Under Review</h4>
+                <p className="text-sm text-blue-700 mt-2 max-w-xs mx-auto">
+                  Our team is reviewing your documents. We'll notify you once approved — typically within 24–48 hours.
                 </p>
-              )}
-
-              {/* Feedback Textarea */}
-              <div className="mb-6">
-                <label htmlFor="feedback" className="block text-sm font-semibold text-gray-700 mb-2">
-                  Additional Feedback (Optional)
-                </label>
-                <textarea
-                  id="feedback"
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  placeholder="Tell us more about your experience..."
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none resize-none"
-                  rows="4"
-                  maxLength="500"
-                  disabled={isSubmittingRating}
-                />
-                <p className="text-xs text-gray-500 mt-1 text-right">
-                  {feedback.length}/500 characters
-                </p>
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={isSubmittingRating || rating === 0}
-                className="w-full bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-yellow-500 hover:to-orange-600 transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmittingRating ? (
-                  <>
-                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span>Submitting...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>Submit Rating</span>
-                  </>
+                {verif.submittedAt && (
+                  <p className="text-xs text-blue-400 mt-3">
+                    Submitted on {new Date(verif.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
                 )}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+              </div>
+            )}
 
-      {/* CSS Animation */}
-      <style jsx>{`
-        @keyframes scale-in {
-          from {
-            transform: scale(0.9);
-            opacity: 0;
-          }
-          to {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-        
-        .animate-scale-in {
-          animation: scale-in 0.3s ease-out;
-        }
-      `}</style>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

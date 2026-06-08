@@ -139,9 +139,35 @@ exports.optionalAuth = async (req, res, next) => {
   }
 };
 
+/**
+ * Protect Admin Routes - Verify isolated Admin JWT token
+ */
+exports.protectAdmin = async (req, res, next) => {
+  try {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'Not authorized, no token' });
+    }
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.role !== 'admin' || decoded.id !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized as admin' });
+    }
+    
+    req.admin = decoded; // Attach simple admin payload
+    next();
+  } catch (error) {
+    return res.status(401).json({ success: false, message: 'Token failed' });
+  }
+};
+
 // Export all functions
 module.exports = {
   protect: exports.protect,
   authorize: exports.authorize,
-  optionalAuth: exports.optionalAuth
+  optionalAuth: exports.optionalAuth,
+  protectAdmin: exports.protectAdmin
 };

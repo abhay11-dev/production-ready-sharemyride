@@ -6,64 +6,28 @@ const path = require('path');
 
 const app = express();
 
-// CRITICAL: Apply CORS before any other middleware
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  
-  // List of allowed origins
-  const allowedOrigins = [
-    'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
-    'https://share-my-ride.vercel.app',
-    'https://production-ready-sharemyride.onrender.com',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    process.env.FRONTEND_URL
-  ];
-  
-  // Check if origin is allowed or contains share-my-ride
-  if (origin && (allowedOrigins.includes(origin) || 
-      (origin.includes('share-my-ride') && origin.includes('vercel.app')) ||
-      (origin.includes('sharemyride') && origin.includes('onrender.com')))) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
+const allowedOrigins = [
+  'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
+  'https://share-my-ride.vercel.app',
+  'https://production-ready-sharemyride.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL
+];
 
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
-
-// Also use cors package as backup
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = [
-      'https://share-my-ride-git-main-abhays-projects-cdb9056e.vercel.app',
-      'https://share-my-ride.vercel.app',
-      'https://production-ready-sharemyride.onrender.com',
-      'http://localhost:5173/',
-      'http://localhost:3000',
-      process.env.FRONTEND_URL
-    ];
-    
-    if (origin && (origin.includes('share-my-ride') && origin.includes('vercel.app') ||
-        origin.includes('sharemyride') && origin.includes('onrender.com'))) {
+    if (allowedOrigins.includes(origin) || 
+        (origin.includes('share-my-ride') && origin.includes('vercel.app')) ||
+        (origin.includes('sharemyride') && origin.includes('onrender.com'))) {
       return callback(null, true);
     }
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(null, true); // Allow all for now
-    }
+    // Fallback for development or specific cases
+    callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -115,6 +79,8 @@ const webhookRoutes = require('./routes/webhookRoutes');
 const receiptRoutes = require('./routes/receipts');
 const ratingRoutes = require('./routes/ratingRoutes'); // ✅ NEW: Rating routes
 const statsRoutes = require('./routes/statsRoutes');   // ✅ NEW: Stats routes
+const driverVerificationRoutes = require('./routes/driverVerificationRoutes');
+const adminRoutes = require('./routes/adminRoutes'); // ✅ NEW: Admin routes
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -140,6 +106,8 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/receipts', receiptRoutes);
 app.use('/api/ratings', ratingRoutes);  // ✅ NEW: Rating endpoints
 app.use('/api/stats', statsRoutes);     // ✅ NEW: Stats endpoints
+app.use('/api/driver-verification', driverVerificationRoutes);
+app.use('/api/admin', adminRoutes);     // ✅ NEW: Admin endpoints
 
 app.get('/api', (req, res) => {
   res.json({ 
@@ -166,7 +134,9 @@ app.get('/api-info', (req, res) => {
       webhooks: '/api/webhooks',
       receipts: '/api/receipts',
       ratings: '/api/ratings',  // ✅ NEW
-      stats: '/api/stats'       // ✅ NEW
+      stats: '/api/stats',      // ✅ NEW
+      driverVerification: '/api/driver-verification',
+      admin: '/api/admin'       // ✅ NEW
     }
   });
 });
@@ -207,6 +177,7 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Rating API: http://localhost:${PORT}/api/ratings`);
     console.log(`📈 Stats API: http://localhost:${PORT}/api/stats`);
+    console.log(`🪪 Driver Verification API: http://localhost:${PORT}/api/driver-verification`);
   });
 }
 

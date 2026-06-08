@@ -9,14 +9,11 @@ exports.getProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    const userResponse = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      createdAt: user.createdAt
-    };
-
-    res.json(userResponse);
+    // The toJSON method in the model automatically handles filtering sensitive fields
+    res.json({
+      success: true,
+      user
+    });
   } catch (error) {
     console.error('Get profile error:', error.message);
     res.status(500).json({ message: 'Server Error' });
@@ -66,15 +63,12 @@ exports.updateProfile = async (req, res) => {
 
     await user.save();
 
-    // Return user without password
-    const updatedUser = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      createdAt: user.createdAt
-    };
-
-    res.json(updatedUser);
+    // Return user (password/tokens automatically excluded via toJSON)
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user
+    });
   } catch (error) {
     console.error('Update profile error:', error.message);
     res.status(500).json({ message: 'Server Error' });
@@ -92,7 +86,10 @@ exports.deleteAccount = async (req, res) => {
 
     await User.findByIdAndDelete(req.user._id);
 
-    res.json({ message: 'Account deleted successfully' });
+    res.json({ 
+      success: true,
+      message: 'Account deleted successfully' 
+    });
   } catch (error) {
     console.error('Delete account error:', error.message);
     res.status(500).json({ message: 'Server Error' });
