@@ -20,12 +20,8 @@ function Login() {
     try {
       // Pass credentials object
       const result = await login({ email, password });
-
-      console.log('Login result:', result);
       
       if (result.success) {
-        console.log('Login successful, navigating to home');
-        
         // Extract user name for toast
         const userName = result.user?.name || result.user?.firstName || result.user?.email?.split('@')[0] || 'User';
         
@@ -72,7 +68,9 @@ function Login() {
         setError(result.error || 'Login failed');
       }
     } catch (err) {
-      console.error('Login error:', err);
+      if (import.meta.env?.DEV) {
+        console.error('Login error:', err.message || err);
+      }
       
       // Show error toast
       toast.error(

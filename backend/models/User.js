@@ -43,10 +43,10 @@ const driverVerificationSchema = new mongoose.Schema({
   },
 
   // Overall Verification Status
-  // pending → submitted → approved | rejected | needs_info
+  // pending → submitted → under_review → approved | rejected | needs_info
   status: {
     type: String,
-    enum: ['not_started', 'pending', 'submitted', 'approved', 'rejected', 'needs_info'],
+    enum: ['not_started', 'pending', 'submitted', 'under_review', 'approved', 'rejected', 'needs_info'],
     default: 'not_started',
     index: true
   },

@@ -91,4 +91,63 @@ const getSignedUrl = async (s3Key, expiresIn = 3600) => {
   return awsGetSignedUrl(s3Client, command, { expiresIn });
 };
 
-module.exports = { uploadFileToS3, deleteFileFromS3, getSignedUrl };
+const normalizeS3Key = (value) => {
+  if (!value || typeof value !== 'string') return null;
+
+  if (!/^https?:\/\//i.test(value)) {
+    return value.replace(/^\/+/, '');
+  }
+
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname;
+    const pathKey = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+
+    if (BUCKET && hostname === `${BUCKET}.s3.amazonaws.com`) {
+      return pathKey;
+    }
+
+    if (BUCKET && hostname.startsWith(`${BUCKET}.s3.`)) {
+      return pathKey;
+    }
+
+    if (hostname === 's3.amazonaws.com' || hostname.startsWith('s3.')) {
+      const [bucketFromPath, ...keyParts] = pathKey.split('/');
+      if (!BUCKET || bucketFromPath === BUCKET) {
+        return keyParts.join('/');
+      }
+    }
+
+    return null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const getObjectFromS3 = async (s3Key) => {
+  ensureS3Configured();
+
+  const key = normalizeS3Key(s3Key);
+  if (!key) {
+    throw new Error('S3 object key is required');
+  }
+
+  const command = new GetObjectCommand({ Bucket: BUCKET, Key: key });
+  const object = await s3Client.send(command);
+  return {
+    key,
+    body: object.Body,
+    contentType: object.ContentType || 'application/octet-stream',
+    contentLength: object.ContentLength,
+    lastModified: object.LastModified,
+    cacheControl: object.CacheControl
+  };
+};
+
+module.exports = {
+  uploadFileToS3,
+  deleteFileFromS3,
+  getSignedUrl,
+  getObjectFromS3,
+  normalizeS3Key
+};

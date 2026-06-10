@@ -9,6 +9,15 @@ const generateToken = (userId) => {
   });
 };
 
+const sanitizeUser = (user) => {
+  if (!user) return user;
+  const safeUser = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
+  delete safeUser.password;
+  delete safeUser.resetPasswordToken;
+  delete safeUser.resetPasswordExpires;
+  return safeUser;
+};
+
 // ─── Signup ──────────────────────────────────────────────────────────────────
 const signup = async (req, res) => {
   try {
@@ -38,7 +47,7 @@ const signup = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Account created successfully! Please sign in.',
-      user
+      user: sanitizeUser(user)
     });
   } catch (error) {
     console.error('Signup error:', error);
@@ -85,7 +94,7 @@ const login = async (req, res) => {
       success: true,
       message: 'Welcome back! Login successful.',
       token,
-      user
+      user: sanitizeUser(user)
     });
   } catch (error) {
     console.error('Login error:', error);

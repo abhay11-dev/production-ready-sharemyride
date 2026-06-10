@@ -27,6 +27,11 @@ function AdminDashboard() {
       const users = await fetchRequests();
       const formattedData = users.map(user => {
         const v = user.driverVerification || {};
+        const docRef = (type, url) => ({
+          type,
+          url: url || "",
+          available: Boolean(url),
+        });
         return {
           _id: user._id,
           user: {
@@ -36,12 +41,13 @@ function AdminDashboard() {
           status: v.status || 'pending',
           submittedAt: v.submittedAt || user.createdAt,
           documents: {
-            profilePhoto: v.profilePhoto?.url || `https://ui-avatars.com/api/?name=${user.name}`,
-            aadhaarFront: v.aadhaar?.frontImageUrl || "",
-            aadhaarBack: v.aadhaar?.backImageUrl || "",
-            dlFront: v.drivingLicense?.frontImageUrl || "",
-            dlBack: v.drivingLicense?.backImageUrl || ""
+            profilePhoto: docRef('profilePhoto', v.profilePhoto?.url),
+            aadhaarFront: docRef('aadhaarFront', v.aadhaar?.frontImageUrl),
+            aadhaarBack: docRef('aadhaarBack', v.aadhaar?.backImageUrl),
+            dlFront: docRef('dlFront', v.drivingLicense?.frontImageUrl),
+            dlBack: docRef('dlBack', v.drivingLicense?.backImageUrl)
           },
+          avatarFallback: `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'Driver')}`,
           details: {
             aadhaarNumber: v.aadhaar?.numberMasked || v.aadhaar?.number || "Not provided",
             dlNumber: v.drivingLicense?.number || "Not provided",
@@ -214,7 +220,7 @@ function AdminDashboard() {
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <img src={req.documents.profilePhoto} alt="" className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
+                          <img src={req.avatarFallback} alt="" className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
                           <div>
                             <p className="font-bold text-gray-900 text-sm group-hover:text-blue-700 transition-colors">{req.user.name}</p>
                             <p className="text-xs text-gray-500">{req.user.email}</p>

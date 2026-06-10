@@ -17,6 +17,15 @@ const generateRefreshToken = (userId) => {
   });
 };
 
+const sanitizeUserForResponse = (user) => {
+  if (!user) return user;
+  const safeUser = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
+  delete safeUser.password;
+  delete safeUser.resetPasswordToken;
+  delete safeUser.resetPasswordExpires;
+  return safeUser;
+};
+
 // Signup user
 exports.signup = async (req, res) => {
   try {
@@ -119,14 +128,7 @@ exports.signup = async (req, res) => {
       message: 'Account created successfully',
       token,
       refreshToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        role: user.role,
-        createdAt: user.createdAt
-      }
+      user: sanitizeUserForResponse(user)
     });
   } catch (error) {
     console.error('Signup error:', error);
@@ -202,16 +204,7 @@ exports.login = async (req, res) => {
       message: 'Login successful',
       token,
       refreshToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phoneNumber: user.phoneNumber,
-        role: user.role,
-        profileComplete: user.profileComplete,
-        createdAt: user.createdAt,
-        lastLogin: user.lastLogin
-      }
+      user: sanitizeUserForResponse(user)
     });
   } catch (error) {
     console.error('Login error:', error);

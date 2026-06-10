@@ -29,3 +29,13 @@ export const updateRequestStatus = async (id, status, remark) => {
   const response = await adminAxios.put(`/verifications/${id}`, { status, remark });
   return response.data;
 };
+
+export const fetchVerificationDocument = async (id, documentType) => {
+  const response = await adminAxios.get(`/verifications/${id}/document/${documentType}`, {
+    responseType: 'blob',
+  });
+  return {
+    blob: response.data,
+    contentType: response.headers['content-type'] || response.data.type || 'application/octet-stream',
+  };
+};

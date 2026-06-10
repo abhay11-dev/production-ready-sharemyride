@@ -3,6 +3,20 @@ import { loginUser as loginAPI, signupUser as signupAPI } from '../services/auth
 
 export const UserContext = createContext();
 
+const sanitizeForLog = (value) => {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(sanitizeForLog);
+
+  return Object.entries(value).reduce((safeValue, [key, item]) => {
+    if (/password|token|authorization/i.test(key)) {
+      safeValue[key] = '********';
+    } else {
+      safeValue[key] = sanitizeForLog(item);
+    }
+    return safeValue;
+  }, {});
+};
+
 export const UserProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -48,10 +62,14 @@ export const UserProvider = ({ children }) => {
         throw new Error('Email and password are required');
       }
 
-      console.log('🔄 Logging in with:', { email: credentials.email });
+      if (import.meta.env?.DEV) {
+        console.log('🔄 Logging in with:', sanitizeForLog(credentials));
+      }
       
       const response = await loginAPI(credentials);
-      console.log('📦 Login API response:', response);
+      if (import.meta.env?.DEV) {
+        console.log('📦 Login API response:', sanitizeForLog(response));
+      }
       
       if (response.success === false) {
         throw new Error(response.message || 'Login failed');
@@ -61,7 +79,7 @@ export const UserProvider = ({ children }) => {
       const userData = response.user;
       
       if (!token) {
-        console.error('❌ No token in response:', response);
+        console.error('❌ No token in login response');
         throw new Error('No authentication token received');
       }
       
@@ -76,7 +94,7 @@ export const UserProvider = ({ children }) => {
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || 'Login failed';
       setError(errorMessage);
-      console.error('❌ Login error:', err);
+      console.error('❌ Login error:', err.message || err);
       
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -101,16 +119,20 @@ export const UserProvider = ({ children }) => {
         throw new Error('Invalid email format');
       }
 
-      console.log('🔄 Signing up with:', { name: details.name, email: details.email });
+      if (import.meta.env?.DEV) {
+        console.log('🔄 Signing up with:', sanitizeForLog(details));
+      }
       
       const response = await signupAPI(details);
-      console.log('📦 Signup API response:', response);
+      if (import.meta.env?.DEV) {
+        console.log('📦 Signup API response:', sanitizeForLog(response));
+      }
       
       const token = response.token || response.data?.token;
       const userData = response.user || response.data?.user || response;
       
       if (!token) {
-        console.error('❌ No token in response:', response);
+        console.error('❌ No token in signup response');
         throw new Error('No authentication token received');
       }
       
@@ -125,7 +147,7 @@ export const UserProvider = ({ children }) => {
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || 'Signup failed';
       setError(errorMessage);
-      console.error('❌ Signup error:', err);
+      console.error('❌ Signup error:', err.message || err);
       
       localStorage.removeItem('token');
       localStorage.removeItem('user');

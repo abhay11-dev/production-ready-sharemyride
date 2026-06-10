@@ -1,13 +1,52 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const { getSignedUrl } = require('../services/s3Service');
+const { getSignedUrl, getObjectFromS3, normalizeS3Key } = require('../services/s3Service');
+
+const DOCUMENT_FIELDS = {
+  profilePhoto: {
+    label: 'Profile Photo',
+    get: (dv) => ({
+      key: dv?.profilePhoto?.s3Key,
+      url: dv?.profilePhoto?.url
+    })
+  },
+  aadhaarFront: {
+    label: 'Aadhaar Front',
+    get: (dv) => ({
+      key: dv?.aadhaar?.frontImageKey,
+      url: dv?.aadhaar?.frontImageUrl
+    })
+  },
+  aadhaarBack: {
+    label: 'Aadhaar Back',
+    get: (dv) => ({
+      key: dv?.aadhaar?.backImageKey,
+      url: dv?.aadhaar?.backImageUrl
+    })
+  },
+  dlFront: {
+    label: 'Driving License Front',
+    get: (dv) => ({
+      key: dv?.drivingLicense?.frontImageKey,
+      url: dv?.drivingLicense?.frontImageUrl
+    })
+  },
+  dlBack: {
+    label: 'Driving License Back',
+    get: (dv) => ({
+      key: dv?.drivingLicense?.backImageKey,
+      url: dv?.drivingLicense?.backImageUrl
+    })
+  }
+};
 
 const getFreshDocumentUrl = async (key, fallbackUrl = null) => {
-  if (!key) return fallbackUrl;
+  const s3Key = key || normalizeS3Key(fallbackUrl);
+  if (!s3Key) return fallbackUrl;
   try {
-    return await getSignedUrl(key, 3600); // 1 hour validity
+    return await getSignedUrl(s3Key, 3600); // 1 hour validity
   } catch (error) {
-    console.warn('Unable to generate signed S3 URL:', key, error.message);
+    console.warn('Unable to generate signed S3 URL:', s3Key, error.message);
     return fallbackUrl;
   }
 };
@@ -150,5 +189,61 @@ exports.updateVerification = async (req, res) => {
   } catch (error) {
     console.error('Update verification error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// @desc    Stream a private verification document for admin preview
+// @route   GET /api/admin/verifications/:id/document/:documentType
+// @access  Private (Admin)
+exports.streamVerificationDocument = async (req, res) => {
+  try {
+    const { id, documentType } = req.params;
+    const field = DOCUMENT_FIELDS[documentType];
+
+    if (!field) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid document type'
+      });
+    }
+
+    const user = await User.findById(id).select('driverVerification');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const { key, url } = field.get(user.driverVerification);
+    const s3Key = key || normalizeS3Key(url);
+
+    if (!s3Key) {
+      return res.status(404).json({
+        success: false,
+        message: `${field.label} has not been uploaded`
+      });
+    }
+
+    const object = await getObjectFromS3(s3Key);
+
+    res.setHeader('Content-Type', object.contentType);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (object.contentLength) {
+      res.setHeader('Content-Length', object.contentLength);
+    }
+
+    object.body.pipe(res);
+  } catch (error) {
+    console.error('Stream verification document error:', {
+      userId: req.params.id,
+      documentType: req.params.documentType,
+      name: error.name,
+      message: error.message
+    });
+
+    const statusCode = error.name === 'NoSuchKey' ? 404 : 500;
+    res.status(statusCode).json({
+      success: false,
+      message: 'Unable to load verification document'
+    });
   }
 };

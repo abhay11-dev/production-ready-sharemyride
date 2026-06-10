@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { fetchVerificationDocument } from '../../services/adminService';
 
 const StatusBadge = ({ status }) => {
   const config = {
@@ -12,10 +13,88 @@ const StatusBadge = ({ status }) => {
   return <span className={`text-xs font-semibold px-3 py-1 rounded-full ${cls}`}>{label}</span>;
 };
 
+const isPdfPreview = (preview) =>
+  preview?.contentType?.includes('pdf') || preview?.url?.toLowerCase().includes('.pdf');
+
+const DocumentPreview = ({ requestId, document, label, onOpen }) => {
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(Boolean(document?.available));
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let objectUrl;
+    let cancelled = false;
+
+    const loadDocument = async () => {
+      if (!document?.available) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError('');
+        const { blob, contentType } = await fetchVerificationDocument(requestId, document.type);
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) setPreview({ url: objectUrl, contentType });
+      } catch (err) {
+        if (!cancelled) setError('Could not load document');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadDocument();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [document?.available, document?.type, requestId]);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow">
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{label}</p>
+      <div
+        className={`aspect-video bg-gray-100 rounded-xl overflow-hidden relative ${preview ? 'cursor-pointer group' : ''}`}
+        onClick={() => preview && onOpen(preview)}
+      >
+        {!document?.available ? (
+          <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 border border-dashed border-gray-200">
+            <svg className="w-8 h-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            <span className="text-xs font-semibold">Not Uploaded</span>
+          </div>
+        ) : loading ? (
+          <div className="w-full h-full flex items-center justify-center text-gray-500 bg-gray-50">
+            <span className="text-xs font-semibold">Loading preview...</span>
+          </div>
+        ) : error ? (
+          <div className="w-full h-full flex flex-col items-center justify-center text-red-500 bg-red-50 border border-red-100 px-4 text-center">
+            <svg className="w-8 h-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v4m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" /></svg>
+            <span className="text-xs font-bold">{error}</span>
+          </div>
+        ) : isPdfPreview(preview) ? (
+          <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500 transition-transform duration-300 group-hover:scale-105">
+            <svg className="w-12 h-12 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 9h1.5m1.5 0h1.5m-4.5 4h6m-6 4h6" /></svg>
+            <span className="text-xs font-bold uppercase tracking-wide">PDF Document</span>
+          </div>
+        ) : (
+          <img src={preview.url} alt={label} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+        )}
+        {preview && (
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+            <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 function RequestDetailsModal({ request, onClose, onUpdateStatus }) {
   const [remark, setRemark] = useState('');
   const [activeTab, setActiveTab] = useState('details'); // details, images, audit
-  const [fullscreenImage, setFullscreenImage] = useState(null);
+  const [fullscreenPreview, setFullscreenPreview] = useState(null);
 
   if (!request) return null;
 
@@ -31,15 +110,15 @@ function RequestDetailsModal({ request, onClose, onUpdateStatus }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
       {/* Fullscreen Image/PDF Preview */}
-      {fullscreenImage && (
+      {fullscreenPreview && (
         <div 
           className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setFullscreenImage(null)}
+          onClick={() => setFullscreenPreview(null)}
         >
-          {fullscreenImage.toLowerCase().includes('.pdf') ? (
-            <iframe src={fullscreenImage} className="w-full h-[90vh] max-w-5xl bg-white rounded-lg" title="PDF Preview" />
+          {isPdfPreview(fullscreenPreview) ? (
+            <iframe src={fullscreenPreview.url} className="w-full h-[90vh] max-w-5xl bg-white rounded-lg" title="PDF Preview" />
           ) : (
-            <img src={fullscreenImage} alt="Fullscreen preview" className="max-w-full max-h-full object-contain rounded-lg" />
+            <img src={fullscreenPreview.url} alt="Fullscreen preview" className="max-w-full max-h-full object-contain rounded-lg" />
           )}
           <button className="absolute top-6 right-6 text-white bg-black/50 p-2 rounded-full hover:bg-white hover:text-black transition-colors">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -86,7 +165,7 @@ function RequestDetailsModal({ request, onClose, onUpdateStatus }) {
             {activeTab === 'details' && (
               <div className="space-y-6">
                 <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                  <img src={request.documents.profilePhoto} alt="Profile" className="w-16 h-16 rounded-xl object-cover" />
+                  <img src={request.avatarFallback} alt="Profile" className="w-16 h-16 rounded-xl object-cover" />
                   <div>
                     <h3 className="text-lg font-bold text-gray-900">{request.user.name}</h3>
                     <p className="text-sm text-gray-500">{request.user.email}</p>
@@ -119,37 +198,18 @@ function RequestDetailsModal({ request, onClose, onUpdateStatus }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
-                    { label: 'Aadhaar Front', url: request.documents.aadhaarFront },
-                    { label: 'Aadhaar Back', url: request.documents.aadhaarBack },
-                    { label: 'Driving License Front', url: request.documents.dlFront },
-                    { label: 'Driving License Back', url: request.documents.dlBack },
+                    { label: 'Aadhaar Front', document: request.documents.aadhaarFront },
+                    { label: 'Aadhaar Back', document: request.documents.aadhaarBack },
+                    { label: 'Driving License Front', document: request.documents.dlFront },
+                    { label: 'Driving License Back', document: request.documents.dlBack },
                   ].map((doc, idx) => (
-                    <div key={idx} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow">
-                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">{doc.label}</p>
-                      <div 
-                        className={`aspect-video bg-gray-100 rounded-xl overflow-hidden relative ${doc.url ? 'cursor-pointer group' : ''}`}
-                        onClick={() => doc.url && setFullscreenImage(doc.url)}
-                      >
-                        {!doc.url ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 border border-dashed border-gray-200">
-                            <svg className="w-8 h-8 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                            <span className="text-xs font-semibold">Not Uploaded</span>
-                          </div>
-                        ) : doc.url.toLowerCase().includes('.pdf') ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500 transition-transform duration-300 group-hover:scale-105">
-                            <svg className="w-12 h-12 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 9h1.5m1.5 0h1.5m-4.5 4h6m-6 4h6" /></svg>
-                            <span className="text-xs font-bold uppercase tracking-wide">PDF Document</span>
-                          </div>
-                        ) : (
-                          <img src={doc.url} alt={doc.label} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                        )}
-                        {doc.url && (
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                            <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <DocumentPreview
+                      key={doc.document.type || idx}
+                      requestId={request._id}
+                      document={doc.document}
+                      label={doc.label}
+                      onOpen={setFullscreenPreview}
+                    />
                   ))}
                 </div>
               </div>

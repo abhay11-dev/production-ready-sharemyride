@@ -12,7 +12,23 @@ const getApiUrl = () => {
 
 const API_BASE_URL = getApiUrl();
 
-console.log('🌐 API Base URL:', API_BASE_URL);
+if (import.meta.env?.DEV) {
+  console.log('🌐 API Base URL:', API_BASE_URL);
+}
+
+const maskSensitiveData = (value) => {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(maskSensitiveData);
+
+  return Object.entries(value).reduce((safeValue, [key, item]) => {
+    if (/password|token|authorization|secret|credential/i.test(key)) {
+      safeValue[key] = '********';
+    } else {
+      safeValue[key] = maskSensitiveData(item);
+    }
+    return safeValue;
+  }, {});
+};
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -36,7 +52,8 @@ api.interceptors.request.use(
       console.log('📤 Request:', {
         method: config.method?.toUpperCase(),
         url: config.url,
-        hasToken: !!token
+        hasToken: !!token,
+        data: maskSensitiveData(config.data)
       });
     }
     
@@ -63,7 +80,7 @@ api.interceptors.response.use(
         status,
         message: error.response?.data?.message || error.message,
         url: error.config?.url,
-        data: error.response?.data
+        data: maskSensitiveData(error.response?.data)
       });
     }
 
