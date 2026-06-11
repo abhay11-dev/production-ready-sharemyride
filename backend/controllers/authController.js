@@ -82,7 +82,10 @@ const signup = async (req, res) => {
     await user.save();
 
     try {
-      const verificationLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}&email=${encodeURIComponent(user.email)}`;
+      if (!process.env.FRONTEND_URL) {
+        throw new Error('Server configuration error: FRONTEND_URL not set');
+      }
+      const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}&email=${encodeURIComponent(user.email)}`;
       await sendVerificationEmail(user.email, user.name, verificationLink);
 
       return res.status(201).json({
@@ -723,7 +726,10 @@ const resendVerificationEmail = async (req, res) => {
     await user.save();
 
     try {
-      const verificationLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}&email=${encodeURIComponent(user.email)}`;
+      if (!process.env.FRONTEND_URL) {
+        throw new Error('Server configuration error: FRONTEND_URL not set');
+      }
+      const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}&email=${encodeURIComponent(user.email)}`;
       await sendVerificationEmail(user.email, user.name, verificationLink);
 
       return res.status(200).json({

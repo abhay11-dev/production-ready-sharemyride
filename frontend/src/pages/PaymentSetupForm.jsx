@@ -250,7 +250,7 @@ function PaymentSetupForm() {
                       <div className="flex-shrink-0">
                         <div className="w-32 h-32 border-2 border-green-300 rounded-lg overflow-hidden bg-white">
                           <img
-                            src={qrCodePreview || `http://localhost:5000${existingQrCode}`}
+                            src={qrCodePreview || `${import.meta.env.VITE_API_URL}${existingQrCode}`}
                             alt="QR Code"
                             className="w-full h-full object-cover"
                           />

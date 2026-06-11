@@ -402,7 +402,7 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
     .content { padding: 40px 30px; }
     .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
     .message { color: #4a5568; font-size: 15px; line-height: 1.8; margin-bottom: 30px; }
-    .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; margin: 20px 0; }
+    .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; margin: 20px 0; }
     .cta-button:hover { opacity: 0.95; }
     .alternative-text { color: #718096; font-size: 13px; margin-top: 20px; }
     .link-text { color: #667eea; word-break: break-all; font-size: 12px; font-family: monospace; }
@@ -429,7 +429,7 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
       </div>
 
       <div style="text-align: center;">
-        <a href="${verificationLink}" class="cta-button">Verify Email Address</a>
+      <a href="${verificationLink}" class="cta-button" style="color: #ffffff !important; text-decoration: none;">Verify Email Address</a>
       </div>
 
       <div class="alternative-text">
@@ -479,7 +479,7 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
  */
 const sendPasswordResetEmail = async (email, name, resetToken) => {
   try {
-    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
+    const resetLink = `${process.env.FRONTEND_URL || process.env.API_BASE_URL}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
     
     const html = `
 <!DOCTYPE html>

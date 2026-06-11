@@ -173,11 +173,19 @@ app.use((err, req, res, next) => {
 // For local development
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 5000;
+  const baseUrl = `http://localhost:${PORT}`;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Rating API: http://localhost:${PORT}/api/ratings`);
-    console.log(`📈 Stats API: http://localhost:${PORT}/api/stats`);
-    console.log(`🪪 Driver Verification API: http://localhost:${PORT}/api/driver-verification`);
+    console.log(`📊 Rating API: ${baseUrl}/api/ratings`);
+    console.log(`📈 Stats API: ${baseUrl}/api/stats`);
+    console.log(`🪪 Driver Verification API: ${baseUrl}/api/driver-verification`);
+  });
+} else {
+  const PORT = process.env.PORT || 5000;
+  const baseUrl = process.env.API_BASE_URL || `http://localhost:${PORT}`;
+  app.listen(PORT, () => {
+    console.log(`🚀 Production server running on port ${PORT}`);
+    console.log(`🌐 API Base URL: ${baseUrl}`);
   });
 }
 
