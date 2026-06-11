@@ -2,11 +2,11 @@ const resend = require('../config/resend'); // Import the Resend client
 const ical = require('ical-generator').default;
 const moment = require('moment');
 
-
-console.log({
+console.log('📧 Email Service Initializing...', {
   EMAIL_SERVICE: 'Resend',
   RESEND_API_KEY: process.env.RESEND_API_KEY ? "SET" : "MISSING",
-  EMAIL_USER: process.env.EMAIL_USER ? "SET" : "MISSING" // This will be the 'from' address
+  EMAIL_USER: process.env.EMAIL_USER ? "SET" : "MISSING",
+  FRONTEND_URL: process.env.FRONTEND_URL ? "SET" : "MISSING"
 });
 
 // No need for transporter.verify with Resend, as API key validation happens on send.
@@ -15,6 +15,8 @@ console.log({
  * Generate calendar event for the ride
  */
 const generateCalendarEvent = (booking, ride, driver) => {
+  console.log(`[EmailService] Generating ICS calendar event for Booking: ${booking._id}`);
+
   const calendar = ical({ name: 'ShareMyRide Trip' });
   
   const rideDateTime = moment(`${ride.date} ${ride.time}`, 'YYYY-MM-DD HH:mm');
@@ -58,6 +60,8 @@ Safe travels!
  * Generate professional email template
  */
 const generateEmailTemplate = (booking, ride, driver, passenger, isDriver = false) => {
+  console.log(`[EmailService] Building ${isDriver ? 'Driver' : 'Passenger'} HTML template for Booking: ${booking._id}`);
+
   const baseFare = booking.baseFare || 0;
   const platformFee = baseFare * 0.08;
   const gst = platformFee * 0.18;
@@ -324,9 +328,8 @@ const generateEmailTemplate = (booking, ride, driver, passenger, isDriver = fals
  */
 const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) => {
   try {
-    console.log('📧 Preparing to send emails...');
-    console.log('Passenger email:', passenger.email);
-    console.log('Driver email:', driver.email);
+    console.info(`[EmailService] Initiating booking confirmation workflow for Booking ID: ${booking._id}`);
+    console.log(`[EmailService] Target Emails: Passenger(${passenger.email}), Driver(${driver.email})`);
     
     // Generate calendar event
     const calendarEventContent = generateCalendarEvent(booking, ride, driver);
@@ -357,13 +360,21 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
     };
 
     // Send emails
-    console.log('📤 Sending passenger email...');
-    const passengerResult = await resend.emails.send(passengerEmail); // Resend returns { data: { id: '...' } }
-    console.log('✅ Passenger email sent:', passengerResult.data?.id);
+    console.log(`[EmailService] Dispatching passenger email to: ${passenger.email}`);
+    const passengerResult = await resend.emails.send(passengerEmail);
+    if (passengerResult.error) {
+      console.error(`[EmailService] ❌ Failed to send passenger email:`, JSON.stringify(passengerResult.error, null, 2));
+    } else {
+      console.log(`[EmailService] ✅ Passenger email sent successfully. ID: ${passengerResult.data?.id}`);
+    }
     
-    console.log('📤 Sending driver email...');
-    const driverResult = await resend.emails.send(driverEmail); // Resend returns { data: { id: '...' } }
-    console.log('✅ Driver email sent:', driverResult.data?.id);
+    console.log(`[EmailService] Dispatching driver email to: ${driver.email}`);
+    const driverResult = await resend.emails.send(driverEmail);
+    if (driverResult.error) {
+      console.error(`[EmailService] ❌ Failed to send driver email:`, JSON.stringify(driverResult.error, null, 2));
+    } else {
+      console.log(`[EmailService] ✅ Driver email sent successfully. ID: ${driverResult.data?.id}`);
+    }
 
     return {
       success: true,
@@ -371,7 +382,7 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
       driverEmailId: driverResult.data?.id,
     };
   } catch (error) {
-    console.error('❌ Error sending emails:', error);
+    console.error(`[EmailService] ❌ Critical error in sendBookingConfirmationEmails:`, error);
     throw error;
   }
 };
@@ -381,6 +392,8 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
  */
 const sendVerificationEmail = async (email, name, verificationLink) => {
   try {
+    console.info(`[EmailService] Sending verification email to: ${email}`);
+
     const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -462,10 +475,14 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
     };
 
     const result = await resend.emails.send(mailOptions);
-    console.log('✅ Verification email sent:', result.data?.id);
+    if (result.error) {
+      console.error(`[EmailService] ❌ Verification email error for ${email}:`, JSON.stringify(result.error, null, 2));
+      return { success: false, error: result.error };
+    }
+    console.log(`[EmailService] ✅ Verification email sent successfully. ID: ${result.data?.id}`);
     return result.data; // Return the data object from Resend
   } catch (error) {
-    console.error('❌ Error sending verification email:', error);
+    console.error(`[EmailService] ❌ Critical error in sendVerificationEmail:`, error);
     throw error;
   }
 };
@@ -475,6 +492,8 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
  */
 const sendPasswordResetEmail = async (email, name, resetToken) => {
   try {
+    console.info(`[EmailService] Preparing password reset email for: ${email}`);
+
     const resetLink = `${process.env.FRONTEND_URL || process.env.API_BASE_URL}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
     
     const html = `
@@ -546,10 +565,16 @@ const sendPasswordResetEmail = async (email, name, resetToken) => {
     };
 
     const result = await resend.emails.send(mailOptions);
-    console.log('✅ Password reset email sent:', result.data?.id);
+
+    if (result.error) {
+      console.error(`[EmailService] ❌ Password reset email error for ${email}:`, JSON.stringify(result.error, null, 2));
+      throw new Error(result.error.message || 'Failed to send reset email');
+    }
+
+    console.log(`[EmailService] ✅ Password reset email sent successfully. ID: ${result.data?.id}`);
     return result.data; // Return the data object from Resend
-  } catch (error) {
-    console.error('❌ Error sending password reset email:', error);
+  } catch (error) { 
+    console.error(`[EmailService] ❌ Critical error in sendPasswordResetEmail:`, error);
     throw error;
   }
 };
@@ -559,6 +584,8 @@ const sendPasswordResetEmail = async (email, name, resetToken) => {
  */
 const sendWelcomeEmail = async (email, name) => {
   try {
+    console.info(`[EmailService] Sending welcome email to: ${email}`);
+
     const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -638,10 +665,14 @@ const sendWelcomeEmail = async (email, name) => {
     };
 
     const result = await resend.emails.send(mailOptions);
-    console.log('✅ Welcome email sent:', result.data?.id);
+    if (result.error) {
+      console.error(`[EmailService] ❌ Welcome email error for ${email}:`, JSON.stringify(result.error, null, 2));
+      return { success: false, error: result.error };
+    }
+    console.log(`[EmailService] ✅ Welcome email sent successfully. ID: ${result.data?.id}`);
     return result.data; // Return the data object from Resend
   } catch (error) {
-    console.error('❌ Error sending welcome email:', error);
+    console.error(`[EmailService] ❌ Critical error in sendWelcomeEmail:`, error);
     throw error;
   }
 };
