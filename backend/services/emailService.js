@@ -1,15 +1,48 @@
 const resend = require('../config/resend'); // Import the Resend client
 const ical = require('ical-generator').default;
 const moment = require('moment');
+const crypto = require('crypto');
 
-console.log('📧 Email Service Initializing...', {
-  EMAIL_SERVICE: 'Resend',
-  RESEND_API_KEY: process.env.RESEND_API_KEY ? "SET" : "MISSING",
-  EMAIL_USER: process.env.EMAIL_USER ? "SET" : "MISSING",
-  FRONTEND_URL: process.env.FRONTEND_URL ? "SET" : "MISSING"
+/**
+ * STARTUP VALIDATION
+ * Ensure all required environment variables are set before the app starts.
+ */
+const requiredEnvVars = ['RESEND_API_KEY', 'EMAIL_USER', 'FRONTEND_URL', 'NODE_ENV'];
+console.log('📧 [EmailService] Initializing Production Audit...');
+
+requiredEnvVars.forEach(varName => {
+  const isSet = !!process.env[varName];
+  console.log(`   - ${varName}: ${isSet ? 'OK ✅' : 'MISSING ❌'}`);
+  if (!isSet && process.env.NODE_ENV === 'production') {
+    throw new Error(`CRITICAL STARTUP ERROR: Missing environment variable ${varName}`);
+  }
 });
 
-// No need for transporter.verify with Resend, as API key validation happens on send.
+/**
+ * UTILITY: Logging Helpers
+ */
+const getCorrelationId = () => crypto.randomBytes(4).toString('hex').toUpperCase();
+
+const logEmailStart = (cid, type, details) => {
+  console.log(`
+===== [${cid}] EMAIL SEND START =====
+Type:        ${type}
+Recipient:   ${details.to}
+Sender:      ${details.from}
+Subject:     ${details.subject}
+Environment: ${process.env.NODE_ENV}
+Correlation: ${cid}
+======================================`);
+};
+
+const logEmailEnd = (cid, result) => {
+  console.log(`
+===== [${cid}] EMAIL SEND END =====
+Success:     ${!result.error}
+Data:        ${JSON.stringify(result.data || null, null, 2)}
+Error:       ${JSON.stringify(result.error || null, null, 2)}
+====================================`);
+};
 
 /**
  * Generate calendar event for the ride
@@ -327,30 +360,26 @@ const generateEmailTemplate = (booking, ride, driver, passenger, isDriver = fals
  * Send booking confirmation emails with calendar attachment
  */
 const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) => {
+  const cid = getCorrelationId();
   try {
-    console.info(`[EmailService] Initiating booking confirmation workflow for Booking ID: ${booking._id}`);
-    console.log(`[EmailService] Target Emails: Passenger(${passenger.email}), Driver(${driver.email})`);
-    
+    console.info(`[${cid}] Initiating booking confirmation workflow for Booking: ${booking._id}`);
+
     // Generate calendar event
     const calendarEventContent = generateCalendarEvent(booking, ride, driver);
     const attachments = [{
       filename: 'ride-calendar-invite.ics',
-      content: Buffer.from(calendarEventContent), // Resend expects Buffer for attachments
+      content: Buffer.from(calendarEventContent),
       contentType: 'text/calendar'
     }];
 
-    // Prepare email data for passenger
     const passengerEmail = {
       from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
       to: passenger.email,
       subject: `Payment Successful – Your Ride is Confirmed! 🎉`,
       html: generateEmailTemplate(booking, ride, driver, passenger, false),
       attachments: attachments,
-      // Resend does not directly support iCal method 'REQUEST', it sends as attachment.
-      // The client email app should handle the ICS file.
     };
 
-    // Prepare email data for driver
     const driverEmail = {
       from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
       to: driver.email,
@@ -359,22 +388,20 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
       attachments: attachments,
     };
 
-    // Send emails
-    console.log(`[EmailService] Dispatching passenger email to: ${passenger.email}`);
-    const passengerResult = await resend.emails.send(passengerEmail);
-    if (passengerResult.error) {
-      console.error(`[EmailService] ❌ Failed to send passenger email:`, JSON.stringify(passengerResult.error, null, 2));
-    } else {
-      console.log(`[EmailService] ✅ Passenger email sent successfully. ID: ${passengerResult.data?.id}`);
-    }
-    
-    console.log(`[EmailService] Dispatching driver email to: ${driver.email}`);
-    const driverResult = await resend.emails.send(driverEmail);
-    if (driverResult.error) {
-      console.error(`[EmailService] ❌ Failed to send driver email:`, JSON.stringify(driverResult.error, null, 2));
-    } else {
-      console.log(`[EmailService] ✅ Driver email sent successfully. ID: ${driverResult.data?.id}`);
-    }
+    logEmailStart(cid, 'Booking_Confirmation_Passenger', passengerEmail);
+    logEmailStart(cid, 'Booking_Confirmation_Driver', driverEmail);
+
+    // Send in parallel
+    const [passengerResult, driverResult] = await Promise.all([
+      resend.emails.send(passengerEmail),
+      resend.emails.send(driverEmail)
+    ]);
+
+    logEmailEnd(cid + '-P', passengerResult);
+    logEmailEnd(cid + '-D', driverResult);
+
+    if (passengerResult.error) throw new Error(`Passenger Email Failed: ${passengerResult.error.message}`);
+    if (driverResult.error) throw new Error(`Driver Email Failed: ${driverResult.error.message}`);
 
     return {
       success: true,
@@ -382,7 +409,7 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
       driverEmailId: driverResult.data?.id,
     };
   } catch (error) {
-    console.error(`[EmailService] ❌ Critical error in sendBookingConfirmationEmails:`, error);
+    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendBookingConfirmationEmails:`, error);
     throw error;
   }
 };
@@ -391,8 +418,8 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
  * Send email verification link
  */
 const sendVerificationEmail = async (email, name, verificationLink) => {
+  const cid = getCorrelationId();
   try {
-    console.info(`[EmailService] Sending verification email to: ${email}`);
 
     const html = `
 <!DOCTYPE html>
@@ -474,15 +501,21 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
       html: html,
     };
 
+    logEmailStart(cid, 'User_Verification', mailOptions);
     const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+
     if (result.error) {
-      console.error(`[EmailService] ❌ Verification email error for ${email}:`, JSON.stringify(result.error, null, 2));
-      return { success: false, error: result.error };
+      throw new Error(`Resend Verification Error: ${result.error.message}`);
     }
-    console.log(`[EmailService] ✅ Verification email sent successfully. ID: ${result.data?.id}`);
-    return result.data; // Return the data object from Resend
+
+    if (!result.data || !result.data.id) {
+      console.warn(`[${cid}] ⚠️ Resend returned success but no Email ID was provided.`);
+    }
+
+    return result.data;
   } catch (error) {
-    console.error(`[EmailService] ❌ Critical error in sendVerificationEmail:`, error);
+    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendVerificationEmail:`, error);
     throw error;
   }
 };
@@ -491,8 +524,8 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
  * Send password reset email
  */
 const sendPasswordResetEmail = async (email, name, resetToken) => {
+  const cid = getCorrelationId();
   try {
-    console.info(`[EmailService] Preparing password reset email for: ${email}`);
 
     const resetLink = `${process.env.FRONTEND_URL || process.env.API_BASE_URL}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
     
@@ -564,17 +597,17 @@ const sendPasswordResetEmail = async (email, name, resetToken) => {
       html: html,
     };
 
+    logEmailStart(cid, 'Password_Reset', mailOptions);
     const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
 
     if (result.error) {
-      console.error(`[EmailService] ❌ Password reset email error for ${email}:`, JSON.stringify(result.error, null, 2));
       throw new Error(result.error.message || 'Failed to send reset email');
     }
 
-    console.log(`[EmailService] ✅ Password reset email sent successfully. ID: ${result.data?.id}`);
-    return result.data; // Return the data object from Resend
+    return result.data;
   } catch (error) { 
-    console.error(`[EmailService] ❌ Critical error in sendPasswordResetEmail:`, error);
+    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendPasswordResetEmail:`, error);
     throw error;
   }
 };
@@ -583,8 +616,8 @@ const sendPasswordResetEmail = async (email, name, resetToken) => {
  * Send welcome email
  */
 const sendWelcomeEmail = async (email, name) => {
+  const cid = getCorrelationId();
   try {
-    console.info(`[EmailService] Sending welcome email to: ${email}`);
 
     const html = `
 <!DOCTYPE html>
@@ -664,16 +697,48 @@ const sendWelcomeEmail = async (email, name) => {
       html: html,
     };
 
+    logEmailStart(cid, 'Welcome_Email', mailOptions);
     const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+
     if (result.error) {
-      console.error(`[EmailService] ❌ Welcome email error for ${email}:`, JSON.stringify(result.error, null, 2));
-      return { success: false, error: result.error };
+      throw new Error(`Resend Welcome Error: ${result.error.message}`);
     }
-    console.log(`[EmailService] ✅ Welcome email sent successfully. ID: ${result.data?.id}`);
-    return result.data; // Return the data object from Resend
+    return result.data;
   } catch (error) {
-    console.error(`[EmailService] ❌ Critical error in sendWelcomeEmail:`, error);
+    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendWelcomeEmail:`, error);
     throw error;
+  }
+};
+
+/**
+ * Send a pure test email for debugging
+ */
+const sendTestEmail = async (toEmail) => {
+  const cid = getCorrelationId();
+  console.info(`[${cid}] Running Resend Diagnostic Test...`);
+  
+  const mailOptions = {
+    from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: `Resend Diagnostic Test - ${cid}`,
+    html: `<p>Testing Resend integration. Correlation ID: <strong>${cid}</strong></p><p>Timestamp: ${new Date().toISOString()}</p>`
+  };
+
+  try {
+    logEmailStart(cid, 'DIAGNOSTIC_TEST', mailOptions);
+    const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+    
+    return {
+      success: !result.error,
+      resendResponse: result.data || null,
+      resendError: result.error || null,
+      correlationId: cid
+    };
+  } catch (err) {
+    console.error(`[${cid}] Diagnostic catch block triggered:`, err);
+    throw err;
   }
 };
 
@@ -683,4 +748,5 @@ module.exports = {
   sendPasswordResetEmail,
   sendVerificationEmail,
   sendWelcomeEmail,
+  sendTestEmail,
 };
