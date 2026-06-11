@@ -39,7 +39,7 @@
     "polyline": "^0.2.0",
     "razorpay": "^2.9.6",
     "react-leaflet": "^5.0.0",
-    "resend": "^6.4.0",
+    "resend": "^6.12.4",
     "twilio": "^5.10.4",
     "winston": "^3.18.3"
   },

@@ -1,34 +1,15 @@
-// services/emailService.js
-const nodemailer = require('nodemailer');
+const resend = require('../config/resend'); // Import the Resend client
 const ical = require('ical-generator').default;
 const moment = require('moment');
 
 
 console.log({
-  EMAIL_SERVICE: process.env.EMAIL_SERVICE,
-  SMTP_HOST: process.env.SMTP_HOST,
-  SMTP_PORT: process.env.SMTP_PORT,
-  EMAIL_USER: process.env.EMAIL_USER ? "SET" : "MISSING"
+  EMAIL_SERVICE: 'Resend',
+  RESEND_API_KEY: process.env.RESEND_API_KEY ? "SET" : "MISSING",
+  EMAIL_USER: process.env.EMAIL_USER ? "SET" : "MISSING" // This will be the 'from' address
 });
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
-});
-
-transporter.verify((err, success) => {
-  console.log("VERIFY RESULT");
-  console.log(err);
-  console.log(success);
-});
+// No need for transporter.verify with Resend, as API key validation happens on send.
 
 /**
  * Generate calendar event for the ride
@@ -348,19 +329,22 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
     console.log('Driver email:', driver.email);
     
     // Generate calendar event
-    const calendarEvent = generateCalendarEvent(booking, ride, driver);
+    const calendarEventContent = generateCalendarEvent(booking, ride, driver);
+    const attachments = [{
+      filename: 'ride-calendar-invite.ics',
+      content: Buffer.from(calendarEventContent), // Resend expects Buffer for attachments
+      contentType: 'text/calendar'
+    }];
 
     // Prepare email data for passenger
     const passengerEmail = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
       to: passenger.email,
       subject: `Payment Successful – Your Ride is Confirmed! 🎉`,
       html: generateEmailTemplate(booking, ride, driver, passenger, false),
-      icalEvent: {
-        filename: 'ride-calendar-invite.ics',
-        method: 'REQUEST',
-        content: calendarEvent,
-      },
+      attachments: attachments,
+      // Resend does not directly support iCal method 'REQUEST', it sends as attachment.
+      // The client email app should handle the ICS file.
     };
 
     // Prepare email data for driver
@@ -369,20 +353,16 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
       to: driver.email,
       subject: `New Booking Confirmed – Ride on ${moment(ride.date).format('MMM D')}`,
       html: generateEmailTemplate(booking, ride, driver, passenger, true),
-      icalEvent: {
-        filename: 'ride-calendar-invite.ics',
-        method: 'REQUEST',
-        content: calendarEvent,
-      },
+      attachments: attachments,
     };
 
     // Send emails
     console.log('📤 Sending passenger email...');
-    const passengerResult = await transporter.sendMail(passengerEmail);
+    const passengerResult = await resend.emails.send(passengerEmail);
     console.log('✅ Passenger email sent:', passengerResult.messageId);
     
     console.log('📤 Sending driver email...');
-    const driverResult = await transporter.sendMail(driverEmail);
+    const driverResult = await resend.emails.send(driverEmail);
     console.log('✅ Driver email sent:', driverResult.messageId);
 
     return {
@@ -475,13 +455,13 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
     `.trim();
 
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Verify Your Email – ShareMyRide',
       html: html,
     };
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await resend.emails.send(mailOptions);
     console.log('✅ Verification email sent:', result.messageId);
     return result;
   } catch (error) {
@@ -559,13 +539,13 @@ const sendPasswordResetEmail = async (email, name, resetToken) => {
     `.trim();
 
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Password Reset Request – ShareMyRide',
       html: html,
     };
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await resend.emails.send(mailOptions);
     console.log('✅ Password reset email sent:', result.messageId);
     return result;
   } catch (error) {
@@ -651,13 +631,13 @@ const sendWelcomeEmail = async (email, name) => {
     `.trim();
 
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Welcome to ShareMyRide! 🚗',
       html: html,
     };
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await resend.emails.send(mailOptions);
     console.log('✅ Welcome email sent:', result.messageId);
     return result;
   } catch (error) {
@@ -672,5 +652,4 @@ module.exports = {
   sendPasswordResetEmail,
   sendVerificationEmail,
   sendWelcomeEmail,
-  transporter, // Export for testing
 };
