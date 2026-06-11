@@ -358,17 +358,17 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
 
     // Send emails
     console.log('📤 Sending passenger email...');
-    const passengerResult = await resend.emails.send(passengerEmail);
-    console.log('✅ Passenger email sent:', passengerResult.messageId);
+    const passengerResult = await resend.emails.send(passengerEmail); // Resend returns { data: { id: '...' } }
+    console.log('✅ Passenger email sent:', passengerResult.data?.id);
     
     console.log('📤 Sending driver email...');
-    const driverResult = await resend.emails.send(driverEmail);
-    console.log('✅ Driver email sent:', driverResult.messageId);
+    const driverResult = await resend.emails.send(driverEmail); // Resend returns { data: { id: '...' } }
+    console.log('✅ Driver email sent:', driverResult.data?.id);
 
     return {
       success: true,
-      passengerEmailId: passengerResult.messageId,
-      driverEmailId: driverResult.messageId,
+      passengerEmailId: passengerResult.data?.id,
+      driverEmailId: driverResult.data?.id,
     };
   } catch (error) {
     console.error('❌ Error sending emails:', error);
@@ -462,8 +462,8 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
     };
 
     const result = await resend.emails.send(mailOptions);
-    console.log('✅ Verification email sent:', result.messageId);
-    return result;
+    console.log('✅ Verification email sent:', result.data?.id);
+    return result.data; // Return the data object from Resend
   } catch (error) {
     console.error('❌ Error sending verification email:', error);
     throw error;
@@ -546,8 +546,8 @@ const sendPasswordResetEmail = async (email, name, resetToken) => {
     };
 
     const result = await resend.emails.send(mailOptions);
-    console.log('✅ Password reset email sent:', result.messageId);
-    return result;
+    console.log('✅ Password reset email sent:', result.data?.id);
+    return result.data; // Return the data object from Resend
   } catch (error) {
     console.error('❌ Error sending password reset email:', error);
     throw error;
@@ -638,8 +638,8 @@ const sendWelcomeEmail = async (email, name) => {
     };
 
     const result = await resend.emails.send(mailOptions);
-    console.log('✅ Welcome email sent:', result.messageId);
-    return result;
+    console.log('✅ Welcome email sent:', result.data?.id);
+    return result.data; // Return the data object from Resend
   } catch (error) {
     console.error('❌ Error sending welcome email:', error);
     throw error;
