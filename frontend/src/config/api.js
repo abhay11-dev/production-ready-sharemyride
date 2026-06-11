@@ -1,99 +1,104 @@
+// config/api.js
+// Axios instance used by all frontend service calls.
+//
+// Security:
+//  • Access token is pulled from memory (useAuth module) — never localStorage
+//  • On 401 TOKEN_EXPIRED, one silent refresh is attempted automatically
+//  • Refresh token travels as HttpOnly cookie — this file never touches it
+//  • Credentials: 'include' so the browser sends the cookie cross-origin
+
 import axios from 'axios';
+import { getAccessToken, setAccessToken, clearAccessToken } from '../hooks/useAuth.jsx';
 
-const getApiUrl = () => {
-  // Check for Vite environment variable
-  if (import.meta.env?.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
-  }
-  
-  // Default production URL
-  return 'https://share-my-ride-backend-aioz8wnlr-abhays-projects-cdb9056e.vercel.app/api';
-};
-
-const API_BASE_URL = getApiUrl();
-
-if (import.meta.env?.DEV) {
-  console.log('🌐 API Base URL:', API_BASE_URL);
-}
-
-const maskSensitiveData = (value) => {
-  if (!value || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(maskSensitiveData);
-
-  return Object.entries(value).reduce((safeValue, [key, item]) => {
-    if (/password|token|authorization|secret|credential/i.test(key)) {
-      safeValue[key] = '********';
-    } else {
-      safeValue[key] = maskSensitiveData(item);
-    }
-    return safeValue;
-  }, {});
-};
+const API_URL = import.meta.env.VITE_API_URL || 'https://production-ready-sharemyride.onrender.com/api';
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 10000,
+  baseURL: API_URL,
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,  // Required: sends the HttpOnly refresh-token cookie
 });
 
-// Request interceptor
+// ── Request interceptor: attach access token from memory ─────────────────────
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    
+    const token = getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
-    // Only log in development
-    if (import.meta.env?.DEV) {
-      console.log('📤 Request:', {
-        method: config.method?.toUpperCase(),
-        url: config.url,
-        hasToken: !!token,
-        data: maskSensitiveData(config.data)
-      });
-    }
-    
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor
-api.interceptors.response.use(
-  (response) => {
-    if (import.meta.env?.DEV) {
-      console.log('✅ Response:', response.status, response.config.url);
-    }
-    return response;
-  },
-  (error) => {
-    const status = error.response?.status;
-    const isAuthRequest = error.config?.url?.includes('/auth/');
-    
-    // Log errors in development
-    if (import.meta.env?.DEV) {
-      console.error('❌ API Error:', {
-        status,
-        message: error.response?.data?.message || error.message,
-        url: error.config?.url,
-        data: maskSensitiveData(error.response?.data)
-      });
-    }
+// ── Response interceptor: handle token expiry ─────────────────────────────────
+let isRefreshing = false;
+let failedQueue  = [];   // Requests that arrived while a refresh was in-flight
 
-    // Handle 401 errors
-    if (status === 401 && !isAuthRequest) {
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      
-      if (!window.location.pathname.includes('/login')) {
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // ── Token expired — attempt one silent refresh ──────────────────────────
+    if (
+      error.response?.status === 401 &&
+      error.response?.data?.code === 'TOKEN_EXPIRED' &&
+      !originalRequest._retry
+    ) {
+      if (isRefreshing) {
+        // Queue this request until the ongoing refresh completes
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((token) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        }).catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const response = await api.post('/auth/refresh-token');
+        const newToken = response.data?.token;
+
+        if (!newToken) throw new Error('No token returned from refresh');
+
+        setAccessToken(newToken);
+        processQueue(null, newToken);
+
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return api(originalRequest);
+
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        clearAccessToken();
+        localStorage.removeItem('user');
+        // Redirect to login — session is fully expired
         window.location.href = '/login';
+        return Promise.reject(refreshError);
+
+      } finally {
+        isRefreshing = false;
       }
     }
-    
+
+    // ── 403 suspended / unverified — let callers handle ───────────────────
+    // Do NOT auto-redirect here; Login.jsx shows contextual UI instead.
+
+    // ── Other errors — pass through as-is ─────────────────────────────────
     return Promise.reject(error);
   }
 );

@@ -5,6 +5,8 @@ import Login from '../pages/Auth/Login';
 import Signup from '../pages/Auth/Signup';
 import ForgotPassword from '../pages/Auth/ForgotPassword.jsx';
 import Terms from '../pages/Auth/Terms.jsx';
+import VerificationPending from '../pages/Auth/VerificationPending.jsx';
+import VerifyEmail from '../pages/Auth/VerifyEmail.jsx';
 import RideSearch from '../pages/RideSearch/RideSearch';
 import RidePost from '../pages/RidePost/RidePost';
 import Profile from '../pages/Profile/Profile.jsx';
@@ -116,6 +118,16 @@ function AppRoutes() {
             <Signup />
           </PublicRoute>
         } 
+      />
+
+      <Route 
+        path="/verification-pending" 
+        element={<VerificationPending />} 
+      />
+
+      <Route 
+        path="/verify-email" 
+        element={<VerifyEmail />} 
       />
 
       <Route path="/upcoming-rides" element={<UpcomingRides />} />

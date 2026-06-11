@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { getSignedUrl, getObjectFromS3, normalizeS3Key } = require('../services/s3Service');
 
 const DOCUMENT_FIELDS = {
@@ -51,15 +52,29 @@ const getFreshDocumentUrl = async (key, fallbackUrl = null) => {
   }
 };
 
+const secureCompare = (actual = '', expected = '') => {
+  const actualBuffer = Buffer.from(String(actual));
+  const expectedBuffer = Buffer.from(String(expected));
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+};
+
 // @desc    Admin Login
 // @route   POST /api/admin/login
 // @access  Public
 exports.adminLogin = async (req, res) => {
   try {
     const { username, password } = req.body;
+    const adminUsername = process.env.ADMIN_USERNAME;
+    const adminPassword = process.env.ADMIN_PASSWORD;
 
-    // Hardcoded credentials as requested by user
-    if (username === 'ShareMyRide' && password === 'ShareMyRide@11') {
+    if (!adminUsername || !adminPassword) {
+      return res.status(500).json({
+        success: false,
+        message: 'Admin authentication is not configured'
+      });
+    }
+
+    if (secureCompare(username, adminUsername) && secureCompare(password, adminPassword)) {
       const token = jwt.sign(
         { id: 'admin', role: 'admin' },
         process.env.JWT_SECRET,

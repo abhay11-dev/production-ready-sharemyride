@@ -105,11 +105,14 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
+import { AuthProvider } from './hooks/useAuth';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </ErrorBoundary>
   </StrictMode>
 );

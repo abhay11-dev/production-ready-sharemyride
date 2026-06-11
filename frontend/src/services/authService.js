@@ -6,8 +6,17 @@ import api from '../config/api';
  * @returns {Promise<Object>} - {token, user}
  */
 export const signupUser = async (userData) => {
-  const response = await api.post('/auth/signup', userData);
-  return response.data;
+  try {
+    const response = await api.post('/auth/signup', userData);
+    return response.data;
+  } catch (error) {
+    // Extract error message from response or use default
+    const message = error.response?.data?.message || error.message || 'Signup failed. Please try again.';
+    const customError = new Error(message);
+    customError.status = error.response?.status;
+    customError.data = error.response?.data;
+    throw customError;
+  }
 };
 
 /**
@@ -16,8 +25,16 @@ export const signupUser = async (userData) => {
  * @returns {Promise<Object>} - {token, user}
  */
 export const loginUser = async (credentials) => {
-  const response = await api.post('/auth/login', credentials);
-  return response.data;
+  try {
+    const response = await api.post('/auth/login', credentials);
+    return response.data;
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || 'Login failed. Please try again.';
+    const customError = new Error(message);
+    customError.status = error.response?.status;
+    customError.response = error.response;
+    throw customError;
+  }
 };
 
 /**
@@ -84,5 +101,41 @@ export const resetPassword = async (email, code, newPassword) => {
     return response.data;
   } catch (error) {
     throw error.response?.data || error;
+  }
+};
+
+/**
+ * Verify email with token
+ * @param {string} token - Email verification token
+ * @param {string} email - User's email address
+ * @returns {Promise<Object>} - Response data
+ */
+export const verifyEmail = async (token, email) => {
+  try {
+    const response = await api.post('/auth/verify-email', { token, email });
+    return response.data;
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || 'Email verification failed. Please try again.';
+    const customError = new Error(message);
+    customError.status = error.response?.status;
+    throw customError;
+  }
+};
+
+/**
+ * Resend verification email
+ * @param {string} email - User's email address
+ * @returns {Promise<Object>} - Response data
+ */
+export const resendVerificationEmail = async (email) => {
+  try {
+    const response = await api.post('/auth/resend-verification-email', { email });
+    return response.data;
+  } catch (error) {
+    const message = error.response?.data?.message || error.message || 'Failed to resend email. Please try again.';
+    const customError = new Error(message);
+    customError.status = error.response?.status;
+    customError.retryAfter = error.response?.data?.retryAfter;
+    throw customError;
   }
 };

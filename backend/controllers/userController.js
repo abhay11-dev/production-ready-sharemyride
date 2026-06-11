@@ -17,17 +17,29 @@ const generateRefreshToken = (userId) => {
   });
 };
 
+// Helper to mask sensitive data for logging
+const maskSensitiveData = (data) => {
+  if (!data || typeof data !== 'object') return data;
+  const masked = { ...data };
+  const fieldsToMask = ['password', 'token', 'refreshToken', 'currentPassword', 'newPassword', 'code'];
+  fieldsToMask.forEach(field => {
+    if (masked[field]) masked[field] = '******';
+  });
+  return masked;
+};
+
 const sanitizeUserForResponse = (user) => {
   if (!user) return user;
   const safeUser = typeof user.toJSON === 'function' ? user.toJSON() : { ...user };
-  delete safeUser.password;
-  delete safeUser.resetPasswordToken;
-  delete safeUser.resetPasswordExpires;
+  const sensitiveFields = ['password', 'resetPasswordToken', 'resetPasswordExpires'];
+  sensitiveFields.forEach(field => delete safeUser[field]);
   return safeUser;
 };
 
 // Signup user
 exports.signup = async (req, res) => {
+  // Safe logging example:
+  // console.log('User signup body:', maskSensitiveData(req.body));
   try {
     const { name, email, password, phoneNumber, role } = req.body;
 
@@ -86,7 +98,8 @@ exports.signup = async (req, res) => {
 
     // Check if phone number already exists
     if (phoneNumber) {
-      const existingPhone = await User.findOne({ phoneNumber });
+      const cleanedPhone = phoneNumber.replace(/[\s-]/g, '');
+      const existingPhone = await User.findOne({ phoneNumber: cleanedPhone });
       if (existingPhone) {
         return res.status(400).json({
           success: false,

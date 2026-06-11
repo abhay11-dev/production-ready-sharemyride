@@ -74,7 +74,9 @@ export const loginUser = async (credentials) => {
     
     return response.data;
   } catch (error) {
-    console.error('Login error:', error);
+    if (import.meta.env?.DEV) {
+      console.error('Login error:', error.message || error);
+    }
     throw error;
   }
 };
@@ -98,7 +100,9 @@ export const signupUser = async (details) => {
     
     return response.data;
   } catch (error) {
-    console.error('Signup error:', error);
+    if (import.meta.env?.DEV) {
+      console.error('Signup error:', error.message || error);
+    }
     throw error;
   }
 };
@@ -167,7 +171,9 @@ export const resetPassword = async (data) => {
     const response = await authAPI.post('/reset-password', data);
     return response.data;
   } catch (error) {
-    console.error('Password reset error:', error);
+    if (import.meta.env?.DEV) {
+      console.error('Password reset error:', error.message || error);
+    }
     throw error;
   }
 };

@@ -380,8 +380,281 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
   }
 };
 
+/**
+ * Send email verification link
+ */
+const sendVerificationEmail = async (email, name, verificationLink) => {
+  try {
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Email – ShareMyRide</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
+    .logo { font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 10px; }
+    .header-text { color: #ffffff; font-size: 14px; opacity: 0.95; }
+    .content { padding: 40px 30px; }
+    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
+    .message { color: #4a5568; font-size: 15px; line-height: 1.8; margin-bottom: 30px; }
+    .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; margin: 20px 0; }
+    .cta-button:hover { opacity: 0.95; }
+    .alternative-text { color: #718096; font-size: 13px; margin-top: 20px; }
+    .link-text { color: #667eea; word-break: break-all; font-size: 12px; font-family: monospace; }
+    .footer { background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; }
+    .footer-text { color: #718096; font-size: 12px; }
+    .footer-links { margin-top: 15px; }
+    .footer-links a { color: #667eea; text-decoration: none; margin: 0 15px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">🚗 ShareMyRide</div>
+      <div class="header-text">Verify Your Email Address</div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <div class="greeting">Hi ${name || 'there'},</div>
+      
+      <div class="message">
+        Thank you for registering with ShareMyRide! To complete your account setup and start sharing rides, please verify your email address by clicking the button below.
+      </div>
+
+      <div style="text-align: center;">
+        <a href="${verificationLink}" class="cta-button">Verify Email Address</a>
+      </div>
+
+      <div class="alternative-text">
+        <strong>Or copy and paste this link in your browser:</strong>
+        <div class="link-text">${verificationLink}</div>
+      </div>
+
+      <div class="message" style="margin-top: 30px; color: #718096; font-size: 13px;">
+        This verification link will expire in 24 hours. If you did not create this account, please ignore this email.
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="footer-text">
+        © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
+      </div>
+      <div class="footer-links">
+        <a href="${process.env.FRONTEND_URL}/privacy">Privacy Policy</a>
+        <a href="${process.env.FRONTEND_URL}/terms">Terms of Service</a>
+        <a href="${process.env.FRONTEND_URL}/support">Support</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Verify Your Email – ShareMyRide',
+      html: html,
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Verification email sent:', result.messageId);
+    return result;
+  } catch (error) {
+    console.error('❌ Error sending verification email:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send password reset email
+ */
+const sendPasswordResetEmail = async (email, name, resetToken) => {
+  try {
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
+    
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your Password – ShareMyRide</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
+    .logo { font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 10px; }
+    .header-text { color: #ffffff; font-size: 14px; opacity: 0.95; }
+    .content { padding: 40px 30px; }
+    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
+    .message { color: #4a5568; font-size: 15px; line-height: 1.8; margin-bottom: 30px; }
+    .warning { background: #fed7d7; color: #742a2a; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 14px; }
+    .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; margin: 20px 0; }
+    .footer { background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; }
+    .footer-text { color: #718096; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🚗 ShareMyRide</div>
+      <div class="header-text">Password Reset Request</div>
+    </div>
+
+    <div class="content">
+      <div class="greeting">Hi ${name || 'there'},</div>
+      
+      <div class="message">
+        We received a request to reset the password for your ShareMyRide account. Click the button below to create a new password.
+      </div>
+
+      <div class="warning">
+        <strong>⚠️ Security Note:</strong> This reset link will expire in 15 minutes. If you did not request this reset, please ignore this email.
+      </div>
+
+      <div style="text-align: center;">
+        <a href="${resetLink}" class="cta-button">Reset Password</a>
+      </div>
+
+      <div class="message" style="margin-top: 30px; color: #718096; font-size: 13px;">
+        If the button doesn't work, copy and paste this link into your browser:<br/>
+        <code style="color: #667eea; word-break: break-all;">${resetLink}</code>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="footer-text">
+        © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Password Reset Request – ShareMyRide',
+      html: html,
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Password reset email sent:', result.messageId);
+    return result;
+  } catch (error) {
+    console.error('❌ Error sending password reset email:', error);
+    throw error;
+  }
+};
+
+/**
+ * Send welcome email
+ */
+const sendWelcomeEmail = async (email, name) => {
+  try {
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to ShareMyRide</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
+    .logo { font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 10px; }
+    .content { padding: 40px 30px; }
+    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
+    .message { color: #4a5568; font-size: 15px; line-height: 1.8; margin-bottom: 20px; }
+    .features { margin: 30px 0; }
+    .feature { display: flex; gap: 12px; margin: 15px 0; }
+    .feature-icon { font-size: 24px; }
+    .feature-text { color: #4a5568; }
+    .footer { background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; }
+    .footer-text { color: #718096; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🚗 ShareMyRide</div>
+    </div>
+
+    <div class="content">
+      <div class="greeting">Welcome to ShareMyRide, ${name || 'there'}! 🎉</div>
+      
+      <div class="message">
+        Your account has been verified successfully! You're now ready to start sharing rides and enjoying the benefits of our community.
+      </div>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">🚗</div>
+          <div class="feature-text"><strong>Find and Share Rides</strong> – Connect with other travelers and save money on transportation.</div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">💰</div>
+          <div class="feature-text"><strong>Affordable Travel</strong> – Share costs and enjoy lower fares compared to regular taxis.</div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">⭐</div>
+          <div class="feature-text"><strong>Safe Community</strong> – All users are verified to ensure a safe and trustworthy experience.</div>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">📱</div>
+          <div class="feature-text"><strong>Easy Booking</strong> – Simple, intuitive interface to book rides anytime, anywhere.</div>
+        </div>
+      </div>
+
+      <div class="message">
+        Get started today and explore our available rides or post your own trip!
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="footer-text">
+        © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Welcome to ShareMyRide! 🚗',
+      html: html,
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Welcome email sent:', result.messageId);
+    return result;
+  } catch (error) {
+    console.error('❌ Error sending welcome email:', error);
+    throw error;
+  }
+};
+
 // Export functions
 module.exports = {
   sendBookingConfirmationEmails,
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+  sendWelcomeEmail,
   transporter, // Export for testing
 };

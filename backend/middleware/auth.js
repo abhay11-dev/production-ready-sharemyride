@@ -171,3 +171,43 @@ module.exports = {
   optionalAuth: exports.optionalAuth,
   protectAdmin: exports.protectAdmin
 };
+
+
+// ─── Require Verified Driver ───────────────────────────────────────────────
+// Middleware: ensures user is authenticated AND has driver verification approved
+exports.requireVerifiedDriver = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Not authenticated.'
+    });
+  }
+
+  if (req.user.role !== 'driver') {
+    return res.status(403).json({
+      success: false,
+      message: 'You must have the driver role to perform this action.',
+      actionCode: 'ROLE_MISMATCH'
+    });
+  }
+
+  if (req.user.driverVerification?.status !== 'approved') {
+    return res.status(403).json({
+      success: false,
+      message: 'Your driver verification is not approved yet. Complete the verification process to post rides.',
+      actionCode: 'DRIVER_NOT_VERIFIED',
+      verificationStatus: req.user.driverVerification?.status || 'not_started'
+    });
+  }
+
+  next();
+};
+
+
+module.exports = {
+  protect: exports.protect,
+  authorize: exports.authorize,
+  optionalAuth: exports.optionalAuth,
+  protectAdmin: exports.protectAdmin,
+  requireVerifiedDriver: exports.requireVerifiedDriver
+};

@@ -1,86 +1,201 @@
-// middleware/authMiddleware.js
+// middleware/auth.js
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-// ─── protect: verify JWT ────────────────────────────────────────────────────
-const protect = async (req, res, next) => {
-  let token;
+// ─── Protect ──────────────────────────────────────────────────────────────────
+// Verifies the Bearer access token and attaches req.user.
+// Also enforces account-level checks (active, not suspended, not locked).
+exports.protect = async (req, res, next) => {
+  try {
+    let token;
 
-  if (req.headers.authorization?.startsWith('Bearer')) {
-    try {
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer ')
+    ) {
       token = req.headers.authorization.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findById(decoded.id).select('-password');
+    }
 
-      if (!req.user) {
-        return res.status(401).json({ success: false, message: 'User not found' });
-      }
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authorized. Please log in.'
+      });
+    }
 
-      if (!req.user.isActive) {
-        return res.status(403).json({
+    // Verify signature + expiry
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({
           success: false,
-          code: 'ACCOUNT_SUSPENDED',
-          message: 'Your account has been suspended. Please contact support.'
+          message: 'Session expired. Please log in again.',
+          code: 'TOKEN_EXPIRED'
         });
       }
-
-      next();
-    } catch (error) {
-      console.error('Auth middleware error:', error.message);
-      return res.status(401).json({ success: false, message: 'Not authorized, token failed' });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token. Please log in again.'
+      });
     }
-  } else {
-    return res.status(401).json({ success: false, message: 'Not authorized, no token' });
+
+    // Reject refresh tokens presented as access tokens
+    if (decoded.type !== 'access') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token type.'
+      });
+    }
+
+    // Fetch user — exclude password and lockout fields (not needed here)
+    const user = await User.findById(decoded.id).select('-password -failedLoginAttempts -lockoutUntil');
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User no longer exists.'
+      });
+    }
+
+    // Account-level guards
+    if (!user.isActive || user.accountStatus === 'SUSPENDED') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended. Please contact support.'
+      });
+    }
+
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email to access this resource.',
+        requiresEmailVerification: true
+      });
+    }
+
+    req.user = user;
+    next();
+
+  } catch (error) {
+    // Never leak internal error details to client
+    console.error('Auth middleware error:', error.message);
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication failed. Please log in again.'
+    });
   }
 };
 
-// ─── requireVerifiedDriver: gate ride posting ────────────────────────────────
-// Must be used AFTER protect middleware
-const requireVerifiedDriver = async (req, res, next) => {
-  const user = req.user;
-  const status = user.driverVerification?.status;
-
-  if (status === 'approved') {
-    return next();
-  }
-
-  // Return specific codes so the frontend can route the user correctly
-  const statusMap = {
-    not_started: {
-      code: 'VERIFICATION_NOT_STARTED',
-      message: 'Please complete driver verification before posting a ride.',
-      action: 'START_VERIFICATION'
-    },
-    pending: {
-      code: 'VERIFICATION_INCOMPLETE',
-      message: 'Your verification is incomplete. Please upload all required documents.',
-      action: 'COMPLETE_VERIFICATION'
-    },
-    submitted: {
-      code: 'VERIFICATION_UNDER_REVIEW',
-      message: 'Your documents are under review. You will be notified once approved.',
-      action: 'WAIT'
-    },
-    rejected: {
-      code: 'VERIFICATION_REJECTED',
-      message: `Your verification was rejected. Reason: ${user.driverVerification?.rejectionReason || 'See profile for details'}. Please re-submit.`,
-      action: 'RESUBMIT'
+// ─── Authorize ────────────────────────────────────────────────────────────────
+// Usage: router.get('/admin-only', protect, authorize('admin'), handler)
+exports.authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Not authenticated.'
+      });
     }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to perform this action.'
+      });
+    }
+
+    next();
   };
-
-  const response = statusMap[status] || statusMap['not_started'];
-
-  return res.status(403).json({
-    success: false,
-    ...response,
-    verificationStatus: status || 'not_started'
-  });
 };
 
-// ─── requireAdmin ────────────────────────────────────────────────────────────
-const requireAdmin = (req, res, next) => {
-  if (req.user?.role === 'admin') return next();
-  return res.status(403).json({ success: false, message: 'Admin access required' });
+// ─── Optional Auth ────────────────────────────────────────────────────────────
+// Attaches req.user if a valid token is present, but does NOT fail the request.
+// Use for routes that behave differently for authenticated vs anonymous users.
+exports.optionalAuth = async (req, res, next) => {
+  try {
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer ')
+    ) {
+      const token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      if (decoded.type === 'access') {
+        const user = await User.findById(decoded.id).select('-password -failedLoginAttempts -lockoutUntil');
+        if (user && user.isActive) {
+          req.user = user;
+        }
+      }
+    }
+  } catch {
+    // Silently ignore — optional means we continue regardless
+  }
+  next();
 };
 
-module.exports = { protect, requireVerifiedDriver, requireAdmin };
+// ─── Protect Admin ────────────────────────────────────────────────────────────
+// Validates an isolated admin JWT (different secret, role embedded in payload).
+exports.protectAdmin = async (req, res, next) => {
+  try {
+    let token;
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer ')
+    ) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'Not authorized.' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (decoded.role !== 'admin' || decoded.id !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized as admin.' });
+    }
+
+    req.admin = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ success: false, message: 'Authentication failed.' });
+  }
+};
+
+
+exports.requireVerifiedDriver = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Not authenticated.'
+    });
+  }
+
+  if (req.user.role !== 'driver') {
+    return res.status(403).json({
+      success: false,
+      message: 'You must have the driver role to perform this action.'
+    });
+  }
+
+  if (req.user.driverVerification?.status !== 'approved') {
+    return res.status(403).json({
+      success: false,
+      message: 'Driver verification not approved.',
+      actionCode: 'DRIVER_NOT_VERIFIED'
+    });
+  }
+
+  next();
+};
+
+module.exports = {
+  protect: exports.protect,
+  authorize: exports.authorize,
+  optionalAuth: exports.optionalAuth,
+  protectAdmin: exports.protectAdmin,
+  requireVerifiedDriver: exports.requireVerifiedDriver
+};
+

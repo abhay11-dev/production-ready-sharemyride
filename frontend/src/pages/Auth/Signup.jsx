@@ -57,7 +57,7 @@ function Signup() {
       
       // Show success toast
       toast.success(
-        ` Account created successfully!!`,
+        `Account created successfully!!`,
         {
           duration: 4000,
           position: 'top-center',
@@ -75,17 +75,20 @@ function Signup() {
         }
       );
 
+      // Store email for verification pending page
+      localStorage.setItem('pendingVerificationEmail', email);
+
       // Wait a moment for user to see the success message
       setTimeout(() => {
-        // Show info toast asking to login
+        // Show info toast asking to verify email
         toast(
-          'Please log in to start using the app',
+          'Please check your email to verify your account',
           {
             duration: 3000,
             position: 'top-center',
-            icon: '🔐',
+            icon: '📧',
             style: {
-               background: '#10B981',
+               background: '#3B82F6',
             color: '#fff',
               fontWeight: '600',
               padding: '16px',
@@ -94,9 +97,9 @@ function Signup() {
           }
         );
         
-        // Navigate to login page
+        // Navigate to verification pending page
         setTimeout(() => {
-          navigate('/login');
+          navigate('/verification-pending', { state: { email } });
         }, 500);
       }, 1500);
       
