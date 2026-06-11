@@ -3,15 +3,31 @@ const nodemailer = require('nodemailer');
 const ical = require('ical-generator').default;
 const moment = require('moment');
 
-// Configure email transporter
+
+console.log({
+  EMAIL_SERVICE: process.env.EMAIL_SERVICE,
+  SMTP_HOST: process.env.SMTP_HOST,
+  SMTP_PORT: process.env.SMTP_PORT,
+  EMAIL_USER: process.env.EMAIL_USER ? "SET" : "MISSING"
+});
+
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_SERVICE === 'gmail' ? 'smtp.gmail.com' : process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT || 587,
-  secure: false, // true for 465, false for other ports
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD,
   },
+});
+
+transporter.verify((err, success) => {
+  console.log("VERIFY RESULT");
+  console.log(err);
+  console.log(success);
 });
 
 /**
