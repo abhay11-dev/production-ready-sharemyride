@@ -121,12 +121,14 @@ function VerifyEmail() {
                   </svg>
                 </div>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-green-600 mb-3">
+              <h2 className="text-2xl sm:text-3xl font-bold text-green-600 mb-4">
                 ✅ Email Verified!
               </h2>
-              <p className="text-gray-600 text-sm sm:text-base mb-6">
-                {message}
-              </p>
+              <div className="bg-green-500 text-white p-4 rounded-lg mb-6">
+                <p className="text-sm sm:text-base">
+                  {message}
+                </p>
+              </div>
               <p className="text-gray-500 text-xs sm:text-sm mb-6">
                 Redirecting you to login...
               </p>
@@ -147,12 +149,14 @@ function VerifyEmail() {
                   </svg>
                 </div>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-red-600 mb-3">
+              <h2 className="text-2xl sm:text-3xl font-bold text-red-600 mb-4">
                 ❌ Verification Failed
               </h2>
-              <p className="text-gray-600 text-sm sm:text-base mb-6">
-                {message}
-              </p>
+              <div className="bg-red-500 text-white p-4 rounded-lg mb-6">
+                <p className="text-sm sm:text-base">
+                  {message}
+                </p>
+              </div>
               <div className="space-y-3">
                 <button
                   onClick={handleResendEmail}
@@ -162,7 +166,7 @@ function VerifyEmail() {
                 </button>
                 <button
                   onClick={handleBackToLogin}
-                  className="w-full bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-all duration-200"
+                  className="w-full bg-gray-700 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition-all duration-200"
                 >
                   Back to Login
                 </button>

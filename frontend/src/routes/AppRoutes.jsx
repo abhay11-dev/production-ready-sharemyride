@@ -112,6 +112,14 @@ function AppRoutes() {
       />
 
       <Route 
+        path="/reset-password" 
+        element={
+          <PublicRoute>
+            <ForgotPassword />
+          </PublicRoute>
+        } 
+      />
+      <Route 
         path="/signup" 
         element={
           <PublicRoute>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 function ForgotPassword() {
   const navigate = useNavigate();
@@ -12,6 +12,7 @@ function ForgotPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [searchParams] = useSearchParams();
 
   // Use environment variable or fallback to deployed API
 const API_URL = import.meta.env.VITE_API_URL || 'https://production-ready-sharemyride.onrender.com/api';
@@ -33,6 +34,28 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://production-ready-sharem
   };
 
   const passwordStrength = getPasswordStrength(newPassword);
+
+  React.useEffect(() => {
+    const urlEmail = searchParams.get('email');
+    const urlCode = searchParams.get('code');
+
+    if (urlEmail && urlCode) {
+      setEmail(urlEmail);
+      setVerificationCode(urlCode);
+      setStep(3); // Directly jump to reset password step
+      toast.info('Please set your new password.', {
+        duration: 5000,
+        position: 'top-center',
+        style: {
+          background: '#3B82F6',
+          color: '#fff',
+          fontWeight: '600',
+          padding: '16px',
+          borderRadius: '12px',
+        },
+      });
+    }
+  }, [searchParams]);
 
   const handleSendCode = async (e) => {
     e.preventDefault();
@@ -294,7 +317,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://production-ready-sharem
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full border border-gray-300 pl-9 sm:pl-10 pr-4 py-2.5 sm:py-3 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
                   required
-                  disabled={isLoading}
+                  disabled={isLoading || (searchParams.get('email') && step === 3)}
                   autoComplete="email"
                 />
               </div>
