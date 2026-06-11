@@ -36,11 +36,13 @@ Correlation: ${cid}
 };
 
 const logEmailEnd = (cid, result) => {
+  const res = result || {};
   console.log(`
 ===== [${cid}] EMAIL SEND END =====
-Success:     ${!result.error}
-Data:        ${JSON.stringify(result.data || null, null, 2)}
-Error:       ${JSON.stringify(result.error || null, null, 2)}
+Success:     ${!!(res.data && !res.error)}
+Data:        ${JSON.stringify(res.data || null, null, 2)}
+Error:       ${JSON.stringify(res.error || null, null, 2)}
+Raw Type:    ${typeof result}
 ====================================`);
 };
 
@@ -400,8 +402,13 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
     logEmailEnd(cid + '-P', passengerResult);
     logEmailEnd(cid + '-D', driverResult);
 
-    if (passengerResult.error) throw new Error(`Passenger Email Failed: ${passengerResult.error.message}`);
-    if (driverResult.error) throw new Error(`Driver Email Failed: ${driverResult.error.message}`);
+    if (passengerResult.error) {
+      throw new Error(`Passenger Email Failed: ${JSON.stringify(passengerResult.error)}`);
+    }
+    
+    if (driverResult.error) {
+      throw new Error(`Driver Email Failed: ${JSON.stringify(driverResult.error)}`);
+    }
 
     return {
       success: true,
