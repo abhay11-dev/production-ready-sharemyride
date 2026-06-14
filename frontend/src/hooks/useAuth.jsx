@@ -139,6 +139,11 @@ export function AuthProvider({ children }) {
       setUser(null);
       localStorage.removeItem('user');
       localStorage.removeItem('pendingVerificationEmail');
+      // Clear cached profile photo so it doesn't bleed into the next session
+      try {
+        sessionStorage.removeItem('smr_profile_photo_url');
+        sessionStorage.removeItem('smr_profile_photo_expiry');
+      } catch { /* ignore */ }
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
     }
   }, []);

@@ -110,6 +110,36 @@ const StepHeader = ({ num, done, title, subtitle }) => (
 // ═════════════════════════════════════════════════════════════════════════════
 // MAIN PROFILE COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
+
+// ── Session-level photo URL cache key ─────────────────────────────────────────
+const PHOTO_CACHE_KEY = 'smr_profile_photo_url';
+const PHOTO_CACHE_EXPIRY_KEY = 'smr_profile_photo_expiry';
+const PHOTO_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function getCachedPhotoUrl() {
+  try {
+    const expiry = sessionStorage.getItem(PHOTO_CACHE_EXPIRY_KEY);
+    if (expiry && Date.now() > Number(expiry)) {
+      sessionStorage.removeItem(PHOTO_CACHE_KEY);
+      sessionStorage.removeItem(PHOTO_CACHE_EXPIRY_KEY);
+      return null;
+    }
+    return sessionStorage.getItem(PHOTO_CACHE_KEY) || null;
+  } catch { return null; }
+}
+
+function setCachedPhotoUrl(url) {
+  try {
+    if (url) {
+      sessionStorage.setItem(PHOTO_CACHE_KEY, url);
+      sessionStorage.setItem(PHOTO_CACHE_EXPIRY_KEY, String(Date.now() + PHOTO_CACHE_TTL_MS));
+    } else {
+      sessionStorage.removeItem(PHOTO_CACHE_KEY);
+      sessionStorage.removeItem(PHOTO_CACHE_EXPIRY_KEY);
+    }
+  } catch { /* ignore storage errors */ }
+}
+
 function Profile() {
   const { user, updateUser } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
@@ -126,9 +156,11 @@ function Profile() {
   const [verifLoading, setVerifLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // Profile photo
+  // Profile photo — initialize from cache immediately so it shows without waiting
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [cachedPhotoUrl, setCachedPhotoUrlState] = useState(() => getCachedPhotoUrl());
+  const [photoLoaded, setPhotoLoaded] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
 
   // Aadhaar
@@ -149,7 +181,10 @@ function Profile() {
     if (user) {
       setProfileData({ name: user.name || '', email: user.email || '' });
       fetchTotalRides();
-      fetchVerificationStatus();
+      // If we have a cached photo URL, skip showing the loading spinner for verif status
+      // and do a silent background refresh instead
+      const hasCached = !!getCachedPhotoUrl();
+      fetchVerificationStatus({ silent: hasCached });
     }
   }, [user]);
 
@@ -170,15 +205,21 @@ function Profile() {
     } catch { setTotalRides(0); }
   };
 
-  const fetchVerificationStatus = async () => {
-    setVerifLoading(true);
+  const fetchVerificationStatus = async ({ silent = false } = {}) => {
+    if (!silent) setVerifLoading(true);
     try {
       const res = await getVerificationStatus();
       setVerif(res.data);
+      // Cache the profile photo URL so we don't hit S3 on every tab switch
+      const fetchedUrl = res.data?.profilePhotoUrl || null;
+      if (fetchedUrl) {
+        setCachedPhotoUrl(fetchedUrl);
+        setCachedPhotoUrlState(fetchedUrl);
+      }
     } catch (err) {
       console.error('Failed to fetch verification status:', err);
     } finally {
-      setVerifLoading(false);
+      if (!silent) setVerifLoading(false);
     }
   };
 
@@ -217,7 +258,11 @@ function Profile() {
     try {
       await uploadProfilePhoto(photoFile);
       toast.success('Profile photo uploaded');
+      // Invalidate cache so fresh signed URL is fetched
+      setCachedPhotoUrl(null);
+      setCachedPhotoUrlState(null);
       setPhotoFile(null);
+      setPhotoLoaded(false);
       await fetchVerificationStatus();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Photo upload failed');
@@ -292,7 +337,8 @@ function Profile() {
 
   const isLocked = verif && ['submitted', 'approved'].includes(verif.status);
   const canSubmit = verif?.allStepsDone && !isLocked;
-  const profilePhotoUrl = photoPreview || verif?.profilePhotoUrl || user?.driverVerification?.profilePhoto?.url;
+  // Use preview → fresh verif URL → session cache → stored in user object (fallback chain)
+  const profilePhotoUrl = photoPreview || verif?.profilePhotoUrl || cachedPhotoUrl || user?.driverVerification?.profilePhoto?.url;
 
   // ═════════════════════════════════════════════════════════════════════════
   return (
@@ -346,7 +392,20 @@ function Profile() {
                   <div className="relative">
                     <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white/10 ring-2 ring-white/20 shadow-xl flex-shrink-0">
                       {profilePhotoUrl ? (
-                        <img src={profilePhotoUrl} alt="Profile" className="w-full h-full object-cover" />
+                        <>
+                          {/* Skeleton shown until image fully loads */}
+                          {!photoLoaded && (
+                            <div className="absolute inset-0 bg-white/20 animate-pulse rounded-2xl" />
+                          )}
+                          <img
+                            key={profilePhotoUrl}
+                            src={profilePhotoUrl}
+                            alt="Profile"
+                            loading="eager"
+                            className={`w-full h-full object-cover transition-opacity duration-300 ${photoLoaded ? 'opacity-100' : 'opacity-0'}`}
+                            onLoad={() => setPhotoLoaded(true)}
+                          />
+                        </>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <svg className="w-10 h-10 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
