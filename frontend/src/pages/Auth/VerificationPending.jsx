@@ -39,22 +39,41 @@ function VerificationPending() {
   const handleResendEmail = async () => {
     setIsResending(true);
     try {
-      await resendVerificationEmail(email);
+      const response = await resendVerificationEmail(email);
       
-      toast.success('Verification email sent! Please check your inbox.', {
-        duration: 4000,
-        position: 'top-center',
-        style: {
-          background: '#10B981',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
+      if (response && response.emailBypassed) {
+        toast.success('Email auto-verified for demo! You can log in now.', {
+          duration: 5000,
+          position: 'top-center',
+          icon: '🚀',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        });
+        
+        setTimeout(() => {
+          navigate('/login');
+        }, 1500);
+      } else {
+        toast.success('Verification email sent! Please check your inbox.', {
+          duration: 4000,
+          position: 'top-center',
+          style: {
+            background: '#10B981',
+            color: '#fff',
+            fontWeight: '600',
+            padding: '16px',
+            borderRadius: '12px',
+          },
+        });
 
-      // Set 60-second cooldown
-      setCooldownTimer(60);
+        // Set 60-second cooldown
+        setCooldownTimer(60);
+      }
     } catch (err) {
       const errorMessage = err.message || 'Failed to resend email. Please try again.';
       toast.error(errorMessage, {

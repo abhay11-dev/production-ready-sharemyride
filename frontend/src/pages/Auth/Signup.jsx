@@ -78,29 +78,55 @@ function Signup() {
       // Store email for verification pending page
       localStorage.setItem('pendingVerificationEmail', email);
 
+      const isPending = userData.verificationPending !== false;
+
       // Wait a moment for user to see the success message
       setTimeout(() => {
-        // Show info toast asking to verify email
-        toast(
-          'Please check your email to verify your account',
-          {
-            duration: 3000,
-            position: 'top-center',
-            icon: '📧',
-            style: {
-               background: '#3B82F6',
-            color: '#fff',
-              fontWeight: '600',
-              padding: '16px',
-              borderRadius: '12px',
-            },
-          }
-        );
-        
-        // Navigate to verification pending page
-        setTimeout(() => {
-          navigate('/verification-pending', { state: { email } });
-        }, 500);
+        if (isPending) {
+          // Show info toast asking to verify email
+          toast(
+            'Please check your email to verify your account',
+            {
+              duration: 3000,
+              position: 'top-center',
+              icon: '📧',
+              style: {
+                background: '#3B82F6',
+                color: '#fff',
+                fontWeight: '600',
+                padding: '16px',
+                borderRadius: '12px',
+              },
+            }
+          );
+          
+          // Navigate to verification pending page
+          setTimeout(() => {
+            navigate('/verification-pending', { state: { email } });
+          }, 500);
+        } else {
+          // Show info toast saying they are verified (Resend sandbox bypass)
+          toast(
+            'Email auto-verified for demo! You can log in now.',
+            {
+              duration: 4000,
+              position: 'top-center',
+              icon: '🚀',
+              style: {
+                background: '#10B981',
+                color: '#fff',
+                fontWeight: '600',
+                padding: '16px',
+                borderRadius: '12px',
+              },
+            }
+          );
+          
+          // Navigate to login page
+          setTimeout(() => {
+            navigate('/login');
+          }, 500);
+        }
       }, 1500);
       
     } catch (err) {

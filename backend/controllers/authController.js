@@ -95,6 +95,27 @@ const signup = async (req, res) => {
         verificationPending: true
       });
     } catch (emailError) {
+      // Check if this is a Resend sandbox restriction error
+      const isResendSandboxRestriction = emailError.message && 
+        (emailError.message.includes('You can only send testing emails to your own email address') || 
+         emailError.message.includes('verify a domain at resend.com'));
+
+      if (isResendSandboxRestriction) {
+        console.warn(`⚠️ Resend sandbox restriction detected. Auto-verifying email for ${user.email} to allow demo testing.`);
+        user.emailVerified = true;
+        user.accountStatus = 'ACTIVE';
+        user.emailVerificationToken = null;
+        user.emailVerificationExpires = null;
+        await user.save();
+
+        return res.status(201).json({
+          success: true,
+          message: 'Account created successfully! (Email auto-verified for demo/testing purposes as Resend is in Sandbox mode).',
+          user: sanitizeUser(user),
+          verificationPending: false
+        });
+      }
+
       await User.findByIdAndDelete(user._id);
       return res.status(500).json({
         success: false,
@@ -507,9 +528,20 @@ const forgotPassword = async (req, res) => {
       await sendPasswordResetEmail(user.email, user.name, resetToken);
     } catch (emailError) {
       console.error('Email service error:', emailError.message);
-      user.resetPasswordToken = null;
-      user.resetPasswordExpires = null;
-      await user.save();
+      
+      const isResendSandboxRestriction = emailError.message && 
+        (emailError.message.includes('You can only send testing emails to your own email address') || 
+         emailError.message.includes('verify a domain at resend.com'));
+
+      if (isResendSandboxRestriction) {
+        console.warn(`⚠️ Resend sandbox restriction detected during forgotPassword. Keeping resetToken valid and logging it:`);
+        console.warn(`   Password Reset Link: ${process.env.FRONTEND_URL || process.env.API_BASE_URL}/reset-password?email=${encodeURIComponent(user.email)}&code=${resetToken}`);
+        console.warn(`   Reset Token: ${resetToken}`);
+      } else {
+        user.resetPasswordToken = null;
+        user.resetPasswordExpires = null;
+        await user.save();
+      }
       // Still return generic message — don't expose internal email errors
     }
 
@@ -738,6 +770,26 @@ const resendVerificationEmail = async (req, res) => {
       });
     } catch (emailError) {
       console.error('Email sending error:', emailError.message);
+
+      const isResendSandboxRestriction = emailError.message && 
+        (emailError.message.includes('You can only send testing emails to your own email address') || 
+         emailError.message.includes('verify a domain at resend.com'));
+
+      if (isResendSandboxRestriction) {
+        console.warn(`⚠️ Resend sandbox restriction detected during resend. Auto-verifying email for ${user.email} to allow demo testing.`);
+        user.emailVerified = true;
+        user.accountStatus = 'ACTIVE';
+        user.emailVerificationToken = null;
+        user.emailVerificationExpires = null;
+        await user.save();
+
+        return res.status(200).json({
+          success: true,
+          message: 'Email auto-verified for demo/testing purposes as Resend is in Sandbox mode.',
+          emailBypassed: true
+        });
+      }
+
       return res.status(500).json({
         success: false,
         message: 'Failed to send verification email. Please try again.'
