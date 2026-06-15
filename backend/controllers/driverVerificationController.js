@@ -29,14 +29,38 @@ const safeDeleteS3Object = async (key) => {
   }
 };
 
-const getFreshDocumentUrl = async (key, fallbackUrl = null) => {
+// ── Server-side signed URL cache ─────────────────────────────────────────────
+// Signed URLs are valid for 1 hour. We cache them for 50 minutes to
+// avoid regenerating on every status call (avoids cross-region S3 latency).
+const signedUrlCache = new Map(); // key → { url, expiresAt }
+const SIGNED_URL_TTL_MS = 50 * 60 * 1000; // 50 minutes
+
+const getCachedOrFreshUrl = async (key, fallbackUrl = null) => {
   if (!key) return fallbackUrl;
+  const cached = signedUrlCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.url;
+  }
   try {
-    return await getSignedUrl(key, 3600);
+    const url = await getSignedUrl(key, 3600);
+    signedUrlCache.set(key, { url, expiresAt: Date.now() + SIGNED_URL_TTL_MS });
+    return url;
   } catch (error) {
     console.warn('Unable to generate signed S3 URL:', key, error.message);
     return fallbackUrl;
   }
+};
+
+// Evict stale entries to prevent unbounded memory growth (runs every 10 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of signedUrlCache.entries()) {
+    if (now >= val.expiresAt) signedUrlCache.delete(key);
+  }
+}, 10 * 60 * 1000);
+
+const getFreshDocumentUrl = async (key, fallbackUrl = null) => {
+  return getCachedOrFreshUrl(key, fallbackUrl);
 };
 
 const getDocumentState = (dv) => {
@@ -101,6 +125,7 @@ const uploadProfilePhoto = async (req, res) => {
     }
 
     await safeDeleteS3Object(oldKey);
+    if (oldKey) signedUrlCache.delete(oldKey);  // evict stale cache entry
 
     res.status(200).json({
       success: true,
@@ -187,6 +212,8 @@ const uploadAadhaar = async (req, res) => {
       safeDeleteS3Object(oldFrontKey),
       safeDeleteS3Object(oldBackKey)
     ]);
+    if (oldFrontKey) signedUrlCache.delete(oldFrontKey); // evict stale cache
+    if (oldBackKey) signedUrlCache.delete(oldBackKey);
 
     res.status(200).json({
       success: true,
@@ -288,6 +315,8 @@ const uploadDrivingLicense = async (req, res) => {
       safeDeleteS3Object(oldFrontKey),
       safeDeleteS3Object(oldBackKey)
     ]);
+    if (oldFrontKey) signedUrlCache.delete(oldFrontKey); // evict stale cache
+    if (oldBackKey) signedUrlCache.delete(oldBackKey);
 
     res.status(200).json({
       success: true,
@@ -376,26 +405,20 @@ const getVerificationStatus = async (req, res) => {
 
     const dv = user.driverVerification;
     const documentState = getDocumentState(dv);
-    const profilePhotoUrl = await getFreshDocumentUrl(
-      dv?.profilePhoto?.s3Key,
-      dv?.profilePhoto?.url ?? null
-    );
-    const aadhaarFrontImageUrl = await getFreshDocumentUrl(
-      dv?.aadhaar?.frontImageKey,
-      dv?.aadhaar?.frontImageUrl ?? null
-    );
-    const aadhaarBackImageUrl = await getFreshDocumentUrl(
-      dv?.aadhaar?.backImageKey,
-      dv?.aadhaar?.backImageUrl ?? null
-    );
-    const dlFrontImageUrl = await getFreshDocumentUrl(
-      dv?.drivingLicense?.frontImageKey,
-      dv?.drivingLicense?.frontImageUrl ?? null
-    );
-    const dlBackImageUrl = await getFreshDocumentUrl(
-      dv?.drivingLicense?.backImageKey,
-      dv?.drivingLicense?.backImageUrl ?? null
-    );
+    // Generate all signed URLs in parallel (avoids sequential cross-region S3 latency)
+    const [
+      profilePhotoUrl,
+      aadhaarFrontImageUrl,
+      aadhaarBackImageUrl,
+      dlFrontImageUrl,
+      dlBackImageUrl
+    ] = await Promise.all([
+      getFreshDocumentUrl(dv?.profilePhoto?.s3Key, dv?.profilePhoto?.url ?? null),
+      getFreshDocumentUrl(dv?.aadhaar?.frontImageKey, dv?.aadhaar?.frontImageUrl ?? null),
+      getFreshDocumentUrl(dv?.aadhaar?.backImageKey, dv?.aadhaar?.backImageUrl ?? null),
+      getFreshDocumentUrl(dv?.drivingLicense?.frontImageKey, dv?.drivingLicense?.frontImageUrl ?? null),
+      getFreshDocumentUrl(dv?.drivingLicense?.backImageKey, dv?.drivingLicense?.backImageUrl ?? null)
+    ]);
 
     res.status(200).json({
       success: true,
