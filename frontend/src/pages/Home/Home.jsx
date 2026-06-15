@@ -27,7 +27,7 @@ const MOCK_RIDES = [
 const TESTIMONIALS = [
   { name: 'Sneha T.', city: 'Bengaluru', text: 'Saved ₹800 on my weekly Mysuru commute. The drivers are always verified and punctual.', rating: 5, trips: 34 },
   { name: 'Vikram N.', city: 'Pune', text: 'Posted my first ride and found 3 passengers in under 10 minutes. Offset my entire fuel cost.', rating: 5, trips: 12 },
-  { name: 'Ananya R.', city: 'Delhi', text: 'The community here is genuinely friendly. I've made two regular carpool partners.', rating: 5, trips: 28 },
+  { name: 'Ananya R.', city: 'Delhi', text: "The community here is genuinely friendly. I've made two regular carpool partners.", rating: 5, trips: 28 },
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -406,7 +406,7 @@ function PublicLanding({ stats }) {
                 ),
                 bg: 'bg-blue-50',
                 title: 'Verified drivers',
-                desc: 'Every driver is phone-verified with a visible rating history. You know who you\'re riding with before you book.',
+                desc: "Every driver is phone-verified with a visible rating history. You know who you're riding with before you book.",
               },
               {
                 icon: (
@@ -455,7 +455,7 @@ function PublicLanding({ stats }) {
             {[
               { step: '01', title: 'Create your account', desc: 'Sign up free. Verify your phone. Done in under 2 minutes.' },
               { step: '02', title: 'Search or post a ride', desc: 'Browse live rides or list your own route with available seats and your price.' },
-              { step: '03', title: 'Request or accept', desc: 'Passengers send a request. Drivers approve. Both get each other\'s contact.' },
+              { step: '03', title: 'Request or accept', desc: "Passengers send a request. Drivers approve. Both get each other's contact." },
               { step: '04', title: 'Travel and rate', desc: 'Share the road. After arrival, rate the experience to build community trust.' },
             ].map((s, i) => (
               <div key={s.step} className="relative bg-white rounded-2xl p-5 sm:p-6 border border-gray-100 shadow-sm">
