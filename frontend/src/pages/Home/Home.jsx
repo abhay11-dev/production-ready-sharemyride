@@ -430,6 +430,19 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC LANDING PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
+function StatItem({ value, label, color, loading }) {
+  return (
+    <div>
+      {loading ? (
+        <div className="h-7 w-16 bg-white/20 animate-pulse rounded mb-1" />
+      ) : (
+        <div className={`text-xl sm:text-2xl font-bold ${color}`}>{value}</div>
+      )}
+      <div className="text-xs text-blue-200 font-medium">{label}</div>
+    </div>
+  );
+}
+
 function PublicLanding({ stats, rides, ridesLoading }) {
   const navigate = useNavigate();
   const [searchFrom, setSearchFrom] = useState('');
