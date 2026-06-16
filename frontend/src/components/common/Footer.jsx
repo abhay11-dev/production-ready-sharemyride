@@ -1,15 +1,16 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import BrandAnimation from '../BrandAnimation/BrandAnimation.jsx';
 
+/* ─── Data ──────────────────────────────────────────────────── */
 const FOOTER_LINKS = {
   product: {
-    label: 'Product',
+    label: 'Platform',
     links: [
       { label: 'Find a Ride', to: '/ride/search' },
       { label: 'Offer a Ride', to: '/ride/post' },
       { label: 'My Bookings', to: '/bookings/my-bookings' },
       { label: 'Upcoming Trips', to: '/upcoming-rides' },
+      { label: 'Community', to: '/community' },
     ],
   },
   company: {
@@ -17,24 +18,25 @@ const FOOTER_LINKS = {
     links: [
       { label: 'About Us', to: '/about' },
       { label: 'How It Works', to: '/how-it-works' },
-      { label: 'Community Guidelines', to: '/guidelines' },
       { label: 'Blog', to: '/blog' },
+      { label: 'Careers', to: '/careers', badge: 'Soon' },
+      { label: 'Community Guidelines', to: '/guidelines' },
     ],
   },
   support: {
-    label: 'Support',
+    label: 'Resources',
     links: [
       { label: 'Help Centre', to: '/help' },
+      { label: 'FAQs', to: '/faq' },
       { label: 'Contact Us', to: '/contact' },
       { label: 'Report an Issue', to: '/report' },
-      { label: 'FAQs', to: '/faq' },
     ],
   },
   legal: {
     label: 'Legal',
     links: [
-      { label: 'Privacy Policy', to: '/terms-and-privacy' },
-      { label: 'Terms of Service', to: '/terms-and-privacy' },
+      { label: 'Privacy Policy', to: '/privacy' },
+      { label: 'Terms of Service', to: '/terms' },
       { label: 'Cookie Policy', to: '/cookies' },
     ],
   },
@@ -42,17 +44,8 @@ const FOOTER_LINKS = {
 
 const SOCIAL_LINKS = [
   {
-    label: 'X (Twitter)',
-    href: 'https://twitter.com',
-    icon: (
-      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-      </svg>
-    ),
-  },
-  {
     label: 'Instagram',
-    href: 'https://instagram.com',
+    href: 'https://www.instagram.com/sharemyride.contact?igsh=ZmppeGV2NjZ6dXo2',
     icon: (
       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
         <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z" />
@@ -61,7 +54,7 @@ const SOCIAL_LINKS = [
   },
   {
     label: 'LinkedIn',
-    href: 'https://linkedin.com',
+    href: 'https://www.linkedin.com/in/sharemyride-carpooling-community-285301417',
     icon: (
       <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
         <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
@@ -70,51 +63,528 @@ const SOCIAL_LINKS = [
   },
 ];
 
-function Footer() {
-  const [showAnim, setShowAnim] = useState(false);
+/* ─── Car Easter Egg Animation ──────────────────────────────── */
+function CarEasterEgg({ onDismiss }) {
+  const [phase, setPhase] = useState('idle'); // idle → enter → cruise → honk → exit
+  const [honkVisible, setHonkVisible] = useState(false);
 
-  const triggerAnim = useCallback((e) => {
+  useEffect(() => {
+    // Sequence: enter road → cruise → honk → exit
+    const t1 = setTimeout(() => setPhase('enter'), 50);
+    const t2 = setTimeout(() => setPhase('cruise'), 900);
+    const t3 = setTimeout(() => { setPhase('honk'); setHonkVisible(true); }, 2200);
+    const t4 = setTimeout(() => setHonkVisible(false), 3200);
+    const t5 = setTimeout(() => setPhase('exit'), 3600);
+    const t6 = setTimeout(onDismiss, 4800);
+    return () => [t1, t2, t3, t4, t5, t6].forEach(clearTimeout);
+  }, [onDismiss]);
+
+  useEffect(() => {
+    const handler = () => onDismiss();
+    window.addEventListener('keydown', handler);
+    window.addEventListener('mousedown', handler);
+    window.addEventListener('touchstart', handler);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('mousedown', handler);
+      window.removeEventListener('touchstart', handler);
+    };
+  }, [onDismiss]);
+
+  const carX = phase === 'idle' ? '-120%'
+    : phase === 'enter' ? '10%'
+      : phase === 'cruise' ? '40%'
+        : phase === 'honk' ? '42%'
+          : '130%';
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] pointer-events-none"
+      style={{ isolation: 'isolate' }}
+    >
+      {/* Dark overlay with road */}
+      <div
+        className="absolute inset-0 pointer-events-auto"
+        style={{
+          background: 'rgba(3,7,18,0.88)',
+          backdropFilter: 'blur(2px)',
+          transition: 'opacity 0.4s ease',
+          opacity: phase === 'idle' ? 0 : phase === 'exit' ? 0 : 1,
+        }}
+        onClick={onDismiss}
+      />
+
+      {/* Dismiss hint */}
+      <div
+        className="absolute top-6 left-1/2 -translate-x-1/2 text-xs text-gray-400 tracking-widest uppercase pointer-events-none select-none"
+        style={{
+          opacity: phase === 'cruise' || phase === 'honk' ? 0.7 : 0,
+          transition: 'opacity 0.6s ease',
+          letterSpacing: '0.15em',
+        }}
+      >
+        Press any key to continue
+      </div>
+
+      {/* Road scene */}
+      <div
+        className="absolute inset-0 flex flex-col items-stretch justify-center"
+        style={{ pointerEvents: 'none' }}
+      >
+        {/* Stars layer */}
+        <div className="absolute inset-0 overflow-hidden">
+          {[...Array(28)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full bg-white"
+              style={{
+                width: Math.random() * 2 + 1 + 'px',
+                height: Math.random() * 2 + 1 + 'px',
+                top: Math.random() * 60 + '%',
+                left: Math.random() * 100 + '%',
+                opacity: 0.3 + Math.random() * 0.5,
+                animation: `twinkle ${1.5 + Math.random() * 2}s ease-in-out infinite`,
+                animationDelay: Math.random() * 2 + 's',
+              }}
+            />
+          ))}
+        </div>
+
+        {/* City skyline silhouette */}
+        <div className="absolute bottom-1/2 left-0 right-0 flex items-end justify-center" style={{ marginBottom: '38px' }}>
+          {[60, 80, 50, 100, 70, 90, 55, 75, 65, 85, 45, 95].map((h, i) => (
+            <div
+              key={i}
+              style={{
+                width: `${4 + (i % 3)}%`,
+                height: `${h}px`,
+                background: 'rgba(30,41,59,0.9)',
+                marginRight: '2px',
+                borderRadius: '2px 2px 0 0',
+                position: 'relative',
+                opacity: phase === 'idle' ? 0 : 1,
+                transition: `opacity 0.6s ease ${i * 0.04}s`,
+              }}
+            >
+              {/* Building windows */}
+              {[...Array(Math.floor(h / 18))].map((_, j) => (
+                <div
+                  key={j}
+                  style={{
+                    position: 'absolute',
+                    width: '5px',
+                    height: '5px',
+                    background: Math.random() > 0.4 ? '#fbbf24' : 'transparent',
+                    top: `${j * 16 + 6}px`,
+                    left: '30%',
+                    opacity: 0.7,
+                    borderRadius: '1px',
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* Road */}
+        <div
+          className="absolute left-0 right-0"
+          style={{
+            height: '76px',
+            bottom: 'calc(50% - 38px)',
+            background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
+            borderTop: '2px solid #334155',
+            borderBottom: '2px solid #1e293b',
+          }}
+        >
+          {/* Road dashes */}
+          <div className="absolute inset-0 flex items-center overflow-hidden">
+            {[...Array(20)].map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  minWidth: '60px',
+                  height: '3px',
+                  background: '#fbbf24',
+                  marginRight: '50px',
+                  borderRadius: '2px',
+                  opacity: 0.6,
+                  animation: phase === 'cruise' || phase === 'honk' ? 'roadMove 0.4s linear infinite' : 'none',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Ground line */}
+          <div className="absolute bottom-0 left-0 right-0 h-px bg-gray-700 opacity-60" />
+        </div>
+
+        {/* Car + passengers */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 'calc(50% - 10px)',
+            left: carX,
+            transition: phase === 'enter'
+              ? 'left 0.85s cubic-bezier(0.22,1,0.36,1)'
+              : phase === 'exit'
+                ? 'left 0.9s cubic-bezier(0.55,0,1,0.45)'
+                : phase === 'cruise' || phase === 'honk'
+                  ? 'left 1.4s cubic-bezier(0.25,0.46,0.45,0.94)'
+                  : 'none',
+            zIndex: 10,
+          }}
+        >
+          {/* Honk bubble */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '-52px',
+              right: '-10px',
+              background: 'white',
+              borderRadius: '12px 12px 12px 2px',
+              padding: '6px 12px',
+              fontSize: '15px',
+              fontWeight: 700,
+              color: '#1d4ed8',
+              whiteSpace: 'nowrap',
+              opacity: honkVisible ? 1 : 0,
+              transform: honkVisible ? 'scale(1) translateY(0)' : 'scale(0.5) translateY(8px)',
+              transition: 'all 0.25s cubic-bezier(0.34,1.56,0.64,1)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            📣 Beep beep!
+            <div style={{
+              position: 'absolute',
+              bottom: '-8px',
+              left: '12px',
+              width: 0,
+              height: 0,
+              borderLeft: '8px solid transparent',
+              borderRight: '4px solid transparent',
+              borderTop: '8px solid white',
+            }} />
+          </div>
+
+          {/* Car SVG */}
+          <svg
+            viewBox="0 0 220 90"
+            width="200"
+            height="90"
+            style={{
+              filter: 'drop-shadow(0 8px 24px rgba(59,130,246,0.35))',
+              animation: phase === 'cruise' || phase === 'honk' ? 'carBob 0.5s ease-in-out infinite' : 'none',
+            }}
+          >
+            {/* Car glow */}
+            <defs>
+              <radialGradient id="carGlow" cx="50%" cy="70%" r="50%">
+                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+              </radialGradient>
+              <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#2563eb" />
+                <stop offset="100%" stopColor="#1d4ed8" />
+              </linearGradient>
+              <linearGradient id="roofGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#3b82f6" />
+                <stop offset="100%" stopColor="#2563eb" />
+              </linearGradient>
+              <linearGradient id="windowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#bfdbfe" stopOpacity="0.9" />
+                <stop offset="100%" stopColor="#93c5fd" stopOpacity="0.6" />
+              </linearGradient>
+            </defs>
+
+            {/* Ground shadow */}
+            <ellipse cx="110" cy="84" rx="90" ry="6" fill="rgba(0,0,0,0.3)" />
+
+            {/* Wheel wells */}
+            <ellipse cx="58" cy="72" rx="22" ry="10" fill="#0f172a" />
+            <ellipse cx="160" cy="72" rx="22" ry="10" fill="#0f172a" />
+
+            {/* Main body */}
+            <rect x="20" y="50" width="180" height="28" rx="6" fill="url(#bodyGrad)" />
+
+            {/* Roof */}
+            <path d="M55 50 Q65 22 90 20 L140 20 Q165 22 170 50 Z" fill="url(#roofGrad)" />
+
+            {/* Front windshield */}
+            <path d="M140 21 Q163 24 167 48 L143 48 Z" fill="url(#windowGrad)" stroke="#93c5fd" strokeWidth="0.5" />
+
+            {/* Rear windshield */}
+            <path d="M80 21 Q62 24 58 48 L82 48 Z" fill="url(#windowGrad)" stroke="#93c5fd" strokeWidth="0.5" />
+
+            {/* Side windows */}
+            <rect x="87" y="23" width="48" height="25" rx="3" fill="url(#windowGrad)" stroke="#93c5fd" strokeWidth="0.5" />
+
+            {/* Window divider */}
+            <line x1="111" y1="23" x2="111" y2="48" stroke="#93c5fd" strokeWidth="1" opacity="0.5" />
+
+            {/* Passengers in windows */}
+            {/* Driver */}
+            <circle cx="145" cy="36" r="7" fill="#fcd34d" />
+            <circle cx="145" cy="32" r="5" fill="#f59e0b" />
+            <rect x="140" y="37" width="10" height="6" rx="2" fill="#10b981" />
+
+            {/* Passenger 1 */}
+            <circle cx="125" cy="36" r="6" fill="#fca5a5" />
+            <circle cx="125" cy="32" r="4" fill="#f87171" />
+            <rect x="121" y="37" width="8" height="5" rx="2" fill="#8b5cf6" />
+
+            {/* Passenger 2 */}
+            <circle cx="100" cy="36" r="6" fill="#6ee7b7" />
+            <circle cx="100" cy="32" r="4" fill="#34d399" />
+            <rect x="96" y="37" width="8" height="5" rx="2" fill="#3b82f6" />
+
+            {/* Body accent line */}
+            <rect x="22" y="62" width="176" height="2" rx="1" fill="rgba(255,255,255,0.15)" />
+
+            {/* Doors */}
+            <line x1="110" y1="50" x2="112" y2="78" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" />
+
+            {/* Front lights */}
+            <rect x="192" y="54" width="10" height="6" rx="3" fill="#fef3c7" opacity="0.95" />
+            <rect x="190" y="54" width="4" height="6" rx="2" fill="#fbbf24" />
+            {/* Headlight beam */}
+            <path d="M200 56 L220 50 L220 62 Z" fill="rgba(254,243,199,0.15)" />
+
+            {/* Rear lights */}
+            <rect x="18" y="54" width="8" height="6" rx="3" fill="#fca5a5" opacity="0.8" />
+            <rect x="22" y="54" width="4" height="6" rx="2" fill="#ef4444" />
+
+            {/* Front bumper */}
+            <rect x="196" y="68" width="10" height="6" rx="2" fill="#1d4ed8" />
+
+            {/* Rear bumper */}
+            <rect x="14" y="68" width="10" height="6" rx="2" fill="#1d4ed8" />
+
+            {/* Wheels */}
+            {[58, 160].map((cx, i) => (
+              <g key={i}>
+                <circle cx={cx} cy="74" r="14" fill="#1e293b" stroke="#475569" strokeWidth="2" />
+                <circle cx={cx} cy="74" r="10" fill="#0f172a" />
+                <circle cx={cx} cy="74" r="5" fill="#334155" />
+                {[0, 60, 120, 180, 240, 300].map((deg, j) => (
+                  <line
+                    key={j}
+                    x1={cx}
+                    y1={74}
+                    x2={cx + 9 * Math.cos((deg * Math.PI) / 180)}
+                    y2={74 + 9 * Math.sin((deg * Math.PI) / 180)}
+                    stroke="#475569"
+                    strokeWidth="2"
+                    style={{
+                      transformOrigin: `${cx}px 74px`,
+                      animation: phase === 'cruise' || phase === 'honk'
+                        ? 'spin 0.3s linear infinite'
+                        : 'none',
+                    }}
+                  />
+                ))}
+                <circle cx={cx} cy="74" r="3" fill="#64748b" />
+              </g>
+            ))}
+
+            {/* Roof rack detail */}
+            <rect x="90" y="19" width="40" height="3" rx="1.5" fill="#1d4ed8" opacity="0.6" />
+          </svg>
+
+          {/* Exhaust puffs */}
+          {(phase === 'cruise' || phase === 'honk') && [0, 1, 2].map(i => (
+            <div
+              key={i}
+              style={{
+                position: 'absolute',
+                bottom: '10px',
+                left: `-${15 + i * 18}px`,
+                width: `${10 + i * 4}px`,
+                height: `${10 + i * 4}px`,
+                borderRadius: '50%',
+                background: 'rgba(148,163,184,0.3)',
+                animation: `puff 0.8s ease-out infinite`,
+                animationDelay: `${i * 0.25}s`,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Road markings ahead/behind the car */}
+        {/* Speed lines (motion blur) */}
+        {(phase === 'cruise' || phase === 'honk') && [...Array(6)].map((_, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              height: '2px',
+              width: `${30 + Math.random() * 60}px`,
+              background: 'rgba(255,255,255,0.08)',
+              bottom: `calc(50% + ${-10 + i * 8}px)`,
+              left: `${10 + Math.random() * 30}%`,
+              animation: `speedLine 0.6s linear infinite`,
+              animationDelay: `${i * 0.1}s`,
+              borderRadius: '1px',
+            }}
+          />
+        ))}
+
+        {/* Brand tagline during animation */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '28%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            textAlign: 'center',
+            opacity: phase === 'cruise' || phase === 'honk' ? 1 : 0,
+            transition: 'opacity 0.8s ease 0.4s',
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{
+            fontSize: '13px',
+            color: '#60a5fa',
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+            marginBottom: '6px',
+          }}>
+            ShareMyRide
+          </div>
+          <div style={{
+            fontSize: '22px',
+            color: 'white',
+            fontWeight: 700,
+            letterSpacing: '-0.02em',
+          }}>
+            Every seat. Every journey. Together.
+          </div>
+          <div style={{
+            marginTop: '8px',
+            fontSize: '13px',
+            color: '#94a3b8',
+          }}>
+            🌱 3 passengers · 1 car · zero guilt
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes twinkle {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.9; }
+        }
+        @keyframes carBob {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-2px); }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes puff {
+          0% { transform: scale(0.5) translateX(0); opacity: 0.5; }
+          100% { transform: scale(2.5) translateX(-20px); opacity: 0; }
+        }
+        @keyframes roadMove {
+          from { transform: translateX(0); }
+          to { transform: translateX(-110px); }
+        }
+        @keyframes speedLine {
+          from { transform: translateX(0); opacity: 0.8; }
+          to { transform: translateX(-100px); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ─── Footer Component ──────────────────────────────────────── */
+function Footer() {
+  const [eggActive, setEggActive] = useState(false);
+
+  const triggerEgg = useCallback((e) => {
     e.preventDefault();
-    setShowAnim(true);
+    setEggActive(true);
+  }, []);
+
+  const dismissEgg = useCallback(() => {
+    setEggActive(false);
   }, []);
 
   return (
     <>
-      {/* Brand animation overlay — triggered by logo click */}
-      <BrandAnimation show={showAnim} onClose={() => setShowAnim(false)} />
+      {eggActive && <CarEasterEgg onDismiss={dismissEgg} />}
 
       <footer className="bg-gray-950 text-gray-400">
-        {/* ── Main content ── */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 sm:pt-16 sm:pb-10">
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-10">
 
-            {/* Brand column */}
-            <div className="col-span-2 sm:col-span-2 lg:col-span-1">
-              {/* ── Clickable brand logo triggers animation ── */}
+        {/* ── Community tagline bar ── */}
+        <div className="border-b border-gray-800/60">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 text-center">
+            <p className="text-sm sm:text-base text-gray-400 leading-relaxed max-w-2xl mx-auto">
+              Building smarter, greener, and more connected journeys together.{' '}
+              <span className="text-blue-400 font-medium">One shared ride at a time.</span>
+            </p>
+          </div>
+        </div>
+
+        {/* ── Main content ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 sm:pt-14 sm:pb-10">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-6 gap-8 lg:gap-10">
+
+            {/* Brand column — spans 2 cols on lg */}
+            <div className="col-span-2 lg:col-span-2">
+              {/* Clickable logo — triggers Easter egg */}
               <button
-                onClick={triggerAnim}
-                className="flex items-center gap-2 mb-4 group w-fit cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg"
-                aria-label="View ShareMyRide brand animation"
-                type="button"
+                onClick={triggerEgg}
+                className="flex items-center gap-2.5 mb-4 group w-fit focus:outline-none"
+                aria-label="ShareMyRide – click for a surprise"
+                title="Click for a surprise 🚗"
               >
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-500 group-hover:scale-110 transition-all duration-200">
+                <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center group-hover:bg-blue-500 group-hover:scale-110 transition-all duration-200 shadow-lg shadow-blue-900/30">
                   <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
                     <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" />
                   </svg>
                 </div>
-                <span className="text-white font-bold text-base group-hover:text-blue-400 transition-colors duration-200">
+                <span className="text-white font-bold text-base tracking-tight group-hover:text-blue-300 transition-colors">
                   ShareMyRide
                 </span>
-                {/* Subtle sparkle hint on hover */}
-                <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs">✨</span>
               </button>
 
-              <p className="text-sm leading-relaxed mb-5 max-w-xs">
+              <p className="text-sm leading-relaxed mb-5 max-w-xs text-gray-400">
                 A community-driven carpooling marketplace making travel affordable, sustainable, and social across India.
               </p>
 
-              {/* Social links */}
+              {/* Contact quick links */}
+              <div className="flex flex-col gap-2 mb-5">
+                <a
+                  href="tel:+919617714737"
+                  className="flex items-center gap-2 text-xs text-gray-500 hover:text-blue-400 transition-colors group"
+                >
+                  <span className="w-5 h-5 rounded-md bg-gray-800 flex items-center justify-center group-hover:bg-blue-900/40 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                  </span>
+                  +91 9617714737
+                </a>
+                <a
+                  href="mailto:sharemyride.contact@gmail.com"
+                  className="flex items-center gap-2 text-xs text-gray-500 hover:text-blue-400 transition-colors group"
+                >
+                  <span className="w-5 h-5 rounded-md bg-gray-800 flex items-center justify-center group-hover:bg-blue-900/40 transition-colors">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </span>
+                  sharemyride.contact@gmail.com
+                </a>
+              </div>
+
+              {/* Social */}
               <div className="flex items-center gap-2">
                 {SOCIAL_LINKS.map(s => (
                   <a
@@ -123,7 +593,7 @@ function Footer() {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={s.label}
-                    className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-all duration-150"
+                    className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-blue-600 flex items-center justify-center text-gray-400 hover:text-white transition-all duration-200 hover:scale-110 hover:shadow-lg hover:shadow-blue-900/30"
                   >
                     {s.icon}
                   </a>
@@ -137,18 +607,24 @@ function Footer() {
                 <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-widest mb-4">{col.label}</h4>
                 <ul className="space-y-2.5">
                   {col.links.map(link => (
-                    <li key={link.label}>
+                    <li key={link.label} className="flex items-center gap-2">
                       <Link
                         to={link.to}
-                        className="text-sm text-gray-400 hover:text-white transition-colors duration-150"
+                        className="text-sm text-gray-400 hover:text-white transition-colors duration-150 hover:translate-x-0.5 transform inline-block"
                       >
                         {link.label}
                       </Link>
+                      {link.badge && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-900/50 text-blue-300 font-medium border border-blue-800/40">
+                          {link.badge}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
+
           </div>
         </div>
 
@@ -160,25 +636,23 @@ function Footer() {
                 &copy; {new Date().getFullYear()} ShareMyRide. All rights reserved.
               </p>
               <div className="flex items-center gap-4">
-                <Link to="/terms-and-privacy" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                <Link to="/privacy" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
                   Privacy
                 </Link>
-                <Link to="/terms-and-privacy" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                <Link to="/terms" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
                   Terms
                 </Link>
-                {/* Bottom logo also triggers animation */}
-                <button
-                  onClick={triggerAnim}
-                  className="text-xs text-gray-600 hover:text-blue-400 transition-colors duration-150 flex items-center gap-1 focus:outline-none"
-                  type="button"
-                  aria-label="View ShareMyRide brand animation"
-                >
-                  Made with 🚗 in India
-                </button>
+                <Link to="/cookies" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                  Cookies
+                </Link>
+                <span className="text-xs text-gray-600 flex items-center gap-1">
+                  Made in India 🇮🇳
+                </span>
               </div>
             </div>
           </div>
         </div>
+
       </footer>
     </>
   );

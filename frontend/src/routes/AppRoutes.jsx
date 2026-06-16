@@ -222,6 +222,7 @@ function AppRoutes() {
       <Route path="/blog" element={<Blog />} />
       <Route path="/report" element={<Report />} />
       <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
+      <Route path="/privacy" element={<TermsAndPrivacy />} />
       <Route path="/cookies" element={<Cookies />} />
 
       {/* 404 Not Found Route */}
