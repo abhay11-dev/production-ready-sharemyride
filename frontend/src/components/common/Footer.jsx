@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import BrandAnimation from '../BrandAnimation/BrandAnimation.jsx';
 
 const FOOTER_LINKS = {
   product: {
@@ -15,7 +16,7 @@ const FOOTER_LINKS = {
     label: 'Company',
     links: [
       { label: 'About Us', to: '/about' },
-      { label: 'How It Works', to: '/#how-it-works' },
+      { label: 'How It Works', to: '/how-it-works' },
       { label: 'Community Guidelines', to: '/guidelines' },
       { label: 'Blog', to: '/blog' },
     ],
@@ -70,91 +71,116 @@ const SOCIAL_LINKS = [
 ];
 
 function Footer() {
+  const [showAnim, setShowAnim] = useState(false);
+
+  const triggerAnim = useCallback((e) => {
+    e.preventDefault();
+    setShowAnim(true);
+  }, []);
+
   return (
-    <footer className="bg-gray-950 text-gray-400">
+    <>
+      {/* Brand animation overlay — triggered by logo click */}
+      <BrandAnimation show={showAnim} onClose={() => setShowAnim(false)} />
 
-      {/* ── Main content ── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 sm:pt-16 sm:pb-10">
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-10">
+      <footer className="bg-gray-950 text-gray-400">
+        {/* ── Main content ── */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 sm:pt-16 sm:pb-10">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-10">
 
-          {/* Brand column */}
-          <div className="col-span-2 sm:col-span-2 lg:col-span-1">
-            <Link to="/" className="flex items-center gap-2 mb-4 group w-fit">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-500 transition-colors">
-                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
-                  <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" />
-                </svg>
-              </div>
-              <span className="text-white font-bold text-base">ShareMyRide</span>
-            </Link>
+            {/* Brand column */}
+            <div className="col-span-2 sm:col-span-2 lg:col-span-1">
+              {/* ── Clickable brand logo triggers animation ── */}
+              <button
+                onClick={triggerAnim}
+                className="flex items-center gap-2 mb-4 group w-fit cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-lg"
+                aria-label="View ShareMyRide brand animation"
+                type="button"
+              >
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-500 group-hover:scale-110 transition-all duration-200">
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+                    <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" />
+                  </svg>
+                </div>
+                <span className="text-white font-bold text-base group-hover:text-blue-400 transition-colors duration-200">
+                  ShareMyRide
+                </span>
+                {/* Subtle sparkle hint on hover */}
+                <span className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs">✨</span>
+              </button>
 
-            <p className="text-sm leading-relaxed mb-5 max-w-xs">
-              A community-driven carpooling marketplace making travel affordable, sustainable, and social across India.
-            </p>
+              <p className="text-sm leading-relaxed mb-5 max-w-xs">
+                A community-driven carpooling marketplace making travel affordable, sustainable, and social across India.
+              </p>
 
-            {/* Social */}
-            <div className="flex items-center gap-2">
-              {SOCIAL_LINKS.map(s => (
-                <a
-                  key={s.label}
-                  href={s.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={s.label}
-                  className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-all duration-150"
-                >
-                  {s.icon}
-                </a>
-              ))}
-            </div>
-          </div>
-
-          {/* Link columns */}
-          {Object.values(FOOTER_LINKS).map(col => (
-            <div key={col.label}>
-              <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-widest mb-4">{col.label}</h4>
-              <ul className="space-y-2.5">
-                {col.links.map(link => (
-                  <li key={link.label}>
-                    <Link
-                      to={link.to}
-                      className="text-sm text-gray-400 hover:text-white transition-colors duration-150"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
+              {/* Social links */}
+              <div className="flex items-center gap-2">
+                {SOCIAL_LINKS.map(s => (
+                  <a
+                    key={s.label}
+                    href={s.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={s.label}
+                    className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-all duration-150"
+                  >
+                    {s.icon}
+                  </a>
                 ))}
-              </ul>
+              </div>
             </div>
-          ))}
 
+            {/* Link columns */}
+            {Object.values(FOOTER_LINKS).map(col => (
+              <div key={col.label}>
+                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-widest mb-4">{col.label}</h4>
+                <ul className="space-y-2.5">
+                  {col.links.map(link => (
+                    <li key={link.label}>
+                      <Link
+                        to={link.to}
+                        className="text-sm text-gray-400 hover:text-white transition-colors duration-150"
+                      >
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* ── Bottom bar ── */}
-      <div className="border-t border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-xs text-gray-500 text-center sm:text-left">
-              &copy; {new Date().getFullYear()} ShareMyRide. All rights reserved.
-            </p>
-            <div className="flex items-center gap-4">
-              <Link to="/terms-and-privacy" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                Privacy
-              </Link>
-              <Link to="/terms-and-privacy" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                Terms
-              </Link>
-              <span className="text-xs text-gray-600 flex items-center gap-1">
-                Made in India 🇮🇳
-              </span>
+        {/* ── Bottom bar ── */}
+        <div className="border-t border-gray-800">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p className="text-xs text-gray-500 text-center sm:text-left">
+                &copy; {new Date().getFullYear()} ShareMyRide. All rights reserved.
+              </p>
+              <div className="flex items-center gap-4">
+                <Link to="/terms-and-privacy" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                  Privacy
+                </Link>
+                <Link to="/terms-and-privacy" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                  Terms
+                </Link>
+                {/* Bottom logo also triggers animation */}
+                <button
+                  onClick={triggerAnim}
+                  className="text-xs text-gray-600 hover:text-blue-400 transition-colors duration-150 flex items-center gap-1 focus:outline-none"
+                  type="button"
+                  aria-label="View ShareMyRide brand animation"
+                >
+                  Made with 🚗 in India
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-
-    </footer>
+      </footer>
+    </>
   );
 }
 

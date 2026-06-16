@@ -20,6 +20,18 @@ import DriverUpcomingRides from '../pages/driver/DriverUpcomingRides';
 import PaymentSuccess from "../pages/PaymentSuccess.jsx";
 import PaymentFailed from "../pages/PaymentFailed.jsx";
 
+// Footer Nav pages
+import About from '../pages/FooterNavlinks/About.jsx';
+import HowItWorks from '../pages/FooterNavlinks/HowItWorks.jsx';
+import HelpCenter from '../pages/FooterNavlinks/HelpCenter.jsx';
+import ContactUs from '../pages/FooterNavlinks/ContactUs.jsx';
+import FAQ from '../pages/FooterNavlinks/FAQ.jsx';
+import Guidelines from '../pages/FooterNavlinks/Guidelines.jsx';
+import Blog from '../pages/FooterNavlinks/Blog.jsx';
+import Report from '../pages/FooterNavlinks/Report.jsx';
+import TermsAndPrivacy from '../pages/FooterNavlinks/TermsAndPrivacy.jsx';
+import Cookies from '../pages/FooterNavlinks/Cookies.jsx';
+
 // Admin pages
 import AdminLogin from '../pages/Admin/AdminLogin.jsx';
 import AdminDashboard from '../pages/Admin/AdminDashboard.jsx';
@@ -199,6 +211,18 @@ function AppRoutes() {
 
       <Route path="/payment-success/:bookingId" element={<PaymentSuccess />} />
       <Route path="/payment-failed/:bookingId" element={<PaymentFailed />} />
+
+      {/* Footer Nav Routes */}
+      <Route path="/about" element={<About />} />
+      <Route path="/how-it-works" element={<HowItWorks />} />
+      <Route path="/help" element={<HelpCenter />} />
+      <Route path="/contact" element={<ContactUs />} />
+      <Route path="/faq" element={<FAQ />} />
+      <Route path="/guidelines" element={<Guidelines />} />
+      <Route path="/blog" element={<Blog />} />
+      <Route path="/report" element={<Report />} />
+      <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
+      <Route path="/cookies" element={<Cookies />} />
 
       {/* 404 Not Found Route */}
       <Route 
