@@ -59,44 +59,71 @@ const TIMELINE = [
         year: '2022',
         title: 'The Idea',
         desc: 'Frustrated by expensive solo commutes and empty car seats, our founder envisioned a platform where trust between strangers could fill those seats — and cut costs and carbon together.',
-        icon: '💡',
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
     },
     {
         year: '2023',
         title: 'First Version',
         desc: 'A basic ride-listing MVP went live. Early users started sharing rides between cities, building micro-communities of commuters who became regulars.',
-        icon: '🚀',
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
     },
     {
         year: '2024',
         title: 'Community Grows',
         desc: 'Driver verification, real-time booking, and a rating system launched. Thousands of rides happened. The community started self-policing with integrity.',
-        icon: '🌱',
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>,
     },
     {
         year: '2025',
         title: 'Platform Matures',
         desc: 'Waypoint routing, cost-sharing calculators, and safety features launched. ShareMyRide became the go-to platform for intercity shared travel across India.',
-        icon: '⭐',
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>,
     },
     {
         year: '2026+',
         title: 'The Road Ahead',
         desc: 'Corporate carpooling, EV-first routing, and rural connectivity. Scaling to every district in India, one shared seat at a time.',
-        icon: '🗺️',
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
     },
 ];
 
 const VALUES = [
-    { icon: '🤝', title: 'Trust First', desc: 'Every driver is verified. Every ride is rated. Community accountability is built into the DNA of the platform.' },
-    { icon: '🌿', title: 'Sustainability', desc: 'Fewer cars on the road means less congestion, fewer emissions, and a measurably smaller carbon footprint per journey.' },
-    { icon: '💸', title: 'Affordability', desc: 'Cost-sharing, not profit extraction. Drivers recover fuel costs, passengers travel cheaper — everyone wins.' },
-    { icon: '🏘️', title: 'Community', desc: 'Not a transactional app — a social layer for mobility. Regular commuters become trusted travel companions.' },
-    { icon: '🛡️', title: 'Safety', desc: 'Emergency contacts, in-app SOS, gender preference filters, and verified identities make every seat a safe seat.' },
-    { icon: '🚀', title: 'Accessibility', desc: 'From tier-1 metros to tier-3 towns, shared mobility should work everywhere — not just where Uber does.' },
+    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>, title: 'Trust First', desc: 'Every driver is verified. Every ride is rated. Community accountability is built into the DNA of the platform.' },
+    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Sustainability', desc: 'Fewer cars on the road means less congestion, fewer emissions, and a measurably smaller carbon footprint per journey.' },
+    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Affordability', desc: 'Cost-sharing, not profit extraction. Drivers recover fuel costs, passengers travel cheaper — everyone wins.' },
+    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>, title: 'Community', desc: 'Not a transactional app — a social layer for mobility. Regular commuters become trusted travel companions.' },
+    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>, title: 'Safety', desc: 'Emergency contacts, in-app SOS, gender preference filters, and verified identities make every seat a safe seat.' },
+    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Accessibility', desc: 'From tier-1 metros to tier-3 towns, shared mobility should work everywhere — not just where Uber does.' },
 ];
 
 export default function About() {
+    const [stats, setStats] = useState([
+        { label: 'Rides Shared', value: 0, suffix: '+' },
+        { label: 'Cities Connected', value: 0, suffix: '+' },
+        { label: 'Active Members', value: 0, suffix: '+' },
+        { label: 'Avg. Rating', value: 0, suffix: '★' },
+    ]);
+
+    useEffect(() => {
+        // Simulate dynamic fetching of data from a backend endpoint
+        const fetchStats = async () => {
+            try {
+                // In a real application, this would be an actual API call
+                // e.g., const response = await fetch('/api/v1/platform-stats');
+                await new Promise(resolve => setTimeout(resolve, 800)); // Simulate network latency
+                setStats([
+                    { label: 'Rides Shared', value: 12400, suffix: '+' },
+                    { label: 'Cities Connected', value: 80, suffix: '+' },
+                    { label: 'Active Members', value: 6800, suffix: '+' },
+                    { label: 'Avg. Rating', value: 4.8, suffix: '★' },
+                ]);
+            } catch (error) {
+                console.error("Failed to fetch stats", error);
+            }
+        };
+        fetchStats();
+    }, []);
+
     return (
         <div className="min-h-screen bg-gray-50">
 
@@ -127,12 +154,7 @@ export default function About() {
             <section className="bg-white border-b border-gray-100 shadow-sm">
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-                        {[
-                            { label: 'Rides Shared', value: 12400, suffix: '+' },
-                            { label: 'Cities Connected', value: 80, suffix: '+' },
-                            { label: 'Active Members', value: 6800, suffix: '+' },
-                            { label: 'Avg. Rating', value: 4.8, suffix: '★' },
-                        ].map(stat => (
+                        {stats.map(stat => (
                             <div key={stat.label}>
                                 <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
                                     <Counter target={stat.value} suffix={stat.suffix} />
@@ -200,7 +222,7 @@ export default function About() {
                                     <div className={`relative flex items-start gap-6 ${i % 2 === 0 ? 'sm:flex-row' : 'sm:flex-row-reverse'}`}>
                                         {/* Node */}
                                         <div className="relative z-10 flex-shrink-0 w-16 h-16 rounded-2xl bg-blue-600 flex flex-col items-center justify-center shadow-lg shadow-blue-200 text-white sm:absolute sm:left-1/2 sm:-translate-x-1/2">
-                                            <span className="text-xl">{item.icon}</span>
+                                            <span className="text-white">{item.icon}</span>
                                             <span className="text-[10px] font-bold mt-0.5">{item.year}</span>
                                         </div>
 
@@ -239,7 +261,12 @@ export default function About() {
                         ].map(item => (
                             <Reveal key={item.label} delay={0.1}>
                                 <div className="bg-white/10 rounded-2xl p-7 text-left border border-white/10" style={{ backdropFilter: 'blur(8px)' }}>
-                                    <div className="text-3xl mb-3">{item.icon}</div>
+                                    <div className="text-white mb-3 w-8 h-8">
+                                        {item.label === 'Mission' ? 
+                                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                            : <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        }
+                                    </div>
                                     <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-2">{item.label}</div>
                                     <p className="text-blue-50 leading-relaxed">{item.text}</p>
                                 </div>
@@ -262,7 +289,7 @@ export default function About() {
                         {VALUES.map((v, i) => (
                             <Reveal key={v.title} delay={i * 0.08}>
                                 <div className="group bg-gray-50 rounded-2xl p-6 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/40 transition-all duration-200">
-                                    <div className="text-3xl mb-3">{v.icon}</div>
+                                    <div className="text-blue-600 mb-3 w-8 h-8">{v.icon}</div>
                                     <h3 className="font-bold text-gray-900 mb-2">{v.title}</h3>
                                     <p className="text-sm text-gray-600 leading-relaxed">{v.desc}</p>
                                 </div>

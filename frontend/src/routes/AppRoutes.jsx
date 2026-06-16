@@ -4,7 +4,7 @@ import Home from '../pages/Home/Home';
 import Login from '../pages/Auth/Login';
 import Signup from '../pages/Auth/Signup';
 import ForgotPassword from '../pages/Auth/ForgotPassword.jsx';
-import Terms from '../pages/Auth/Terms.jsx';
+
 import VerificationPending from '../pages/Auth/VerificationPending.jsx';
 import VerifyEmail from '../pages/Auth/VerifyEmail.jsx';
 import RideSearch from '../pages/RideSearch/RideSearch';
@@ -29,7 +29,8 @@ import FAQ from '../pages/FooterNavlinks/FAQ.jsx';
 import Guidelines from '../pages/FooterNavlinks/Guidelines.jsx';
 import Blog from '../pages/FooterNavlinks/Blog.jsx';
 import Report from '../pages/FooterNavlinks/Report.jsx';
-import TermsAndPrivacy from '../pages/FooterNavlinks/TermsAndPrivacy.jsx';
+import PrivacyPolicy from '../pages/FooterNavlinks/PrivacyPolicy.jsx';
+import TermsOfService from '../pages/FooterNavlinks/TermsOfService.jsx';
 import Cookies from '../pages/FooterNavlinks/Cookies.jsx';
 
 // Admin pages
@@ -105,14 +106,7 @@ function AppRoutes() {
         } 
       />
 
-      <Route 
-        path="/terms" 
-        element={
-          <PublicRoute>
-            <Terms />
-          </PublicRoute>
-        } 
-      />
+
 
       <Route 
         path="/forgot-password" 
@@ -221,8 +215,8 @@ function AppRoutes() {
       <Route path="/guidelines" element={<Guidelines />} />
       <Route path="/blog" element={<Blog />} />
       <Route path="/report" element={<Report />} />
-      <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
-      <Route path="/privacy" element={<TermsAndPrivacy />} />
+      <Route path="/terms" element={<TermsOfService />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/cookies" element={<Cookies />} />
 
       {/* 404 Not Found Route */}

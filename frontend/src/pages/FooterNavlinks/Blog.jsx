@@ -1,99 +1,55 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 /* ── Mock data ─────────────────────────────────────────────── */
-const CATEGORIES = ['All', 'Travel Stories', 'Carpooling Tips', 'Community Stories', 'Sustainability', 'Industry Insights'];
+const CATEGORIES = ['All', 'Platform Updates', 'Company News', 'Industry Insights'];
 
 const POSTS = [
     {
         id: 1,
-        title: 'How I saved ₹18,000 in 3 months by carpooling from Pune to Mumbai',
-        excerpt: 'Every Friday for three months I shared a ride with strangers who became friends. Here is what I learned about commuting, community, and cutting costs without cutting comfort.',
-        category: 'Travel Stories',
-        author: { name: 'Priya Sharma', avatar: 'PS', role: 'Software Engineer, Pune' },
+        title: 'Building Trust at Scale: The ShareMyRide Vision',
+        excerpt: 'How we are creating a verified, secure ecosystem for intercity travel in India, focusing on identity and community accountability.',
+        category: 'Company News',
+        author: { name: 'Abhay', avatar: 'AB', role: 'Founder & CEO' },
         date: 'June 10, 2026',
         readTime: '5 min read',
         likes: 142,
         comments: 23,
         featured: true,
-        tags: ['savings', 'Pune-Mumbai', 'weekly commute'],
+        tags: ['vision', 'trust', 'leadership'],
         coverColor: 'from-blue-600 to-indigo-700',
-        coverEmoji: '🚗',
+        coverIcon: <svg className="w-12 h-12 text-white opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" /></svg>,
     },
     {
         id: 2,
-        title: 'The carbon math: what 4 people in one car actually does to emissions',
-        excerpt: 'I ran the numbers using real fuel consumption data on Indian highways. The results are surprising — and they make the case for carpooling better than any campaign.',
-        category: 'Sustainability',
-        author: { name: 'Arjun Mehta', avatar: 'AM', role: 'Climate Researcher' },
+        title: 'The Economic Impact of Shared Mobility in Tier-2 Cities',
+        excerpt: 'Analyzing the data behind cost-sharing and its cascading effects on local economies and personal savings for regular commuters.',
+        category: 'Industry Insights',
+        author: { name: 'Abhay', avatar: 'AB', role: 'Founder & CEO' },
         date: 'June 5, 2026',
         readTime: '7 min read',
         likes: 289,
         comments: 41,
         featured: true,
-        tags: ['carbon', 'environment', 'data'],
-        coverColor: 'from-green-600 to-emerald-700',
-        coverEmoji: '🌿',
+        tags: ['economics', 'mobility', 'data'],
+        coverColor: 'from-slate-600 to-gray-700',
+        coverIcon: <svg className="w-12 h-12 text-white opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
     },
     {
         id: 3,
-        title: '10 etiquette rules every ShareMyRide passenger should know',
-        excerpt: 'From the unspoken music negotiation to the correct way to handle a route detour — small things that make or break a shared ride experience.',
-        category: 'Carpooling Tips',
-        author: { name: 'Kavitha Nair', avatar: 'KN', role: 'Frequent Traveller' },
+        title: 'Architecting for Reliability: ShareMyRide Platform Updates',
+        excerpt: 'A technical deep-dive into how our infrastructure team is optimizing routing algorithms and real-time matching to reduce latency by 40%.',
+        category: 'Platform Updates',
+        author: { name: 'Abhay', avatar: 'AB', role: 'Founder & CEO' },
         date: 'May 28, 2026',
         readTime: '4 min read',
         likes: 95,
         comments: 17,
-        featured: false,
-        tags: ['etiquette', 'tips', 'passengers'],
-        coverColor: 'from-violet-600 to-purple-700',
-        coverEmoji: '📋',
-    },
-    {
-        id: 4,
-        title: 'How our college carpooling group grew to 200 students in 60 days',
-        excerpt: 'We started with a WhatsApp group of 8 students trying to split Ola costs. Then we discovered ShareMyRide and everything changed.',
-        category: 'Community Stories',
-        author: { name: 'Rishi Kapoor', avatar: 'RK', role: 'Student, IIT Bombay' },
-        date: 'May 22, 2026',
-        readTime: '6 min read',
-        likes: 203,
-        comments: 38,
-        featured: false,
-        tags: ['college', 'community', 'students'],
-        coverColor: 'from-amber-500 to-orange-600',
-        coverEmoji: '🎓',
-    },
-    {
-        id: 5,
-        title: 'Why India needs BlaBlaCar — and what we\'re building instead',
-        excerpt: 'Intercity ride-sharing has worked spectacularly in Europe. The Indian context is different — here is why, and what a truly India-first carpooling platform looks like.',
-        category: 'Industry Insights',
-        author: { name: 'Divya Rao', avatar: 'DR', role: 'Product Thinker' },
-        date: 'May 15, 2026',
-        readTime: '9 min read',
-        likes: 410,
-        comments: 67,
-        featured: false,
-        tags: ['product', 'India', 'market analysis'],
-        coverColor: 'from-blue-500 to-cyan-600',
-        coverEmoji: '🗺️',
-    },
-    {
-        id: 6,
-        title: 'The strangers who drove me home: a monsoon story from Nagpur',
-        excerpt: 'My train was cancelled. My phone battery was at 8%. And somehow, two complete strangers on ShareMyRide got me home in one of the most memorable journeys of my life.',
-        category: 'Travel Stories',
-        author: { name: 'Sneha Kulkarni', avatar: 'SK', role: 'Teacher & Traveller' },
-        date: 'May 8, 2026',
-        readTime: '8 min read',
-        likes: 517,
-        comments: 82,
-        featured: false,
-        tags: ['monsoon', 'Nagpur', 'kindness'],
-        coverColor: 'from-teal-600 to-blue-600',
-        coverEmoji: '🌧️',
+        featured: true,
+        tags: ['engineering', 'updates', 'platform'],
+        coverColor: 'from-blue-800 to-indigo-900',
+        coverIcon: <svg className="w-12 h-12 text-white opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>,
     },
 ];
 
@@ -107,7 +63,7 @@ function BlogCard({ post, onClick }) {
         >
             {/* Cover */}
             <div className={`h-36 bg-gradient-to-br ${post.coverColor} flex items-center justify-center`}>
-                <span className="text-5xl">{post.coverEmoji}</span>
+                {post.coverIcon}
             </div>
 
             <div className="p-5">
@@ -141,12 +97,14 @@ function BlogCard({ post, onClick }) {
                     <div className="flex items-center gap-3 text-gray-400">
                         <button
                             onClick={e => { e.stopPropagation(); setLiked(l => !l); }}
-                            className={`flex items-center gap-1 text-xs transition-colors ${liked ? 'text-red-500' : 'hover:text-red-400'}`}
+                            className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${liked ? 'text-blue-600' : 'hover:text-blue-600'}`}
                         >
-                            {liked ? '❤️' : '🤍'} {post.likes + (liked ? 1 : 0)}
+                            <svg className="w-4 h-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" /></svg>
+                            {post.likes + (liked ? 1 : 0)}
                         </button>
-                        <span className="flex items-center gap-1 text-xs">
-                            💬 {post.comments}
+                        <span className="flex items-center gap-1.5 text-xs font-medium">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                            {post.comments}
                         </span>
                     </div>
                 </div>
@@ -187,7 +145,7 @@ function BlogModal({ post, onClose }) {
 
                 {/* Cover */}
                 <div className={`h-48 rounded-t-2xl bg-gradient-to-br ${post.coverColor} flex items-center justify-center`}>
-                    <span className="text-7xl">{post.coverEmoji}</span>
+                    <div className="scale-150">{post.coverIcon}</div>
                 </div>
 
                 <div className="p-6 sm:p-8">
@@ -232,11 +190,13 @@ function BlogModal({ post, onClose }) {
 
                     {/* Share + Like */}
                     <div className="flex items-center gap-3 mb-8">
-                        <button className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-500 rounded-xl text-sm font-medium hover:bg-red-100 transition-colors">
-                            ❤️ {post.likes} Likes
+                        <button className="flex items-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" /></svg>
+                            {post.likes} Likes
                         </button>
-                        <button className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl text-sm font-medium hover:bg-blue-100 transition-colors">
-                            🔗 Share
+                        <button className="flex items-center gap-2 px-4 py-2 bg-gray-50 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-100 transition-colors border border-gray-200">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                            Share
                         </button>
                     </div>
 
@@ -280,8 +240,8 @@ function BlogModal({ post, onClose }) {
                                         </div>
                                         <p className="text-xs text-gray-700 leading-relaxed">{c.text}</p>
                                         <div className="flex items-center gap-3 mt-2">
-                                            <button className="text-[10px] text-gray-400 hover:text-red-400 transition-colors">❤️ {c.likes}</button>
-                                            <button className="text-[10px] text-gray-400 hover:text-blue-500 transition-colors">Reply</button>
+                                            <button className="text-[10px] text-gray-400 hover:text-blue-600 transition-colors font-medium">Like ({c.likes})</button>
+                                            <button className="text-[10px] text-gray-400 hover:text-blue-600 transition-colors font-medium">Reply</button>
                                         </div>
                                     </div>
                                 </div>
@@ -359,14 +319,17 @@ export default function Blog() {
     const featured = posts.filter(p => p.featured);
 
     const handlePublish = (form) => {
-        const colorsOptions = ['from-blue-600 to-indigo-700', 'from-green-600 to-emerald-700', 'from-violet-600 to-purple-700', 'from-amber-500 to-orange-600'];
-        const emojis = ['✍️', '📝', '💡', '🚀'];
+        const colorsOptions = ['from-blue-600 to-indigo-700', 'from-slate-600 to-gray-700', 'from-blue-800 to-indigo-900', 'from-gray-800 to-black'];
+        const icons = [
+            <svg className="w-12 h-12 text-white opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2 2 0 00-.586-1.414l-4.5-4.5A2 2 0 0015.5 3H15m3 12h-3" /></svg>,
+            <svg className="w-12 h-12 text-white opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
+        ];
         const newPost = {
             id: Date.now(),
             title: form.title,
             excerpt: form.content.slice(0, 160) + '…',
             category: form.category,
-            author: { name: 'You', avatar: 'YO', role: 'Community Member' },
+            author: { name: 'Abhay', avatar: 'AB', role: 'Founder & CEO' },
             date: new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }),
             readTime: `${Math.max(1, Math.round(form.content.split(' ').length / 200))} min read`,
             likes: 0,
@@ -374,9 +337,17 @@ export default function Blog() {
             featured: false,
             tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
             coverColor: colorsOptions[Math.floor(Math.random() * colorsOptions.length)],
-            coverEmoji: emojis[Math.floor(Math.random() * emojis.length)],
+            coverIcon: icons[Math.floor(Math.random() * icons.length)],
         };
         setPosts(prev => [newPost, ...prev]);
+        toast.success('Post published successfully!', {
+            style: {
+                borderRadius: '8px',
+                background: '#1e293b',
+                color: '#fff',
+                fontSize: '14px'
+            },
+        });
     };
 
     return (
@@ -401,7 +372,8 @@ export default function Blog() {
                         onClick={() => setShowCreate(true)}
                         className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-blue-50 transition-colors text-sm shadow-lg"
                     >
-                        ✍️ Write a Post
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                        Write a Post
                     </button>
                 </div>
             </section>
@@ -418,7 +390,7 @@ export default function Blog() {
                                     className={`rounded-2xl bg-gradient-to-br ${post.coverColor} p-6 cursor-pointer hover:scale-[1.01] transition-transform`}
                                     onClick={() => setSelectedPost(post)}
                                 >
-                                    <div className="text-4xl mb-4">{post.coverEmoji}</div>
+                                    <div className="mb-4">{post.coverIcon}</div>
                                     <span className="text-xs bg-white/20 text-white px-2.5 py-1 rounded-full font-medium">{post.category}</span>
                                     <h3 className="text-lg font-bold text-white mt-3 mb-2 leading-snug">{post.title}</h3>
                                     <p className="text-white/70 text-xs leading-relaxed mb-4 line-clamp-2">{post.excerpt}</p>
@@ -475,7 +447,11 @@ export default function Blog() {
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                     {filtered.length === 0 ? (
                         <div className="text-center py-20">
-                            <div className="text-4xl mb-3">📭</div>
+                            <div className="flex justify-center mb-4">
+                                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
+                                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2 2 0 00-.586-1.414l-4.5-4.5A2 2 0 0015.5 3H15m3 12h-3" /></svg>
+                                </div>
+                            </div>
                             <div className="font-semibold text-gray-700 mb-2">No posts found</div>
                             <p className="text-gray-400 text-sm mb-5">Try a different search or be the first to write about this topic.</p>
                             <button onClick={() => setShowCreate(true)} className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">

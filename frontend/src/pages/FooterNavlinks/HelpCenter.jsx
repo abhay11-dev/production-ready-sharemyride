@@ -1,295 +1,132 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-/* ─── Intersection Observer hook for scroll reveals ─── */
-function useReveal(threshold = 0.15) {
-    const ref = useRef(null);
-    const [visible, setVisible] = useState(false);
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const observer = new IntersectionObserver(
-            ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } },
-            { threshold }
-        );
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, [threshold]);
-    return [ref, visible];
-}
-
-/* ─── Animated counter ─── */
-function Counter({ target, suffix = '', duration = 2000 }) {
-    const [count, setCount] = useState(0);
-    const [ref, visible] = useReveal(0.3);
-    useEffect(() => {
-        if (!visible) return;
-        let start = 0;
-        const step = target / (duration / 16);
-        const timer = setInterval(() => {
-            start += step;
-            if (start >= target) { setCount(target); clearInterval(timer); }
-            else setCount(Math.floor(start));
-        }, 16);
-        return () => clearInterval(timer);
-    }, [visible, target, duration]);
-    return <span ref={ref}>{count.toLocaleString()}{suffix}</span>;
-}
-
-/* ─── Reveal wrapper ─── */
-function Reveal({ children, delay = 0, className = '' }) {
-    const [ref, visible] = useReveal();
-    return (
-        <div
-            ref={ref}
-            className={className}
-            style={{
-                opacity: visible ? 1 : 0,
-                transform: visible ? 'translateY(0)' : 'translateY(28px)',
-                transition: `opacity 0.7s ease ${delay}s, transform 0.7s ease ${delay}s`,
-            }}
-        >
-            {children}
-        </div>
-    );
-}
-
-const TIMELINE = [
+const FAQS = [
     {
-        year: '2022',
-        title: 'The Idea',
-        desc: 'Frustrated by expensive solo commutes and empty car seats, our founder envisioned a platform where trust between strangers could fill those seats — and cut costs and carbon together.',
-        icon: '💡',
+        category: 'Getting Started',
+        items: [
+            { q: 'How do I verify my account?', a: 'To verify your account, go to your Profile and complete the identity verification step by providing your Aadhaar and a valid Driving License if you intend to offer rides. Verification typically takes 24-48 hours.' },
+            { q: 'Is ShareMyRide free to use?', a: 'Signing up and searching for rides is completely free. When booking a ride, passengers pay a cost-sharing contribution set by the driver, plus a nominal platform fee to cover operational costs.' }
+        ]
     },
     {
-        year: '2023',
-        title: 'First Version',
-        desc: 'A basic ride-listing MVP went live. Early users started sharing rides between cities, building micro-communities of commuters who became regulars.',
-        icon: '🚀',
+        category: 'Riding & Driving',
+        items: [
+            { q: 'How are ride costs calculated?', a: 'Drivers set the cost per seat based on distance and fuel consumption. Our platform caps the maximum allowable cost per seat to ensure it remains a cost-sharing model and not for-profit transport.' },
+            { q: 'What happens if a driver cancels?', a: 'If a driver cancels a confirmed booking, passengers receive a full refund instantly. Drivers who frequently cancel may face platform penalties or suspension.' }
+        ]
     },
     {
-        year: '2024',
-        title: 'Community Grows',
-        desc: 'Driver verification, real-time booking, and a rating system launched. Thousands of rides happened. The community started self-policing with integrity.',
-        icon: '🌱',
-    },
-    {
-        year: '2025',
-        title: 'Platform Matures',
-        desc: 'Waypoint routing, cost-sharing calculators, and safety features launched. ShareMyRide became the go-to platform for intercity shared travel across India.',
-        icon: '⭐',
-    },
-    {
-        year: '2026+',
-        title: 'The Road Ahead',
-        desc: 'Corporate carpooling, EV-first routing, and rural connectivity. Scaling to every district in India, one shared seat at a time.',
-        icon: '🗺️',
-    },
+        category: 'Trust & Safety',
+        items: [
+            { q: 'Are drivers verified?', a: 'Yes. All drivers must pass a strict verification process including Government ID checks (Aadhaar/DL) before they can offer rides on the platform.' },
+            { q: 'What should I do in an emergency?', a: 'In case of an emergency, please use the SOS button located in your active ride screen. This will alert your emergency contacts and our 24/7 support team.' }
+        ]
+    }
 ];
 
-const VALUES = [
-    { icon: '🤝', title: 'Trust First', desc: 'Every driver is verified. Every ride is rated. Community accountability is built into the DNA of the platform.' },
-    { icon: '🌿', title: 'Sustainability', desc: 'Fewer cars on the road means less congestion, fewer emissions, and a measurably smaller carbon footprint per journey.' },
-    { icon: '💸', title: 'Affordability', desc: 'Cost-sharing, not profit extraction. Drivers recover fuel costs, passengers travel cheaper — everyone wins.' },
-    { icon: '🏘️', title: 'Community', desc: 'Not a transactional app — a social layer for mobility. Regular commuters become trusted travel companions.' },
-    { icon: '🛡️', title: 'Safety', desc: 'Emergency contacts, in-app SOS, gender preference filters, and verified identities make every seat a safe seat.' },
-    { icon: '🚀', title: 'Accessibility', desc: 'From tier-1 metros to tier-3 towns, shared mobility should work everywhere — not just where Uber does.' },
-];
+export default function HelpCenter() {
+    const [searchQuery, setSearchQuery] = useState('');
+    
+    const filteredFaqs = FAQS.map(category => ({
+        ...category,
+        items: category.items.filter(item => 
+            item.q.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            item.a.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+    })).filter(category => category.items.length > 0);
 
-export default function About() {
     return (
-        <div className="min-h-screen bg-gray-50">
-
-            {/* ── Hero ── */}
-            <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden">
-                <div className="absolute inset-0">
-                    <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-500/10 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2" />
-                </div>
-                <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center">
-                    <div
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6"
-                        style={{ backdropFilter: 'blur(8px)' }}
-                    >
-                        Our Story
+        <div className="min-h-screen bg-gray-50 pb-20">
+            {/* Header */}
+            <div className="bg-gradient-to-br from-blue-700 to-blue-900 py-16 px-4">
+                <div className="max-w-3xl mx-auto text-center">
+                    <h1 className="text-3xl md:text-5xl font-extrabold text-white mb-6">How can we help you?</h1>
+                    <div className="relative max-w-xl mx-auto">
+                        <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <input
+                            type="text"
+                            placeholder="Search for articles, guides, and FAQs..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-12 pr-4 py-4 rounded-xl shadow-lg border-0 focus:ring-2 focus:ring-blue-400 text-gray-800 text-base"
+                        />
                     </div>
-                    <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6 tracking-tight">
-                        We built the ride-sharing<br />
-                        <span className="text-green-400">India actually needed.</span>
-                    </h1>
-                    <p className="text-lg sm:text-xl text-blue-100 leading-relaxed max-w-2xl mx-auto">
-                        Not a taxi app. Not a logistics startup. A community of people who believe that empty car seats are a problem worth solving — together.
-                    </p>
                 </div>
-            </section>
+            </div>
 
-            {/* ── Stats bar ── */}
-            <section className="bg-white border-b border-gray-100 shadow-sm">
-                <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-                        {[
-                            { label: 'Rides Shared', value: 12400, suffix: '+' },
-                            { label: 'Cities Connected', value: 80, suffix: '+' },
-                            { label: 'Active Members', value: 6800, suffix: '+' },
-                            { label: 'Avg. Rating', value: 4.8, suffix: '★' },
-                        ].map(stat => (
-                            <div key={stat.label}>
-                                <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
-                                    <Counter target={stat.value} suffix={stat.suffix} />
+            {/* Quick Links */}
+            <div className="max-w-5xl mx-auto px-4 -mt-8 mb-16">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Link to="/ride/search" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all group">
+                        <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        </div>
+                        <h3 className="font-bold text-gray-900 mb-2">Find a Ride</h3>
+                        <p className="text-sm text-gray-500">Learn how to search, book, and travel safely as a passenger.</p>
+                    </Link>
+                    <Link to="/ride/post" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all group">
+                        <div className="w-12 h-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                        </div>
+                        <h3 className="font-bold text-gray-900 mb-2">Offer a Ride</h3>
+                        <p className="text-sm text-gray-500">A guide to publishing rides, managing bookings, and cost-sharing.</p>
+                    </Link>
+                    <Link to="/profile" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all group">
+                        <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                        </div>
+                        <h3 className="font-bold text-gray-900 mb-2">Account & Safety</h3>
+                        <p className="text-sm text-gray-500">Manage your profile, verification, payments, and trust settings.</p>
+                    </Link>
+                </div>
+            </div>
+
+            {/* FAQs */}
+            <div className="max-w-3xl mx-auto px-4">
+                <h2 className="text-2xl font-bold text-gray-900 mb-8">Frequently Asked Questions</h2>
+                
+                {filteredFaqs.length > 0 ? (
+                    <div className="space-y-8">
+                        {filteredFaqs.map((category, idx) => (
+                            <div key={idx}>
+                                <h3 className="text-sm font-semibold text-blue-600 uppercase tracking-widest mb-4">{category.category}</h3>
+                                <div className="space-y-4">
+                                    {category.items.map((item, itemIdx) => (
+                                        <div key={itemIdx} className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
+                                            <h4 className="font-bold text-gray-900 mb-2">{item.q}</h4>
+                                            <p className="text-gray-600 text-sm leading-relaxed">{item.a}</p>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">{stat.label}</div>
                             </div>
                         ))}
                     </div>
-                </div>
-            </section>
-
-            {/* ── Problem we solve ── */}
-            <section className="py-16 sm:py-24 bg-gray-50">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <Reveal>
-                        <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">The Problem</div>
-                        <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6 tracking-tight">
-                            Every day, millions of cars carry<br className="hidden sm:block" />
-                            <span className="text-blue-600"> just one person.</span>
-                        </h2>
-                    </Reveal>
-                    <Reveal delay={0.15}>
-                        <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                            In India, urban congestion costs the economy billions of hours every year. Cars sit idle 96% of the time. When they do move, 70% have empty seats. Meanwhile, millions of people are paying full-price solo fares, burning fuel they could share.
-                        </p>
-                        <p className="text-lg text-gray-600 leading-relaxed">
-                            The solution already exists — people just need a trusted space to coordinate. That&apos;s what we built.
-                        </p>
-                    </Reveal>
-
-                    <div className="grid sm:grid-cols-3 gap-5 mt-12">
-                        {[
-                            { stat: '70%', label: 'of cars on Indian roads carry only the driver', color: 'text-red-500' },
-                            { stat: '40%', label: 'cheaper than solo travel when seats are shared', color: 'text-green-600' },
-                            { stat: '3x', label: 'lower carbon footprint per passenger vs solo car', color: 'text-blue-600' },
-                        ].map((item, i) => (
-                            <Reveal key={item.stat} delay={i * 0.12}>
-                                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
-                                    <div className={`text-4xl font-extrabold mb-2 ${item.color}`}>{item.stat}</div>
-                                    <div className="text-sm text-gray-600 leading-snug">{item.label}</div>
-                                </div>
-                            </Reveal>
-                        ))}
+                ) : (
+                    <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+                        <svg className="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
+                        <p className="text-gray-500">We couldn't find any articles matching your search.</p>
                     </div>
-                </div>
-            </section>
+                )}
+            </div>
 
-            {/* ── How it started / Timeline ── */}
-            <section className="py-16 sm:py-24 bg-white">
-                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <Reveal>
-                        <div className="text-center mb-14">
-                            <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">Our Journey</div>
-                            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">From frustration to platform</h2>
-                        </div>
-                    </Reveal>
-
-                    <div className="relative">
-                        {/* Vertical line */}
-                        <div className="absolute left-8 sm:left-1/2 top-0 bottom-0 w-px bg-blue-100 -translate-x-1/2" />
-
-                        <div className="space-y-10">
-                            {TIMELINE.map((item, i) => (
-                                <Reveal key={item.year} delay={i * 0.1}>
-                                    <div className={`relative flex items-start gap-6 ${i % 2 === 0 ? 'sm:flex-row' : 'sm:flex-row-reverse'}`}>
-                                        {/* Node */}
-                                        <div className="relative z-10 flex-shrink-0 w-16 h-16 rounded-2xl bg-blue-600 flex flex-col items-center justify-center shadow-lg shadow-blue-200 text-white sm:absolute sm:left-1/2 sm:-translate-x-1/2">
-                                            <span className="text-xl">{item.icon}</span>
-                                            <span className="text-[10px] font-bold mt-0.5">{item.year}</span>
-                                        </div>
-
-                                        {/* Card */}
-                                        <div className={`flex-1 bg-gray-50 rounded-2xl p-5 border border-gray-100 sm:w-[calc(50%-56px)] ${i % 2 === 0 ? 'sm:mr-[calc(50%+28px)]' : 'sm:ml-[calc(50%+28px)]'}`}>
-                                            <h3 className="font-bold text-gray-900 mb-1">{item.title}</h3>
-                                            <p className="text-sm text-gray-600 leading-relaxed">{item.desc}</p>
-                                        </div>
-                                    </div>
-                                </Reveal>
-                            ))}
-                        </div>
+            {/* Support CTA */}
+            <div className="max-w-3xl mx-auto px-4 mt-16">
+                <div className="bg-blue-600 rounded-2xl p-8 text-center sm:flex sm:items-center sm:justify-between sm:text-left shadow-lg">
+                    <div className="mb-6 sm:mb-0">
+                        <h3 className="text-xl font-bold text-white mb-2">Still need help?</h3>
+                        <p className="text-blue-100">Our support team is available to assist you with any issues.</p>
                     </div>
+                    <Link to="/contact" className="inline-block bg-white text-blue-600 font-semibold px-6 py-3 rounded-xl hover:bg-blue-50 transition-colors">
+                        Contact Support
+                    </Link>
                 </div>
-            </section>
-
-            {/* ── Mission & Vision ── */}
-            <section className="py-16 sm:py-24 bg-gradient-to-br from-blue-700 to-blue-900 text-white">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-                    <Reveal>
-                        <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-3">Purpose</div>
-                        <h2 className="text-3xl sm:text-4xl font-extrabold mb-12 tracking-tight">What drives everything we do</h2>
-                    </Reveal>
-                    <div className="grid sm:grid-cols-2 gap-6">
-                        {[
-                            {
-                                label: 'Mission',
-                                icon: '🎯',
-                                text: 'Make shared mobility the default choice for every intercity and intracity journey in India — by building a platform rooted in trust, affordability, and community.',
-                            },
-                            {
-                                label: 'Vision',
-                                icon: '🌍',
-                                text: 'A future where every car seat is a social asset, not wasted space. Where travel is an opportunity to connect, not just commute.',
-                            },
-                        ].map(item => (
-                            <Reveal key={item.label} delay={0.1}>
-                                <div className="bg-white/10 rounded-2xl p-7 text-left border border-white/10" style={{ backdropFilter: 'blur(8px)' }}>
-                                    <div className="text-3xl mb-3">{item.icon}</div>
-                                    <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-2">{item.label}</div>
-                                    <p className="text-blue-50 leading-relaxed">{item.text}</p>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Values ── */}
-            <section className="py-16 sm:py-24 bg-white">
-                <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <Reveal>
-                        <div className="text-center mb-12">
-                            <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">What We Stand For</div>
-                            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Our values</h2>
-                        </div>
-                    </Reveal>
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {VALUES.map((v, i) => (
-                            <Reveal key={v.title} delay={i * 0.08}>
-                                <div className="group bg-gray-50 rounded-2xl p-6 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/40 transition-all duration-200">
-                                    <div className="text-3xl mb-3">{v.icon}</div>
-                                    <h3 className="font-bold text-gray-900 mb-2">{v.title}</h3>
-                                    <p className="text-sm text-gray-600 leading-relaxed">{v.desc}</p>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── CTA ── */}
-            <section className="py-16 sm:py-20 bg-gray-50 border-t border-gray-100">
-                <div className="max-w-2xl mx-auto px-4 text-center">
-                    <Reveal>
-                        <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4">Ready to ride with the community?</h2>
-                        <p className="text-gray-500 mb-8">Find a ride or offer yours — every seat filled is a small win for everyone.</p>
-                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                            <Link to="/ride/search" className="px-7 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">
-                                Find a Ride
-                            </Link>
-                            <Link to="/ride/post" className="px-7 py-3 bg-green-500 text-white font-semibold rounded-xl hover:bg-green-600 transition-colors">
-                                Offer a Ride
-                            </Link>
-                        </div>
-                    </Reveal>
-                </div>
-            </section>
-
+            </div>
         </div>
     );
 }

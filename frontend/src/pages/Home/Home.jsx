@@ -648,7 +648,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
               { step: '04', title: 'Travel and rate', desc: 'Share the road. After arrival, rate the experience to build trust for the next rider.' },
             ].map((s, i) => (
               <div key={s.step} className="relative bg-white rounded-2xl p-5 sm:p-6 border border-gray-100 shadow-sm">
-                <div className="text-4xl font-black text-gray-100 mb-3 leading-none select-none">{s.step}</div>
+                <div className="text-4xl font-black text-blue-900/20 mb-3 leading-none select-none">{s.step}</div>
                 <h3 className="font-semibold text-gray-900 text-sm mb-1.5">{s.title}</h3>
                 <p className="text-gray-500 text-sm leading-relaxed">{s.desc}</p>
                 {i < 3 && (
