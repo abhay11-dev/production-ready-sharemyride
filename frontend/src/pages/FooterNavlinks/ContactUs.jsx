@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+import axios from 'axios';
+import toast from 'react-hot-toast';
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 const INQUIRY_TYPES = [
     { id: 'general', label: 'General Inquiry', icon: '💬', desc: 'Questions about the platform or your account.' },
@@ -13,18 +17,35 @@ export default function ContactUs() {
     const [selected, setSelected] = useState('general');
     const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
     const [sent, setSent] = useState(false);
+    const [ticketId, setTicketId] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
     const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
-    const handleSubmit = e => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        const type = INQUIRY_TYPES.find(t => t.id === selected);
-        const subject = encodeURIComponent(`[${type?.label}] ${form.subject}`);
-        const body = encodeURIComponent(
-            `Hi ShareMyRide Team,\n\nName: ${form.name}\nEmail: ${form.email}\n\n${form.message}\n\nRegards,\n${form.name}`
-        );
-        window.location.href = `mailto:sharemyride@gmail.com?subject=${subject}&body=${body}`;
-        setSent(true);
+        setSubmitting(true);
+        try {
+            const res = await axios.post(`${API_URL}/inquiries`, {
+                name: form.name,
+                email: form.email,
+                subject: form.subject,
+                message: form.message,
+                inquiryType: selected
+            });
+            setTicketId(res.data.data?.ticketId || '');
+            setSent(true);
+            toast.success('Your inquiry has been submitted!', {
+                style: { borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '14px' }
+            });
+        } catch (err) {
+            console.error('Inquiry submission error:', err);
+            toast.error(err.response?.data?.message || 'Failed to submit. Please try again.', {
+                style: { borderRadius: '8px', background: '#dc2626', color: '#fff', fontSize: '14px' }
+            });
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -118,10 +139,15 @@ export default function ContactUs() {
                         {sent ? (
                             <div className="bg-white rounded-2xl p-10 border border-gray-100 shadow-sm text-center">
                                 <div className="text-5xl mb-4">✅</div>
-                                <h3 className="text-xl font-bold text-gray-900 mb-2">Message sent!</h3>
-                                <p className="text-gray-500 text-sm">Your email client should have opened. If not, email us directly at <a href="mailto:sharemyride@gmail.com" className="text-blue-600">sharemyride@gmail.com</a>.</p>
-                                <button onClick={() => setSent(false)} className="mt-6 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
-                                    Send another
+                                <h3 className="text-xl font-bold text-gray-900 mb-2">Inquiry Submitted!</h3>
+                                {ticketId && (
+                                    <div className="inline-block bg-blue-50 text-blue-700 font-mono font-bold px-4 py-2 rounded-lg text-sm mb-3">
+                                        Reference: {ticketId}
+                                    </div>
+                                )}
+                                <p className="text-gray-500 text-sm">We've received your message and will get back to you within 24–48 hours. A confirmation has been sent to your email.</p>
+                                <button onClick={() => { setSent(false); setForm({ name: '', email: '', subject: '', message: '' }); setTicketId(''); }} className="mt-6 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
+                                    Send another inquiry
                                 </button>
                             </div>
                         ) : (
@@ -176,11 +202,14 @@ export default function ContactUs() {
                                 </div>
                                 <button
                                     type="submit"
-                                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors text-sm"
+                                    disabled={submitting}
+                                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
                                 >
-                                    Send Message →
+                                    {submitting ? (
+                                        <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting...</>
+                                    ) : 'Submit Inquiry →'}
                                 </button>
-                                <p className="text-xs text-gray-400 text-center">This will open your email client with the message pre-filled.</p>
+                                <p className="text-xs text-gray-400 text-center">Your inquiry will be stored securely and our team will respond via email.</p>
                             </form>
                         )}
                     </div>

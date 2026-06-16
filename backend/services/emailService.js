@@ -749,6 +749,275 @@ const sendTestEmail = async (toEmail) => {
   }
 };
 
+/**
+ * Send inquiry received email to the user
+ */
+const sendInquiryReceivedEmail = async (inquiry) => {
+  const cid = getCorrelationId();
+  try {
+    const isReport = ['report', 'bug', 'safety'].includes(inquiry.inquiryType);
+    const label = isReport ? 'Report Received' : 'Inquiry Received';
+    
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${label} – ShareMyRide</title>
+  <style>
+    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    .header { background: linear-gradient(135deg, #3b82f6, #1d4ed8); padding: 30px 20px; text-align: center; color: white; }
+    .content { padding: 30px 20px; line-height: 1.6; }
+    .ticket-badge { display: inline-block; background: #eff6ff; color: #1d4ed8; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 14px; margin-bottom: 20px; }
+    .details { background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6; margin: 20px 0; }
+    .footer { text-align: center; font-size: 12px; color: #64748b; padding: 20px; background: #f1f5f9; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h2>🚗 ShareMyRide Support</h2>
+    </div>
+    <div class="content">
+      <h3>Hello ${inquiry.name},</h3>
+      <p>Thank you for reaching out to us. We have received your submission and our team is reviewing it.</p>
+      
+      <div class="ticket-badge">Reference ID: ${inquiry.ticketId}</div>
+      
+      <div class="details">
+        <strong>Subject:</strong> ${inquiry.subject}<br/>
+        <strong>Category:</strong> ${inquiry.inquiryType.toUpperCase()}<br/>
+        <strong>Status:</strong> Pending Review
+      </div>
+      
+      <p>We typically respond to all inquiries within 24 to 48 hours. If this is a high-priority safety concern, our Trust & Safety team will prioritize it.</p>
+      
+      <p>Best regards,<br/>ShareMyRide Team</p>
+    </div>
+    <div class="footer">
+      © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
+      to: inquiry.email,
+      subject: `[${inquiry.ticketId}] ${label}: ${inquiry.subject}`,
+      html
+    };
+
+    logEmailStart(cid, 'Inquiry_Received', mailOptions);
+    const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+    return result.data;
+  } catch (error) {
+    console.error(`[${cid}] Error sending inquiry confirmation email:`, error);
+  }
+};
+
+/**
+ * Send admin notification email for high priority inquiries
+ */
+const sendInquiryNotificationToAdmin = async (inquiry) => {
+  const cid = getCorrelationId();
+  try {
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>New Operations Alert – ShareMyRide</title>
+  <style>
+    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    .header { background: #e11d48; padding: 20px; text-align: center; color: white; }
+    .content { padding: 30px 20px; line-height: 1.6; }
+    .details { background: #fff1f2; border-left: 4px solid #e11d48; padding: 15px; border-radius: 8px; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h2>⚠️ Operations Alert: ${inquiry.inquiryType.toUpperCase()}</h2>
+    </div>
+    <div class="content">
+      <h3>Dear Admin,</h3>
+      <p>A new high-priority or actionable submission has been logged on the platform.</p>
+      
+      <div class="details">
+        <strong>Ticket ID:</strong> ${inquiry.ticketId}<br/>
+        <strong>From:</strong> ${inquiry.name} (${inquiry.email})<br/>
+        <strong>Type:</strong> ${inquiry.inquiryType}<br/>
+        <strong>Subject:</strong> ${inquiry.subject}<br/>
+        <strong>Message:</strong><br/>
+        <p style="white-space: pre-wrap; font-style: italic; color: #475569;">"${inquiry.message}"</p>
+      </div>
+
+      <p>Please log in to the Founder / Admin Dashboard to respond or assign this ticket.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Operations <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_USER, // Admin email
+      subject: `⚠️ [ALERT] [${inquiry.ticketId}] New ${inquiry.inquiryType}: ${inquiry.subject}`,
+      html
+    };
+
+    logEmailStart(cid, 'Inquiry_Admin_Alert', mailOptions);
+    const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+    return result.data;
+  } catch (error) {
+    console.error(`[${cid}] Error sending admin alert:`, error);
+  }
+};
+
+/**
+ * Send reply email to user
+ */
+const sendInquiryReplyEmail = async (inquiry, replyMessage) => {
+  const cid = getCorrelationId();
+  try {
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Response to ticket ${inquiry.ticketId}</title>
+  <style>
+    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    .header { background: #2563eb; padding: 20px; text-align: center; color: white; }
+    .content { padding: 30px 20px; line-height: 1.6; }
+    .reply-box { background: #eff6ff; border-left: 4px solid #2563eb; padding: 15px; border-radius: 8px; margin: 20px 0; }
+    .quote-box { background: #f8fafc; border-left: 4px solid #cbd5e1; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 13px; color: #64748b; }
+    .footer { text-align: center; font-size: 12px; color: #64748b; padding: 20px; background: #f1f5f9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h2>🚗 ShareMyRide Support</h2>
+    </div>
+    <div class="content">
+      <h3>Hello ${inquiry.name},</h3>
+      <p>Our team has responded to your ticket <strong>${inquiry.ticketId}</strong>.</p>
+      
+      <div class="reply-box">
+        <strong>Team Response:</strong><br/>
+        <p style="white-space: pre-wrap; color: #1e293b;">${replyMessage}</p>
+      </div>
+
+      <div class="quote-box">
+        <strong>Original Message:</strong><br/>
+        "${inquiry.message}"
+      </div>
+      
+      <p>If you have any further details to add, you can reply directly to this thread or update it via our support page.</p>
+      <p>Thank you for using ShareMyRide.</p>
+    </div>
+    <div class="footer">
+      © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Support <${process.env.EMAIL_USER}>`,
+      to: inquiry.email,
+      subject: `Re: [${inquiry.ticketId}] Support Response: ${inquiry.subject}`,
+      html
+    };
+
+    logEmailStart(cid, 'Inquiry_Reply', mailOptions);
+    const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+    return result.data;
+  } catch (error) {
+    console.error(`[${cid}] Error sending reply email:`, error);
+  }
+};
+
+/**
+ * Send blog moderation updates to author
+ */
+const sendBlogStatusNotification = async (blogPost, status, remark) => {
+  const cid = getCorrelationId();
+  try {
+    const isApproved = status === 'published';
+    const title = isApproved ? 'Your blog post has been published! 🎉' : 'Update regarding your blog post ✍️';
+    const color = isApproved ? '#10b981' : '#f59e0b';
+    
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Blog Moderation Update</title>
+  <style>
+    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
+    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+    .header { background: ${color}; padding: 25px; text-align: center; color: white; }
+    .content { padding: 30px 20px; line-height: 1.6; }
+    .remark { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; margin: 20px 0; font-style: italic; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h2>${title}</h2>
+    </div>
+    <div class="content">
+      <h3>Hello ${blogPost.author?.name || 'Author'},</h3>
+      <p>We have processed the review for your blog post: <strong>"${blogPost.title}"</strong>.</p>
+      
+      <p>Status: <strong style="color: ${color}; text-transform: uppercase;">${status}</strong></p>
+
+      ${remark ? `
+        <div class="remark">
+          <strong>Moderator Remarks:</strong><br/>
+          "${remark}"
+        </div>
+      ` : ''}
+
+      ${isApproved 
+        ? `<p>Your post is now live! You can view it under our community blog section.</p>`
+        : `<p>Please review the moderator's comments above and update your draft if necessary before resubmitting.</p>`
+      }
+
+      <p>Best regards,<br/>ShareMyRide Editorial Team</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Editorial <${process.env.EMAIL_USER}>`,
+      to: blogPost.author?.email,
+      subject: `[ShareMyRide Blog] Moderation Update: "${blogPost.title}"`,
+      html
+    };
+
+    logEmailStart(cid, 'Blog_Moderation_Notification', mailOptions);
+    const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+    return result.data;
+  } catch (error) {
+    console.error(`[${cid}] Error sending blog status email:`, error);
+  }
+};
+
 // Export functions
 module.exports = {
   sendBookingConfirmationEmails,
@@ -756,4 +1025,8 @@ module.exports = {
   sendVerificationEmail,
   sendWelcomeEmail,
   sendTestEmail,
+  sendInquiryReceivedEmail,
+  sendInquiryNotificationToAdmin,
+  sendInquiryReplyEmail,
+  sendBlogStatusNotification
 };

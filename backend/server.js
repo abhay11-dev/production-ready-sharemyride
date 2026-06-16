@@ -79,6 +79,8 @@ const ratingRoutes = require('./routes/ratingRoutes'); // ✅ NEW: Rating routes
 const statsRoutes = require('./routes/statsRoutes');   // ✅ NEW: Stats routes
 const driverVerificationRoutes = require('./routes/driverVerificationRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // ✅ NEW: Admin routes
+const inquiryRoutes = require('./routes/inquiryRoutes'); // ✅ NEW: Inquiry/Support routes
+const blogRoutes = require('./routes/blogRoutes'); // ✅ NEW: Blog routes
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -106,6 +108,8 @@ app.use('/api/ratings', ratingRoutes);  // ✅ NEW: Rating endpoints
 app.use('/api/stats', statsRoutes);     // ✅ NEW: Stats endpoints
 app.use('/api/driver-verification', driverVerificationRoutes);
 app.use('/api/admin', adminRoutes);     // ✅ NEW: Admin endpoints
+app.use('/api/inquiries', inquiryRoutes); // ✅ NEW: Inquiry/Support endpoints
+app.use('/api/blogs', blogRoutes);       // ✅ NEW: Blog endpoints
 
 app.get('/api', (req, res) => {
   res.json({ 

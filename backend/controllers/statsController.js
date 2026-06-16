@@ -2,6 +2,9 @@
 const User = require('../models/User');
 const Ride = require('../models/Ride');
 const Rating = require('../models/Rating');
+const Inquiry = require('../models/Inquiry');
+const BlogPost = require('../models/BlogPost');
+const AuditLog = require('../models/AuditLogs');
 
 /**
  * Get home page statistics
@@ -374,6 +377,172 @@ exports.getStatsByPeriod = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch statistics'
+    });
+  }
+};
+
+
+/**
+ * Get comprehensive founder-level analytics (Admin only)
+ * Powers the full Founder Dashboard with all business intelligence metrics
+ */
+exports.getFounderAnalytics = async (req, res) => {
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      // Platform KPIs
+      totalUsers,
+      verifiedDrivers,
+      pendingVerifications,
+      activeRides,
+      completedRides,
+      
+      // Inquiries
+      totalInquiries,
+      openInquiries,
+      inProgressInquiries,
+      resolvedInquiries,
+      recentInquiries,
+
+      // Blogs
+      publishedBlogs,
+      pendingBlogs,
+      blogEngagement,
+
+      // Growth – last 30 days
+      newUsers30d,
+      newRides30d,
+      newInquiries30d,
+
+      // Growth – last 7 days
+      newUsers7d,
+      newRides7d,
+
+      // Top routes
+      topRoutes,
+
+      // Inquiry breakdown by type
+      inquiryByType,
+
+      // User growth by day (last 30d)
+      userGrowth,
+
+      // Recent audit logs
+      recentAuditLogs,
+
+      // Verification stats
+      verificationStats,
+
+      // Average rating
+      avgRating
+    ] = await Promise.all([
+      User.countDocuments({ isActive: { $ne: false } }),
+      User.countDocuments({ isDriverVerified: true }),
+      User.countDocuments({ 'driverVerification.status': { $in: ['submitted', 'under_review'] } }),
+      Ride.countDocuments({ rideStatus: 'active' }),
+      Ride.countDocuments({ rideStatus: 'completed' }),
+
+      Inquiry.countDocuments({}),
+      Inquiry.countDocuments({ status: 'open' }),
+      Inquiry.countDocuments({ status: 'in_progress' }),
+      Inquiry.countDocuments({ status: 'resolved' }),
+      Inquiry.find({}).sort({ createdAt: -1 }).limit(5).select('name email subject inquiryType status ticketId createdAt'),
+
+      BlogPost.countDocuments({ status: 'published' }),
+      BlogPost.countDocuments({ status: 'pending_review' }),
+      BlogPost.aggregate([
+        { $match: { status: 'published' } },
+        { $group: { _id: null, totalLikes: { $sum: '$likeCount' }, totalViews: { $sum: '$viewCount' }, totalComments: { $sum: '$commentCount' } } }
+      ]),
+
+      User.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+      Ride.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+      Inquiry.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+
+      User.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
+      Ride.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
+
+      Ride.aggregate([
+        { $match: { rideStatus: { $in: ['active', 'completed'] } } },
+        { $group: { _id: { from: '$origin.city', to: '$destination.city' }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 5 },
+        { $project: { _id: 0, route: { $concat: ['$_id.from', ' → ', '$_id.to'] }, count: 1 } }
+      ]),
+
+      Inquiry.aggregate([
+        { $group: { _id: '$inquiryType', count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+
+      User.aggregate([
+        { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } }
+      ]),
+
+      AuditLog.find({}).sort({ createdAt: -1 }).limit(20).select('actorEmail actorRole action resource resourceRef note createdAt'),
+
+      User.aggregate([
+        { $group: { _id: '$driverVerification.status', count: { $sum: 1 } } },
+        { $match: { _id: { $ne: null } } }
+      ]),
+
+      Rating.aggregate([
+        { $group: { _id: null, avg: { $avg: '$rating' }, total: { $sum: 1 } } }
+      ])
+    ]);
+
+    const blog = blogEngagement[0] || { totalLikes: 0, totalViews: 0, totalComments: 0 };
+    const rating = avgRating[0] || { avg: 0, total: 0 };
+
+    res.json({
+      success: true,
+      data: {
+        platform: {
+          totalUsers,
+          verifiedDrivers,
+          pendingVerifications,
+          activeRides,
+          completedRides,
+          averageRating: rating.avg ? Math.round(rating.avg * 10) / 10 : 0,
+          totalRatings: rating.total
+        },
+        growth: {
+          last7Days: { newUsers: newUsers7d, newRides: newRides7d },
+          last30Days: { newUsers: newUsers30d, newRides: newRides30d, newInquiries: newInquiries30d }
+        },
+        inquiries: {
+          total: totalInquiries,
+          open: openInquiries,
+          inProgress: inProgressInquiries,
+          resolved: resolvedInquiries,
+          recent: recentInquiries,
+          byType: inquiryByType
+        },
+        blog: {
+          published: publishedBlogs,
+          pending: pendingBlogs,
+          totalLikes: blog.totalLikes,
+          totalViews: blog.totalViews,
+          totalComments: blog.totalComments
+        },
+        topRoutes,
+        userGrowthChart: userGrowth,
+        verificationStats,
+        recentAuditLogs
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching founder analytics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch analytics',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
     });
   }
 };

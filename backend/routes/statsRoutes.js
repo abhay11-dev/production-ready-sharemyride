@@ -4,10 +4,11 @@ const router = express.Router();
 const {
   getHomeStatistics,
   getDetailedStatistics,
-  getStatsByPeriod
+  getStatsByPeriod,
+  getFounderAnalytics
 } = require('../controllers/statsController');
 
-const { protect } = require('../middleware/auth');
+const { protect, protectAdmin } = require('../middleware/auth');
 
 /**
  * @route   GET /api/stats/home
@@ -29,5 +30,12 @@ router.get('/detailed', protect, getDetailedStatistics);
  * @access  Private
  */
 router.get('/period', protect, getStatsByPeriod);
+
+/**
+ * @route   GET /api/stats/founder
+ * @desc    Get founder-level business intelligence analytics
+ * @access  Private/Admin
+ */
+router.get('/founder', protectAdmin, getFounderAnalytics);
 
 module.exports = router;
