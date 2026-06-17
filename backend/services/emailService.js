@@ -1018,6 +1018,289 @@ const sendBlogStatusNotification = async (blogPost, status, remark) => {
   }
 };
 
+/**
+ * Unified business notification email to admin/founder inbox
+ * Used for all operational events that need visibility at top level
+ */
+const sendBusinessNotificationToAdmin = async (inquiry) => {
+  const cid = getCorrelationId();
+  try {
+    const priorityColor = {
+      critical: '#dc2626',
+      high: '#ea580c',
+      medium: '#f59e0b',
+      low: '#3b82f6'
+    }[inquiry.priority] || '#3b82f6';
+
+    const inquiryTypeEmoji = {
+      'contact': '📧',
+      'support': '🆘',
+      'help_request': '❓',
+      'issue_report': '🐛',
+      'partnership': '🤝',
+      'corporate': '🏢',
+      'sponsorship': '💼',
+      'media': '📰',
+      'community_feedback': '💬',
+      'feedback': '⭐',
+      'feature_request': '💡',
+      'blog_submission': '✍️',
+      'blog_report': '🚫',
+      'comment_report': '⚠️',
+      'user_report': '👤',
+      'ride_report': '🚗',
+      'safety_concern': '🚨',
+      'fraud_report': '🚨',
+      'security_issue': '🔒',
+      'guideline_violation': '⛔',
+      'account_request': '👤',
+      'data_request': '📊',
+      'deletion_request': '🗑️',
+      'bug': '🐛',
+      'technical_issue': '⚙️',
+      'other': '📝'
+    };
+
+    const dashboardUrl = `${process.env.FRONTEND_URL}/admin/founder-inbox/${inquiry._id}`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ShareMyRide Business Alert</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; color: #1e293b; line-height: 1.6; }
+    .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; color: white; }
+    .header-title { font-size: 18px; font-weight: 700; margin-bottom: 5px; }
+    .priority-badge { display: inline-block; background: ${priorityColor}; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 10px; }
+    .content { padding: 30px; }
+    .section-title { font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; margin-top: 20px; margin-bottom: 10px; letter-spacing: 0.5px; }
+    .info-table { width: 100%; border-collapse: collapse; }
+    .info-row { border-bottom: 1px solid #e2e8f0; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { padding: 12px 0; font-weight: 600; color: #475569; width: 130px; vertical-align: top; }
+    .info-value { padding: 12px 0; color: #1e293b; }
+    .ticket-id { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 15px; border-radius: 6px; font-family: monospace; font-weight: 600; color: #1e40af; margin: 15px 0; }
+    .message-box { background: #f8fafc; border-left: 4px solid #64748b; padding: 15px; border-radius: 6px; margin: 15px 0; white-space: pre-wrap; color: #1e293b; font-size: 14px; }
+    .action-button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 20px 0; }
+    .action-button:hover { background: #2563eb; }
+    .footer { background: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
+    .footer-link { color: #3b82f6; text-decoration: none; margin: 0 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-title">${inquiryTypeEmoji[inquiry.inquiryType] || '📝'} ${inquiry.inquiryType.replace(/_/g, ' ').toUpperCase()}</div>
+      <div class="priority-badge">${inquiry.priority.toUpperCase()} PRIORITY</div>
+    </div>
+
+    <div class="content">
+      <h2>New Inquiry Requires Attention</h2>
+      
+      <div class="ticket-id">${inquiry.ticketId}</div>
+
+      <table class="info-table">
+        <tr class="info-row">
+          <td class="info-label">From</td>
+          <td class="info-value"><strong>${inquiry.name}</strong> • ${inquiry.email} ${inquiry.phone ? `• ${inquiry.phone}` : ''}</td>
+        </tr>
+        <tr class="info-row">
+          <td class="info-label">Subject</td>
+          <td class="info-value"><strong>${inquiry.subject}</strong></td>
+        </tr>
+        <tr class="info-row">
+          <td class="info-label">Category</td>
+          <td class="info-value">${inquiry.inquiryType.replace(/_/g, ' ')}</td>
+        </tr>
+        <tr class="info-row">
+          <td class="info-label">Submitted</td>
+          <td class="info-value">${moment(inquiry.createdAt).format('MMMM D, YYYY [at] h:mm A')}</td>
+        </tr>
+        ${inquiry.userId ? `
+        <tr class="info-row">
+          <td class="info-label">User ID</td>
+          <td class="info-value"><code style="font-family: monospace; font-size: 12px;">${inquiry.userId}</code></td>
+        </tr>
+        ` : ''}
+      </table>
+
+      <div class="section-title">Message</div>
+      <div class="message-box">${inquiry.message}</div>
+
+      ${inquiry.metadata && inquiry.metadata.additionalNotes ? `
+      <div class="section-title">Additional Notes</div>
+      <div class="message-box">${inquiry.metadata.additionalNotes}</div>
+      ` : ''}
+
+      <div style="text-align: center;">
+        <a href="${dashboardUrl}" class="action-button">📊 View in Founder Inbox</a>
+      </div>
+
+      <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 15px; border-radius: 6px; margin-top: 20px; font-size: 13px;">
+        <strong>⏱️ Next Steps:</strong> Review this inquiry, assign to an admin if needed, and update status to keep tracking accurate.
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>© ${new Date().getFullYear()} ShareMyRide Business Operations</p>
+      <p><a href="${dashboardUrl}" class="footer-link">View Full Details</a></p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Operations <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_CONTACT || 'sharemyride.contact@gmail.com',
+      subject: `[${inquiry.priority.toUpperCase()}] [${inquiry.ticketId}] ${inquiry.inquiryType.replace(/_/g, ' ')}: ${inquiry.subject}`,
+      html
+    };
+
+    logEmailStart(cid, 'Business_Notification', mailOptions);
+    const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+    return result.data;
+  } catch (error) {
+    console.error(`[${cid}] Error sending business notification:`, error);
+  }
+};
+
+/**
+ * Send user confirmation email with ticket number
+ * Standard acknowledgment for all user submissions
+ */
+const sendUserConfirmationEmail = async (inquiry) => {
+  const cid = getCorrelationId();
+  try {
+    const inquiryTypeName = inquiry.inquiryType.replace(/_/g, ' ');
+    const estimatedResponseTime = inquiry.priority === 'critical' ? '4-6 hours' : inquiry.priority === 'high' ? '12-24 hours' : '24-48 hours';
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>We received your ${inquiryTypeName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
+    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; color: white; }
+    .logo { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
+    .content { padding: 40px 30px; }
+    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 20px; }
+    .success-icon { font-size: 48px; text-align: center; margin-bottom: 20px; }
+    .ticket-box { background: #eff6ff; border: 2px dashed #3b82f6; border-radius: 8px; padding: 20px; text-align: center; margin: 25px 0; }
+    .ticket-label { font-size: 12px; color: #1e40af; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
+    .ticket-id { font-size: 24px; font-weight: 800; color: #1e40af; font-family: monospace; }
+    .info-section { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 6px; margin: 20px 0; }
+    .info-section strong { display: block; margin-bottom: 5px; }
+    .timeline { margin: 25px 0; }
+    .timeline-item { display: flex; gap: 15px; margin-bottom: 15px; }
+    .timeline-icon { width: 30px; height: 30px; border-radius: 50%; background: #dbeafe; color: #1e40af; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+    .timeline-content { padding-top: 2px; }
+    .timeline-content strong { color: #1a202c; }
+    .timeline-content p { color: #64748b; font-size: 14px; }
+    .footer { background: #f8fafc; padding: 30px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🚗 ShareMyRide</div>
+      <div style="font-size: 18px; margin-top: 10px;">We Got Your ${inquiryTypeName}!</div>
+    </div>
+
+    <div class="content">
+      <div class="success-icon">✅</div>
+      <h1 class="greeting">Thanks for reaching out, ${inquiry.name}!</h1>
+
+      <p>Your ${inquiryTypeName} has been successfully received and logged in our system. We'll review it carefully and get back to you soon.</p>
+
+      <div class="ticket-box">
+        <div class="ticket-label">Your Reference Number</div>
+        <div class="ticket-id">${inquiry.ticketId}</div>
+        <p style="margin-top: 10px; font-size: 12px; color: #64748b;">Keep this number handy for future reference</p>
+      </div>
+
+      <div class="info-section">
+        <strong>What You Submitted:</strong>
+        <div style="margin-top: 8px;">
+          <div><strong style="color: #1a202c;">Subject:</strong> ${inquiry.subject}</div>
+          <div style="margin-top: 5px; color: #64748b; font-size: 14px; white-space: pre-wrap;">"${inquiry.message.substring(0, 150)}${inquiry.message.length > 150 ? '...' : ''}"</div>
+        </div>
+      </div>
+
+      <div class="timeline">
+        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 15px; color: #1a202c;">📋 What Happens Next</h3>
+        <div class="timeline-item">
+          <div class="timeline-icon">1</div>
+          <div class="timeline-content">
+            <strong>Received</strong>
+            <p>Your ${inquiryTypeName} is now in our system and marked as "New"</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-icon">2</div>
+          <div class="timeline-content">
+            <strong>Review</strong>
+            <p>Our team will review your submission within ${estimatedResponseTime}</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-icon">3</div>
+          <div class="timeline-content">
+            <strong>Response</strong>
+            <p>We'll send you an update via email with next steps and any questions we may have</p>
+          </div>
+        </div>
+      </div>
+
+      <p style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 15px; border-radius: 6px; margin: 20px 0; font-size: 14px;">
+        <strong>⏱️ Estimated Response Time:</strong> ${estimatedResponseTime}
+      </p>
+
+      <p style="color: #64748b; font-size: 14px;">
+        If you need immediate assistance, you can reply to this email or contact our support team directly.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p>© ${new Date().getFullYear()} ShareMyRide. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const mailOptions = {
+      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Support <${process.env.EMAIL_USER}>`,
+      to: inquiry.email,
+      subject: `We received your ${inquiryTypeName} – Reference: ${inquiry.ticketId}`,
+      html
+    };
+
+    logEmailStart(cid, 'User_Confirmation', mailOptions);
+    const result = await resend.emails.send(mailOptions);
+    logEmailEnd(cid, result);
+    
+    // Track that we sent confirmation email
+    if (!result.error && result.data) {
+      inquiry.emailsSent.confirmationEmail = true;
+      inquiry.emailsSent.confirmationEmailAt = new Date();
+    }
+    
+    return result.data;
+  } catch (error) {
+    console.error(`[${cid}] Error sending user confirmation email:`, error);
+  }
+};
+
 // Export functions
 module.exports = {
   sendBookingConfirmationEmails,
@@ -1028,5 +1311,7 @@ module.exports = {
   sendInquiryReceivedEmail,
   sendInquiryNotificationToAdmin,
   sendInquiryReplyEmail,
-  sendBlogStatusNotification
+  sendBlogStatusNotification,
+  sendBusinessNotificationToAdmin,
+  sendUserConfirmationEmail
 };
