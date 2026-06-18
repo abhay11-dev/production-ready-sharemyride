@@ -158,156 +158,16 @@ function EmptyRideFeed({ isLoggedIn }) {
   );
 }
 
-// ─── Floating Ring Tagline ────────────────────────────────────────────────────
-const TAGLINES = [
-  { text: 'Verified riders.', icon: '🛡️' },
-  { text: 'Shared journeys.', icon: '🤝' },
-  { text: 'Better commuting.', icon: '🚗' },
-];
-
-function FloatingRingTagline() {
-  const [activeIdx, setActiveIdx] = React.useState(0);
-  const [phase, setPhase] = React.useState('in'); // 'in' | 'hold' | 'out'
-
-  React.useEffect(() => {
-    let t;
-    if (phase === 'in') {
-      t = setTimeout(() => setPhase('hold'), 600);
-    } else if (phase === 'hold') {
-      t = setTimeout(() => setPhase('out'), 2200);
-    } else {
-      t = setTimeout(() => {
-        setActiveIdx(i => (i + 1) % TAGLINES.length);
-        setPhase('in');
-      }, 500);
-    }
-    return () => clearTimeout(t);
-  }, [phase]);
-
-  const current = TAGLINES[activeIdx];
-
-  const scaleVal   = phase === 'in' ? 1   : phase === 'hold' ? 1   : 0.82;
-  const opacityVal = phase === 'in' ? 1   : phase === 'hold' ? 1   : 0;
-  const yVal       = phase === 'in' ? '0px' : phase === 'hold' ? '0px' : '12px';
-
+// ─── Stats Bar ────────────────────────────────────────────────────────────────
+function StatItem({ value, label, color, loading }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: '24px',
-      }}
-    >
-      {/* Outer glow wrapper */}
-      <div style={{ position: 'relative', width: '220px', height: '220px' }}>
-
-        {/* Rotating dashed orbit ring */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          borderRadius: '50%',
-          border: '2px dashed rgba(99,179,237,0.35)',
-          animation: 'smr-spin 8s linear infinite',
-        }} />
-
-        {/* Slower counter-rotating ring */}
-        <div style={{
-          position: 'absolute', inset: '14px',
-          borderRadius: '50%',
-          border: '1.5px dashed rgba(154,230,180,0.3)',
-          animation: 'smr-spin-rev 12s linear infinite',
-        }} />
-
-        {/* Pulse glow backdrop */}
-        <div style={{
-          position: 'absolute', inset: '28px',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(99,179,237,0.12) 0%, transparent 70%)',
-          animation: 'smr-pulse-ring 3s ease-in-out infinite',
-        }} />
-
-        {/* Glowing orbit dot */}
-        <div style={{
-          position: 'absolute',
-          top: '50%', left: '50%',
-          width: '10px', height: '10px',
-          marginTop: '-110px',
-          marginLeft: '-5px',
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg, #63b3ed, #68d391)',
-          boxShadow: '0 0 8px 3px rgba(99,179,237,0.5)',
-          animation: 'smr-orbit-dot 8s linear infinite',
-          transformOrigin: '5px 110px',
-        }} />
-
-        {/* Inner circle with tagline */}
-        <div style={{
-          position: 'absolute', inset: '36px',
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(255,255,255,0.15)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px',
-          transition: 'transform 0.5s cubic-bezier(0.34,1.56,0.64,1), opacity 0.45s ease',
-          transform: `scale(${scaleVal}) translateY(${yVal})`,
-          opacity: opacityVal,
-        }}>
-          <span style={{ fontSize: '26px', lineHeight: 1 }}>{current.icon}</span>
-          <span style={{
-            fontSize: '13px',
-            fontWeight: 700,
-            color: 'white',
-            textAlign: 'center',
-            lineHeight: 1.3,
-            letterSpacing: '0.01em',
-            padding: '0 10px',
-          }}>{current.text}</span>
-        </div>
-
-        {/* Active indicator dots */}
-        <div style={{
-          position: 'absolute',
-          bottom: '-18px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          gap: '6px',
-        }}>
-          {TAGLINES.map((_, i) => (
-            <div key={i} style={{
-              width: i === activeIdx ? '18px' : '6px',
-              height: '6px',
-              borderRadius: '3px',
-              background: i === activeIdx ? '#63b3ed' : 'rgba(255,255,255,0.25)',
-              transition: 'width 0.4s ease, background 0.4s ease',
-            }} />
-          ))}
-        </div>
-
-        {/* Keyframe injector */}
-        <style>{`
-          @keyframes smr-spin {
-            from { transform: rotate(0deg); }
-            to   { transform: rotate(360deg); }
-          }
-          @keyframes smr-spin-rev {
-            from { transform: rotate(0deg); }
-            to   { transform: rotate(-360deg); }
-          }
-          @keyframes smr-pulse-ring {
-            0%, 100% { transform: scale(0.95); opacity: 0.7; }
-            50%       { transform: scale(1.05); opacity: 1; }
-          }
-          @keyframes smr-orbit-dot {
-            from { transform: rotate(0deg); }
-            to   { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
+    <div className="flex flex-col items-center px-2 sm:px-4">
+      {loading ? (
+        <div className="w-12 h-6 bg-white/20 rounded animate-pulse mb-1" />
+      ) : (
+        <span className={`text-xl sm:text-2xl font-bold ${color}`}>{value}</span>
+      )}
+      <span className="text-xs text-blue-200 mt-0.5 whitespace-nowrap">{label}</span>
     </div>
   );
 }
@@ -392,10 +252,32 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
           </div>
         )}
 
-        {/* Floating ring tagline — replaces static stats */}
-        <div className="flex justify-center mb-6">
-          <FloatingRingTagline />
-        </div>
+        {/* Platform stats */}
+        {(stats.totalUsers > 0 || stats.totalRides > 0) && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 mb-6 grid grid-cols-2 sm:grid-cols-4 gap-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+            <div className="text-center pb-4 sm:pb-0 sm:pr-4">
+              <div className="text-xl sm:text-2xl font-bold text-blue-600">{formatNumber(stats.totalUsers)}</div>
+              <div className="text-xs text-gray-500 mt-0.5">Community members</div>
+            </div>
+            <div className="text-center pt-4 sm:pt-0 sm:px-4">
+              <div className="text-xl sm:text-2xl font-bold text-green-600">{formatNumber(stats.totalRides)}</div>
+              <div className="text-xs text-gray-500 mt-0.5">Rides completed</div>
+            </div>
+            <div className="text-center pb-4 sm:pb-0 sm:px-4">
+              <div className="text-xl sm:text-2xl font-bold text-purple-600">{formatNumber(stats.totalCities)}</div>
+              <div className="text-xs text-gray-500 mt-0.5">Cities active</div>
+            </div>
+            <div className="text-center pt-4 sm:pt-0 sm:pl-4">
+              <div className="text-xl sm:text-2xl font-bold text-amber-500 flex items-center justify-center gap-1">
+                {formatRating(stats.averageRating)}
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">Avg. rating</div>
+            </div>
+          </div>
+        )}
 
         {/* Live ride feed */}
         <div>
@@ -430,19 +312,6 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PUBLIC LANDING PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
-function StatItem({ value, label, color, loading }) {
-  return (
-    <div>
-      {loading ? (
-        <div className="h-7 w-16 bg-white/20 animate-pulse rounded mb-1" />
-      ) : (
-        <div className={`text-xl sm:text-2xl font-bold ${color}`}>{value}</div>
-      )}
-      <div className="text-xs text-blue-200 font-medium">{label}</div>
-    </div>
-  );
-}
-
 function PublicLanding({ stats, rides, ridesLoading }) {
   const navigate = useNavigate();
   const [searchFrom, setSearchFrom] = useState('');
@@ -553,7 +422,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
       </section>
 
       {/* ── LIVE RIDE FEED ── */}
-      <section id="live-rides" className="bg-gray-50 py-12 sm:py-16">
+      <section className="bg-gray-50 py-12 sm:py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between mb-6 sm:mb-8">
             <div>
@@ -648,7 +517,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
               { step: '04', title: 'Travel and rate', desc: 'Share the road. After arrival, rate the experience to build trust for the next rider.' },
             ].map((s, i) => (
               <div key={s.step} className="relative bg-white rounded-2xl p-5 sm:p-6 border border-gray-100 shadow-sm">
-                <div className="text-4xl font-black text-blue-900/20 mb-3 leading-none select-none">{s.step}</div>
+                <div className="text-4xl font-black text-gray-100 mb-3 leading-none select-none">{s.step}</div>
                 <h3 className="font-semibold text-gray-900 text-sm mb-1.5">{s.title}</h3>
                 <p className="text-gray-500 text-sm leading-relaxed">{s.desc}</p>
                 {i < 3 && (
@@ -680,15 +549,9 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
-            <button
-              onClick={() => {
-                const el = document.getElementById('live-rides');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className="inline-flex items-center justify-center gap-2 border border-white/30 text-white hover:bg-white/10 px-6 py-3.5 rounded-xl text-sm font-semibold transition-colors"
-            >
+            <Link to="/ride/search" className="inline-flex items-center justify-center gap-2 border border-white/30 text-white hover:bg-white/10 px-6 py-3.5 rounded-xl text-sm font-semibold transition-colors">
               Browse rides — no account needed
-            </button>
+            </Link>
           </div>
         </div>
       </section>
@@ -717,9 +580,9 @@ function Home() {
         // Response shape: { success: true, data: { totalUsers, totalRides, totalCities, averageRating } }
         const d = res.data?.data || res.data;
         setStats({
-          totalUsers: d.totalUsers || 0,
-          totalRides: d.totalRides || 0,
-          totalCities: d.totalCities || 0,
+          totalUsers:    d.totalUsers    || 0,
+          totalRides:    d.totalRides    || 0,
+          totalCities:   d.totalCities   || 0,
           averageRating: d.averageRating || 0,
           loading: false,
         });
