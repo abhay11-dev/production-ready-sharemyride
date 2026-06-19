@@ -537,4 +537,5 @@ const paymentTransactionSchema = new mongoose.Schema({
     type: String,
     trim: true,
     index: true
-  },
+  }
+});
