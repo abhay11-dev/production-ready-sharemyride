@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../config/api.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import PlatformMarquee from '../../components/common/PlatformMarquee.jsx';
+import LoginRequiredSpeechToast from '../../components/common/LoginRequiredSpeechToast.jsx';
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function formatNumber(num) {
@@ -146,8 +148,8 @@ function EmptyRideFeed({ isLoggedIn }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
         </svg>
       </div>
-      <p className="font-semibold text-gray-800 mb-1">No rides available right now</p>
-      <p className="text-sm text-gray-500 mb-4">Be the first to offer a ride on this route.</p>
+      <p className="font-semibold text-gray-800 mb-1">No rides are currently available for this journey</p>
+      <p className="text-sm text-gray-500 mb-4">Be the first to offer a ride and help fellow travelers.</p>
       <Link to="/ride/post" className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -314,15 +316,36 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function PublicLanding({ stats, rides, ridesLoading }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchFrom, setSearchFrom] = useState('');
   const [searchTo, setSearchTo] = useState('');
+  const [toastRect, setToastRect] = useState(null);
+  const offerRideRef = useRef(null);
 
   const handleSearch = (e) => {
     e.preventDefault();
+    if (!user) {
+      // Show login toast if not logged in
+      if (offerRideRef.current) {
+        const rect = offerRideRef.current.getBoundingClientRect();
+        setToastRect(rect);
+      }
+      return;
+    }
     const params = new URLSearchParams();
     if (searchFrom) params.set('start', searchFrom);
     if (searchTo) params.set('end', searchTo);
     navigate(`/ride/search?${params.toString()}`);
+  };
+
+  const handleOfferRideClick = (e) => {
+    if (!user) {
+      e.preventDefault();
+      if (offerRideRef.current) {
+        const rect = offerRideRef.current.getBoundingClientRect();
+        setToastRect(rect);
+      }
+    }
   };
 
   return (
@@ -333,7 +356,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
         <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 pointer-events-none" aria-hidden="true" />
         <div className="absolute -bottom-16 -left-16 w-80 h-80 rounded-full bg-green-500/10 pointer-events-none" aria-hidden="true" />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-10 sm:pt-16 sm:pb-14 lg:pt-20">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-6 sm:pt-10 sm:pb-8 lg:pt-12">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 bg-white/15 border border-white/20 text-blue-100 text-xs font-semibold px-3 py-1.5 rounded-full mb-5 backdrop-blur-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -392,33 +415,20 @@ function PublicLanding({ stats, rides, ridesLoading }) {
 
             <p className="mt-4 text-blue-200 text-sm">
               Driving somewhere?{' '}
-              <Link to="/ride/post" className="text-white font-semibold underline underline-offset-2 hover:text-green-300 transition-colors">
+              <Link
+                ref={offerRideRef}
+                to={user ? '/ride/post' : '#'}
+                onClick={handleOfferRideClick}
+                className="text-white font-semibold underline underline-offset-2 hover:text-green-300 transition-colors"
+              >
                 Offer seats and recover fuel costs →
               </Link>
             </p>
           </div>
         </div>
 
-        {/* Stats bar */}
-        <div className="relative bg-blue-800/40 backdrop-blur-sm border-t border-white/10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
-              <div className="flex items-center gap-2 sm:gap-6 flex-nowrap">
-                <StatItem value={formatNumber(stats.totalUsers || 0)} label="Members" color="text-white" loading={stats.loading} />
-                <div className="w-px h-7 bg-white/15 flex-shrink-0" />
-                <StatItem value={formatNumber(stats.totalRides || 0)} label="Rides shared" color="text-white" loading={stats.loading} />
-                <div className="w-px h-7 bg-white/15 flex-shrink-0" />
-                <StatItem value={formatNumber(stats.totalCities || 0)} label="Cities" color="text-white" loading={stats.loading} />
-                <div className="w-px h-7 bg-white/15 flex-shrink-0" />
-                <StatItem value={`${formatRating(stats.averageRating)}★`} label="Avg. rating" color="text-amber-300" loading={stats.loading} />
-              </div>
-              <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0 text-blue-200 text-xs">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                Live
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Platform Marquee Banner */}
+        <PlatformMarquee stats={stats} />
       </section>
 
       {/* ── LIVE RIDE FEED ── */}
@@ -556,6 +566,16 @@ function PublicLanding({ stats, rides, ridesLoading }) {
         </div>
       </section>
 
+      {/* Login toast */}
+      {toastRect && (
+        <LoginRequiredSpeechToast
+          rect={toastRect}
+          message="Sign in to post or search rides"
+          redirectTo="/login"
+          durationMs={2400}
+          onDismiss={() => setToastRect(null)}
+        />
+      )}
     </div>
   );
 }

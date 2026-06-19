@@ -320,15 +320,15 @@ const rideSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-// In your Ride model schema, update recurringDays:
+  // In your Ride model schema, update recurringDays:
 
-recurringDays: [{
-  type: String,
-  enum: [
-    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
-  ]
-}],
+  recurringDays: [{
+    type: String,
+    enum: [
+      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    ]
+  }],
 
   // ===========================
   // SAFETY & TRACKING
@@ -444,16 +444,16 @@ rideSchema.virtual('bookingDetails', {
 // INSTANCE METHODS
 // ===========================
 
-rideSchema.methods.calculateSegmentFare = function(pickupLocation, dropLocation) {
+rideSchema.methods.calculateSegmentFare = function (pickupLocation, dropLocation) {
   try {
     if (this.fareMode === 'per_km' && this.perKmRate > 0) {
       const pickupDist = this.getDistanceForLocation(pickupLocation);
       const dropDist = this.getDistanceForLocation(dropLocation);
-      
+
       if (pickupDist !== null && dropDist !== null) {
         const segmentDistance = Math.abs(dropDist - pickupDist);
         const segmentFare = segmentDistance * this.perKmRate;
-        
+
         return {
           baseFare: segmentFare,
           totalFare: segmentFare,
@@ -461,7 +461,7 @@ rideSchema.methods.calculateSegmentFare = function(pickupLocation, dropLocation)
         };
       }
     }
-    
+
     return {
       baseFare: this.fare,
       totalFare: this.fare,
@@ -477,19 +477,19 @@ rideSchema.methods.calculateSegmentFare = function(pickupLocation, dropLocation)
   }
 };
 
-rideSchema.methods.getDistanceForLocation = function(location) {
+rideSchema.methods.getDistanceForLocation = function (location) {
   const locationLower = location.toLowerCase().trim();
-  
-  if (this.start.toLowerCase().includes(locationLower) || 
-      locationLower.includes(this.start.toLowerCase())) {
+
+  if (this.start.toLowerCase().includes(locationLower) ||
+    locationLower.includes(this.start.toLowerCase())) {
     return 0;
   }
-  
-  if (this.end.toLowerCase().includes(locationLower) || 
-      locationLower.includes(this.end.toLowerCase())) {
+
+  if (this.end.toLowerCase().includes(locationLower) ||
+    locationLower.includes(this.end.toLowerCase())) {
     return this.totalDistance || 0;
   }
-  
+
   if (this.waypoints && this.waypoints.length > 0) {
     for (const waypoint of this.waypoints) {
       const wpLocation = waypoint.location.toLowerCase();
@@ -498,22 +498,22 @@ rideSchema.methods.getDistanceForLocation = function(location) {
       }
     }
   }
-  
+
   return null;
 };
 
-rideSchema.methods.getAvailableSeatsForSegment = function(pickupDist, dropDist) {
+rideSchema.methods.getAvailableSeatsForSegment = function (pickupDist, dropDist) {
   return this.availableSeats !== undefined ? this.availableSeats : this.seats;
 };
 
-rideSchema.methods.incrementViewCount = function() {
+rideSchema.methods.incrementViewCount = function () {
   this.viewCount = (this.viewCount || 0) + 1;
   return this.save();
 };
 
-rideSchema.methods.updateAvailableSeats = function() {
+rideSchema.methods.updateAvailableSeats = function () {
   let bookedSeats = 0;
-  
+
   if (this.bookings && this.bookings.length > 0) {
     this.bookings.forEach(booking => {
       if (booking.status === 'confirmed' || booking.status === 'pending') {
@@ -521,7 +521,7 @@ rideSchema.methods.updateAvailableSeats = function() {
       }
     });
   }
-  
+
   this.availableSeats = Math.max(0, this.seats - bookedSeats);
   return this.availableSeats;
 };
@@ -530,27 +530,27 @@ rideSchema.methods.updateAvailableSeats = function() {
 // STATIC METHODS
 // ===========================
 
-rideSchema.statics.getActiveRides = function(filters = {}) {
+rideSchema.statics.getActiveRides = function (filters = {}) {
   const query = {
     isActive: true,
     rideStatus: 'active',
     date: { $gte: new Date() }
   };
-  
+
   if (filters.start) {
     query.start = new RegExp(filters.start, 'i');
   }
-  
+
   if (filters.end) {
     query.end = new RegExp(filters.end, 'i');
   }
-  
+
   return this.find(query)
     .populate('driver', 'name email phone avatar ratings')
     .sort({ date: 1, time: 1 });
 };
 
-rideSchema.statics.getDriverRides = function(driverId, filters = {}) {
+rideSchema.statics.getDriverRides = function (driverId, filters = {}) {
   const query = {
     $or: [
       { driver: driverId },
@@ -558,11 +558,11 @@ rideSchema.statics.getDriverRides = function(driverId, filters = {}) {
       { postedBy: driverId }
     ]
   };
-  
+
   if (filters.status) {
     query.rideStatus = filters.status;
   }
-  
+
   return this.find(query)
     .populate('bookings')
     .sort({ createdAt: -1 });
@@ -571,35 +571,35 @@ rideSchema.statics.getDriverRides = function(driverId, filters = {}) {
 // ===========================
 // PRE-SAVE MIDDLEWARE
 // ===========================
-rideSchema.pre('save', function(next) {
+rideSchema.pre('save', function (next) {
   if (this.isNew && this.availableSeats === undefined) {
     this.availableSeats = this.seats;
   }
-  
+
   // Sync all driver reference fields
   if (this.isModified('driver')) {
     if (!this.driverId) this.driverId = this.driver;
     if (!this.postedBy) this.postedBy = this.driver;
   }
-  
+
   if (this.isModified('driverId')) {
     if (!this.driver) this.driver = this.driverId;
     if (!this.postedBy) this.postedBy = this.driverId;
   }
-  
+
   if (this.isModified('postedBy')) {
     if (!this.driver) this.driver = this.postedBy;
     if (!this.driverId) this.driverId = this.postedBy;
   }
-  
+
   next();
 });
 
 
-rideSchema.methods.canBook = function(requestedSeats) {
+rideSchema.methods.canBook = function (requestedSeats) {
   // Calculate current available seats
   const currentAvailable = this.availableSeats || this.seats;
-  
+
   // Check if enough seats are available
   return currentAvailable >= requestedSeats;
 };
@@ -607,7 +607,7 @@ rideSchema.methods.canBook = function(requestedSeats) {
 // ===========================
 // POST-SAVE MIDDLEWARE
 // ===========================
-rideSchema.post('save', function(doc) {
+rideSchema.post('save', function (doc) {
   console.log('✅ Ride saved:', doc._id);
 });
 

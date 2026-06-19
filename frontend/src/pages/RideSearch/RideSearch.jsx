@@ -3,6 +3,10 @@ import RideCard from '../../components/ride/RideCard';
 import { searchRides } from '../../services/rideService';
 import LeafletRideMap from '../../components/map/LeafletRideMap';
 import toast from 'react-hot-toast';
+import LoginRequiredSpeechToast from '../../components/common/LoginRequiredSpeechToast.jsx';
+import { useAuth } from '../../hooks/useAuth.jsx';
+
+
 
 const defaultCenter = {
   lat: 23.0225,
@@ -17,7 +21,7 @@ function RideSearch() {
   const [connectedRides, setConnectedRides] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  
+
   // Map state
   const [mapCenter, setMapCenter] = useState(defaultCenter);
   const [mapZoom, setMapZoom] = useState(5);
@@ -25,7 +29,7 @@ function RideSearch() {
   const [endMarker, setEndMarker] = useState(null);
   const [userRoute, setUserRoute] = useState([]);
   const [rideRoutes, setRideRoutes] = useState([]);
-  
+
   // Advanced filters
   const [showFilters, setShowFilters] = useState(false);
   const [minSeats, setMinSeats] = useState('');
@@ -51,24 +55,40 @@ function RideSearch() {
     });
   };
 
+  const { user } = useAuth();
+
+
+  const [searchToastRect, setSearchToastRect] = useState(null);
+  const toastTimerRef = useRef(null);
+
   const handleSearch = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    
+
+    if (!user) {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      const btnEl = e?.currentTarget || null;
+      const rect = btnEl?.getBoundingClientRect?.() || null;
+      setSearchToastRect(rect);
+      toastTimerRef.current = setTimeout(() => setSearchToastRect(null), 2600);
+      return;
+    }
+
     if (!start || !end) {
+
       toast.error('Please enter both start and end locations');
       return;
     }
-    
+
     setIsLoading(true);
     setHasSearched(true);
-    
+
     const searchingToast = toast.loading('Searching for rides...');
-    
+
     try {
       // Backend does all geocoding via Nominatim
       console.log('🔍 Calling backend API with:', { start, end, date });
       const results = await searchRides(start, end, date);
-      
+
       console.log('📦 Backend returned:', results.length, 'rides');
       if (results.length > 0) {
         console.log('🔍 Sample ride:', {
@@ -80,21 +100,21 @@ function RideSearch() {
           hasRouteCoordinates: results[0].routeCoordinates?.length > 0
         });
       }
-      
+
       if (results && results.length > 0) {
         // Apply filters
         let filteredResults = applyAdvancedFilters(results);
-        
+
         // Separate by matchType from backend
         const routeMatched = filteredResults.filter(r => r.matchType === 'on_route');
         const otherRides = filteredResults.filter(r => r.matchType !== 'on_route');
-        
+
         console.log('✅ Route-matched rides:', routeMatched.length);
         console.log('✅ Other rides:', otherRides.length);
-        
+
         // Prepare routes for map
         const routesToDraw = [];
-        
+
         // Green for matched routes
         routeMatched.forEach(ride => {
           if (ride.routeCoordinates && ride.routeCoordinates.length > 0) {
@@ -107,7 +127,7 @@ function RideSearch() {
             });
           }
         });
-        
+
         // Purple for other rides
         otherRides.forEach(ride => {
           if (ride.routeCoordinates && ride.routeCoordinates.length > 0) {
@@ -120,24 +140,24 @@ function RideSearch() {
             });
           }
         });
-        
+
         console.log('🗺️ Drawing', routesToDraw.length, 'routes on map');
         console.log('  - Green (matched):', routeMatched.filter(r => r.routeCoordinates?.length > 0).length);
         console.log('  - Purple (other):', otherRides.filter(r => r.routeCoordinates?.length > 0).length);
-        
+
         setRideRoutes(routesToDraw);
-        
+
         // Set markers from first route-matched ride's coordinates
         if (routeMatched.length > 0 && routeMatched[0].pickupCoordinates) {
           setStartMarker(routeMatched[0].pickupCoordinates);
           setEndMarker(routeMatched[0].dropCoordinates);
         }
-        
+
         setRides(filteredResults);
         setConnectedRides(routeMatched);
-        
+
         toast.dismiss(searchingToast);
-        
+
         if (routeMatched.length > 0) {
           toast.success(
             `Found ${routeMatched.length} ride${routeMatched.length === 1 ? '' : 's'} covering your route!`,
@@ -212,9 +232,22 @@ function RideSearch() {
 
   return (
     <div className="min-h-[85vh] bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 py-8 sm:py-12">
+      {searchToastRect !== null && (
+        <LoginRequiredSpeechToast
+          rect={searchToastRect}
+          message="Sign in to access Search Rides"
+          onDismiss={() => {
+            if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+            setSearchToastRect(null);
+          }}
+          redirectTo="/login"
+          durationMs={2400}
+        />
+      )}
+
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          
+
           <div className="text-center mb-8 sm:mb-10">
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 mb-2 sm:mb-3">🗺️ Smart Ride Search</h2>
             <p className="text-gray-600 text-base sm:text-lg">Find rides with intelligent route matching</p>
@@ -240,9 +273,9 @@ function RideSearch() {
 
           {/* SEARCH FORM */}
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 border-gray-200 p-6 sm:p-8 mb-8 sm:mb-10">
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-4 items-end mb-4">
-              
+
               <div className="flex-1">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   From <span className="text-red-500">*</span>
@@ -332,7 +365,7 @@ function RideSearch() {
             {showFilters && (
               <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  
+
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-2">Minimum Seats</label>
                     <input
@@ -432,7 +465,7 @@ function RideSearch() {
 
             <div className="mt-3">
               <p className="text-xs text-gray-500 text-center">
-                🎯 Smart search with OSRM route matching 
+                🎯 Smart search with OSRM route matching
               </p>
             </div>
 

@@ -104,12 +104,12 @@ const CATEGORIES = [
 ];
 
 const colorMap = {
-  blue:   { bg: 'bg-blue-50',   border: 'border-blue-200',   icon: 'bg-blue-600 text-white',   badge: 'bg-blue-100 text-blue-700' },
+  blue: { bg: 'bg-blue-50', border: 'border-blue-200', icon: 'bg-blue-600 text-white', badge: 'bg-blue-100 text-blue-700' },
   violet: { bg: 'bg-violet-50', border: 'border-violet-200', icon: 'bg-violet-600 text-white', badge: 'bg-violet-100 text-violet-700' },
-  green:  { bg: 'bg-green-50',  border: 'border-green-200',  icon: 'bg-green-600 text-white',  badge: 'bg-green-100 text-green-700' },
-  amber:  { bg: 'bg-amber-50',  border: 'border-amber-200',  icon: 'bg-amber-500 text-white',  badge: 'bg-amber-100 text-amber-700' },
-  red:    { bg: 'bg-red-50',    border: 'border-red-200',    icon: 'bg-red-600 text-white',    badge: 'bg-red-100 text-red-700' },
-  gray:   { bg: 'bg-gray-50',   border: 'border-gray-200',   icon: 'bg-gray-600 text-white',   badge: 'bg-gray-100 text-gray-700' },
+  green: { bg: 'bg-green-50', border: 'border-green-200', icon: 'bg-green-600 text-white', badge: 'bg-green-100 text-green-700' },
+  amber: { bg: 'bg-amber-50', border: 'border-amber-200', icon: 'bg-amber-500 text-white', badge: 'bg-amber-100 text-amber-700' },
+  red: { bg: 'bg-red-50', border: 'border-red-200', icon: 'bg-red-600 text-white', badge: 'bg-red-100 text-red-700' },
+  gray: { bg: 'bg-gray-50', border: 'border-gray-200', icon: 'bg-gray-600 text-white', badge: 'bg-gray-100 text-gray-700' },
 };
 
 export default function HelpCenter() {
@@ -287,13 +287,13 @@ export default function HelpCenter() {
           <h2 className="text-xl font-bold text-white mb-3">Still need help?</h2>
           <p className="text-blue-100 text-sm mb-6">Our support team responds within 24 hours on working days (Mon-Sat, 9am-6pm IST).</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link to="/contact" onClick={() => window.scrollTo(0,0)} className="px-6 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-blue-50 transition-colors text-sm">
+            <Link to="/contact" onClick={() => window.scrollTo(0, 0)} className="px-6 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-blue-50 transition-colors text-sm">
               Contact Us
             </Link>
-            <Link to="/report" onClick={() => window.scrollTo(0,0)} className="px-6 py-3 border border-white/30 text-white font-semibold rounded-xl hover:bg-white/10 transition-colors text-sm">
+            <Link to="/report" onClick={() => window.scrollTo(0, 0)} className="px-6 py-3 border border-white/30 text-white font-semibold rounded-xl hover:bg-white/10 transition-colors text-sm">
               Report an Issue
             </Link>
-            <Link to="/faq" onClick={() => window.scrollTo(0,0)} className="px-6 py-3 border border-white/30 text-white font-semibold rounded-xl hover:bg-white/10 transition-colors text-sm">
+            <Link to="/faq" onClick={() => window.scrollTo(0, 0)} className="px-6 py-3 border border-white/30 text-white font-semibold rounded-xl hover:bg-white/10 transition-colors text-sm">
               Browse FAQs
             </Link>
           </div>

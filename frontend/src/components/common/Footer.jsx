@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import LoginRequiredSpeechToast from './LoginRequiredSpeechToast.jsx';
+
 
 /* ─── Point 17: Bottom bar keeps ONLY copyright + Made in India ─────────── */
 /* ─── Point 5:  Platform links show login-toast before redirecting ────────── */
@@ -165,30 +167,8 @@ function CarEasterEgg({ onDismiss }) {
   );
 }
 
-/* ─── Login Toast (speech bubble) ───────────────────────────────────────── */
-function FooterLoginToast({ rect, onDismiss }) {
-  const [vis, setVis] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setVis(true), 20); return () => clearTimeout(t); }, []);
-  if (!rect) return null;
-  const scrollY = window.scrollY || 0;
-  const top = rect.top + scrollY - 60;
-  const left = rect.left + rect.width / 2;
-  return (
-    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', zIndex: 9997, pointerEvents: 'none' }}>
-      <div style={{ position: 'absolute', top: `${top}px`, left: `${left}px`, transform: `translateX(-50%) translateY(${vis ? '0' : '6px'})`, opacity: vis ? 1 : 0, transition: 'all 0.28s cubic-bezier(0.34,1.56,0.64,1)', pointerEvents: 'auto' }} onClick={onDismiss}>
-        <div style={{ background: '#1d4ed8', color: 'white', borderRadius: '12px', padding: '8px 16px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap', boxShadow: '0 8px 24px rgba(29,78,216,0.45)', display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer', position: 'relative' }}>
-          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="white" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-          Sign in to access this
-          <div style={{ position: 'absolute', bottom: '-7px', left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderTop: '7px solid #1d4ed8' }} />
-        </div>
-        <div style={{ height: '3px', background: 'rgba(255,255,255,0.2)', borderRadius: '2px', marginTop: '6px', overflow: 'hidden' }}>
-          <div style={{ height: '100%', background: '#93c5fd', animation: 'drainFtr 2.4s linear forwards', borderRadius: '2px' }} />
-        </div>
-      </div>
-      <style>{`@keyframes drainFtr{from{width:100%}to{width:0%}}`}</style>
-    </div>
-  );
-}
+/* ─── Login toast is standardized via reusable component ───────────── */
+
 
 /* ─── Footer Component ──────────────────────────────────────────────────── */
 function Footer() {
@@ -223,7 +203,19 @@ function Footer() {
   return (
     <>
       {eggActive && <CarEasterEgg onDismiss={dismissEgg} />}
-      {footerToast !== null && <FooterLoginToast rect={footerToast} onDismiss={() => { clearTimeout(toastTimerRef.current); setFooterToast(null); }} />}
+      {footerToast !== null && (
+        <LoginRequiredSpeechToast
+          rect={footerToast}
+          message="Sign in to access this"
+          onDismiss={() => {
+            clearTimeout(toastTimerRef.current);
+            setFooterToast(null);
+          }}
+          redirectTo="/login"
+          durationMs={2400}
+        />
+      )}
+
 
       <footer className="bg-gray-950 text-gray-400" style={{ position: 'relative' }}>
 

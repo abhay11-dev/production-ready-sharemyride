@@ -29,9 +29,7 @@ import FAQ from '../pages/FooterNavlinks/FAQ.jsx';
 import Guidelines from '../pages/FooterNavlinks/Guidelines.jsx';
 import Blog from '../pages/FooterNavlinks/Blog.jsx';
 import Report from '../pages/FooterNavlinks/Report.jsx';
-import PrivacyPolicy from '../pages/FooterNavlinks/PrivacyPolicy.jsx';
-import TermsOfService from '../pages/FooterNavlinks/TermsOfService.jsx';
-import Cookies from '../pages/FooterNavlinks/Cookies.jsx';
+import TermsAndConditions from '../pages/FooterNavlinks/TermsAndConditions.jsx';
 
 // Admin pages
 import AdminLogin from '../pages/Admin/AdminLogin.jsx';
@@ -215,9 +213,8 @@ function AppRoutes() {
       <Route path="/guidelines" element={<Guidelines />} />
       <Route path="/blog" element={<Blog />} />
       <Route path="/report" element={<Report />} />
-      <Route path="/terms" element={<TermsOfService />} />
-      <Route path="/privacy" element={<PrivacyPolicy />} />
-      <Route path="/cookies" element={<Cookies />} />
+      <Route path="/terms" element={<TermsAndConditions />} />
+      <Route path="/privacy" element={<TermsAndConditions />} />
 
       {/* 404 Not Found Route */}
       <Route 
