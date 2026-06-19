@@ -1,322 +1,288 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import api from '../../config/api.js';
 
-/* ─── Intersection Observer hook for scroll reveals ─── */
-function useReveal(threshold = 0.15) {
-    const ref = useRef(null);
-    const [visible, setVisible] = useState(false);
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const observer = new IntersectionObserver(
-            ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } },
-            { threshold }
-        );
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, [threshold]);
-    return [ref, visible];
+/* ─── Scroll-to-top on mount (Point 10) ── */
+function useScrollTop() {
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 }
 
-/* ─── Animated counter ─── */
-function Counter({ target, suffix = '', duration = 2000 }) {
-    const [count, setCount] = useState(0);
-    const [ref, visible] = useReveal(0.3);
-    useEffect(() => {
-        if (!visible) return;
-        let start = 0;
-        const step = target / (duration / 16);
-        const timer = setInterval(() => {
-            start += step;
-            if (start >= target) { setCount(target); clearInterval(timer); }
-            else setCount(Math.floor(start));
-        }, 16);
-        return () => clearInterval(timer);
-    }, [visible, target, duration]);
-    return <span ref={ref}>{count.toLocaleString()}{suffix}</span>;
-}
-
-/* ─── Reveal wrapper ─── */
-function Reveal({ children, delay = 0, className = '' }) {
-    const [ref, visible] = useReveal();
-    return (
-        <div
-            ref={ref}
-            className={className}
-            style={{
-                opacity: visible ? 1 : 0,
-                transform: visible ? 'translateY(0)' : 'translateY(28px)',
-                transition: `opacity 0.7s ease ${delay}s, transform 0.7s ease ${delay}s`,
-            }}
-        >
-            {children}
-        </div>
+function useReveal(threshold = 0.12) {
+  const ref = useRef(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } },
+      { threshold }
     );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [threshold]);
+  return [ref, visible];
+}
+
+function Reveal({ children, delay = 0, className = '' }) {
+  const [ref, visible] = useReveal();
+  return (
+    <div ref={ref} className={className} style={{
+      opacity: visible ? 1 : 0,
+      transform: visible ? 'translateY(0)' : 'translateY(24px)',
+      transition: `opacity 0.65s ease ${delay}s, transform 0.65s ease ${delay}s`,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+/* ─── Animated counter ── */
+function Counter({ target, suffix = '', decimals = 0 }) {
+  const [count, setCount] = useState(0);
+  const [ref, visible] = useReveal(0.3);
+  useEffect(() => {
+    if (!visible || !target) return;
+    let start = 0;
+    const duration = 1800;
+    const step = target / (duration / 16);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= target) { setCount(target); clearInterval(timer); }
+      else setCount(decimals ? parseFloat(start.toFixed(decimals)) : Math.floor(start));
+    }, 16);
+    return () => clearInterval(timer);
+  }, [visible, target, decimals]);
+  return <span ref={ref}>{decimals ? count.toFixed(decimals) : count.toLocaleString('en-IN')}{suffix}</span>;
 }
 
 const TIMELINE = [
-    {
-        year: '2022',
-        title: 'The Idea',
-        desc: 'Frustrated by expensive solo commutes and empty car seats, our founder envisioned a platform where trust between strangers could fill those seats — and cut costs and carbon together.',
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
-    },
-    {
-        year: '2023',
-        title: 'First Version',
-        desc: 'A basic ride-listing MVP went live. Early users started sharing rides between cities, building micro-communities of commuters who became regulars.',
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>,
-    },
-    {
-        year: '2024',
-        title: 'Community Grows',
-        desc: 'Driver verification, real-time booking, and a rating system launched. Thousands of rides happened. The community started self-policing with integrity.',
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>,
-    },
-    {
-        year: '2025',
-        title: 'Platform Matures',
-        desc: 'Waypoint routing, cost-sharing calculators, and safety features launched. ShareMyRide became the go-to platform for intercity shared travel across India.',
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>,
-    },
-    {
-        year: '2026+',
-        title: 'The Road Ahead',
-        desc: 'Corporate carpooling, EV-first routing, and rural connectivity. Scaling to every district in India, one shared seat at a time.',
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>,
-    },
+  { year: '2022', title: 'The Idea', desc: 'Frustrated by expensive solo commutes and empty car seats, our founder envisioned a platform where trust between strangers could fill those seats — and cut costs and carbon together.' },
+  { year: '2023', title: 'First Version', desc: 'A basic ride-listing MVP went live. Early users started sharing rides between cities, building micro-communities of commuters who became regulars.' },
+  { year: '2024', title: 'Community Grows', desc: 'Driver verification, real-time booking, and a rating system launched. Thousands of rides happened. The community started self-policing with integrity.' },
+  { year: '2025', title: 'Platform Matures', desc: 'Waypoint routing, cost-sharing calculators, and safety features launched. ShareMyRide became the go-to platform for intercity shared travel across India.' },
+  { year: '2026+', title: 'The Road Ahead', desc: 'Corporate carpooling, EV-first routing, and rural connectivity. Scaling to every district in India, one shared seat at a time.' },
 ];
 
 const VALUES = [
-    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>, title: 'Trust First', desc: 'Every driver is verified. Every ride is rated. Community accountability is built into the DNA of the platform.' },
-    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Sustainability', desc: 'Fewer cars on the road means less congestion, fewer emissions, and a measurably smaller carbon footprint per journey.' },
-    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Affordability', desc: 'Cost-sharing, not profit extraction. Drivers recover fuel costs, passengers travel cheaper — everyone wins.' },
-    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>, title: 'Community', desc: 'Not a transactional app — a social layer for mobility. Regular commuters become trusted travel companions.' },
-    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>, title: 'Safety', desc: 'Emergency contacts, in-app SOS, gender preference filters, and verified identities make every seat a safe seat.' },
-    { icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Accessibility', desc: 'From tier-1 metros to tier-3 towns, shared mobility should work everywhere — not just where Uber does.' },
+  { icon: '🤝', title: 'Trust First', desc: 'Every driver is verified. Every ride is rated. Community accountability is built into the DNA of the platform.' },
+  { icon: '🌿', title: 'Sustainability', desc: 'Fewer cars on the road means less congestion, fewer emissions, and a measurably smaller carbon footprint per journey.' },
+  { icon: '💸', title: 'Affordability', desc: 'Cost-sharing, not profit extraction. Drivers recover fuel costs, passengers travel cheaper — everyone wins.' },
+  { icon: '🏘️', title: 'Community', desc: 'Not a transactional app — a social layer for mobility. Regular commuters become trusted travel companions.' },
+  { icon: '🛡️', title: 'Safety', desc: 'Emergency contacts, in-app SOS, gender preference filters, and verified identities make every seat a safe seat.' },
+  { icon: '🚀', title: 'Accessibility', desc: 'From tier-1 metros to tier-3 towns, shared mobility should work everywhere — not just where Uber does.' },
 ];
 
 export default function About() {
-    const [stats, setStats] = useState([
-        { label: 'Rides Shared', value: 0, suffix: '+' },
-        { label: 'Cities Connected', value: 0, suffix: '+' },
-        { label: 'Active Members', value: 0, suffix: '+' },
-        { label: 'Avg. Rating', value: 0, suffix: '★' },
-    ]);
+  useScrollTop();
 
-    useEffect(() => {
-        // Simulate dynamic fetching of data from a backend endpoint
-        const fetchStats = async () => {
-            try {
-                // In a real application, this would be an actual API call
-                // e.g., const response = await fetch('/api/v1/platform-stats');
-                await new Promise(resolve => setTimeout(resolve, 800)); // Simulate network latency
-                setStats([
-                    { label: 'Rides Shared', value: 12400, suffix: '+' },
-                    { label: 'Cities Connected', value: 80, suffix: '+' },
-                    { label: 'Active Members', value: 6800, suffix: '+' },
-                    { label: 'Avg. Rating', value: 4.8, suffix: '★' },
-                ]);
-            } catch (error) {
-                console.error("Failed to fetch stats", error);
-            }
-        };
-        fetchStats();
-    }, []);
+  /* Point 6: real dynamic stats */
+  const [stats, setStats] = useState({ totalRides: 0, totalCities: 0, totalUsers: 0, averageRating: 0, loading: true });
 
-    return (
-        <div className="min-h-screen bg-gray-50">
+  useEffect(() => {
+    api.get('/stats/home')
+      .then(res => {
+        const d = res.data?.data || res.data || {};
+        setStats({
+          totalRides:    d.totalRides    || 0,
+          totalCities:   d.totalCities   || 0,
+          totalUsers:    d.totalUsers    || 0,
+          averageRating: d.averageRating || 0,
+          loading: false,
+        });
+      })
+      .catch(() => setStats(s => ({ ...s, loading: false })));
+  }, []);
 
-            {/* ── Hero ── */}
-            <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden">
-                <div className="absolute inset-0">
-                    <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
-                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-500/10 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2" />
-                </div>
-                <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center">
-                    <div
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6"
-                        style={{ backdropFilter: 'blur(8px)' }}
-                    >
-                        Our Story
-                    </div>
-                    <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6 tracking-tight">
-                        We built the ride-sharing<br />
-                        <span className="text-green-400">India actually needed.</span>
-                    </h1>
-                    <p className="text-lg sm:text-xl text-blue-100 leading-relaxed max-w-2xl mx-auto">
-                        Not a taxi app. Not a logistics startup. A community of people who believe that empty car seats are a problem worth solving — together.
-                    </p>
-                </div>
-            </section>
+  return (
+    <div className="min-h-screen bg-gray-50">
 
-            {/* ── Stats bar ── */}
-            <section className="bg-white border-b border-gray-100 shadow-sm">
-                <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
-                        {stats.map(stat => (
-                            <div key={stat.label}>
-                                <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
-                                    <Counter target={stat.value} suffix={stat.suffix} />
-                                </div>
-                                <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">{stat.label}</div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Problem we solve ── */}
-            <section className="py-16 sm:py-24 bg-gray-50">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <Reveal>
-                        <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">The Problem</div>
-                        <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6 tracking-tight">
-                            Every day, millions of cars carry<br className="hidden sm:block" />
-                            <span className="text-blue-600"> just one person.</span>
-                        </h2>
-                    </Reveal>
-                    <Reveal delay={0.15}>
-                        <p className="text-lg text-gray-600 leading-relaxed mb-6">
-                            In India, urban congestion costs the economy billions of hours every year. Cars sit idle 96% of the time. When they do move, 70% have empty seats. Meanwhile, millions of people are paying full-price solo fares, burning fuel they could share.
-                        </p>
-                        <p className="text-lg text-gray-600 leading-relaxed">
-                            The solution already exists — people just need a trusted space to coordinate. That&apos;s what we built.
-                        </p>
-                    </Reveal>
-
-                    <div className="grid sm:grid-cols-3 gap-5 mt-12">
-                        {[
-                            { stat: '70%', label: 'of cars on Indian roads carry only the driver', color: 'text-red-500' },
-                            { stat: '40%', label: 'cheaper than solo travel when seats are shared', color: 'text-green-600' },
-                            { stat: '3x', label: 'lower carbon footprint per passenger vs solo car', color: 'text-blue-600' },
-                        ].map((item, i) => (
-                            <Reveal key={item.stat} delay={i * 0.12}>
-                                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
-                                    <div className={`text-4xl font-extrabold mb-2 ${item.color}`}>{item.stat}</div>
-                                    <div className="text-sm text-gray-600 leading-snug">{item.label}</div>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── How it started / Timeline ── */}
-            <section className="py-16 sm:py-24 bg-white">
-                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <Reveal>
-                        <div className="text-center mb-14">
-                            <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">Our Journey</div>
-                            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">From frustration to platform</h2>
-                        </div>
-                    </Reveal>
-
-                    <div className="relative">
-                        {/* Vertical line */}
-                        <div className="absolute left-8 sm:left-1/2 top-0 bottom-0 w-px bg-blue-100 -translate-x-1/2" />
-
-                        <div className="space-y-10">
-                            {TIMELINE.map((item, i) => (
-                                <Reveal key={item.year} delay={i * 0.1}>
-                                    <div className={`relative flex items-start gap-6 ${i % 2 === 0 ? 'sm:flex-row' : 'sm:flex-row-reverse'}`}>
-                                        {/* Node */}
-                                        <div className="relative z-10 flex-shrink-0 w-16 h-16 rounded-2xl bg-blue-600 flex flex-col items-center justify-center shadow-lg shadow-blue-200 text-white sm:absolute sm:left-1/2 sm:-translate-x-1/2">
-                                            <span className="text-white">{item.icon}</span>
-                                            <span className="text-[10px] font-bold mt-0.5">{item.year}</span>
-                                        </div>
-
-                                        {/* Card */}
-                                        <div className={`flex-1 bg-gray-50 rounded-2xl p-5 border border-gray-100 sm:w-[calc(50%-56px)] ${i % 2 === 0 ? 'sm:mr-[calc(50%+28px)]' : 'sm:ml-[calc(50%+28px)]'}`}>
-                                            <h3 className="font-bold text-gray-900 mb-1">{item.title}</h3>
-                                            <p className="text-sm text-gray-600 leading-relaxed">{item.desc}</p>
-                                        </div>
-                                    </div>
-                                </Reveal>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Mission & Vision ── */}
-            <section className="py-16 sm:py-24 bg-gradient-to-br from-blue-700 to-blue-900 text-white">
-                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-                    <Reveal>
-                        <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-3">Purpose</div>
-                        <h2 className="text-3xl sm:text-4xl font-extrabold mb-12 tracking-tight">What drives everything we do</h2>
-                    </Reveal>
-                    <div className="grid sm:grid-cols-2 gap-6">
-                        {[
-                            {
-                                label: 'Mission',
-                                icon: '🎯',
-                                text: 'Make shared mobility the default choice for every intercity and intracity journey in India — by building a platform rooted in trust, affordability, and community.',
-                            },
-                            {
-                                label: 'Vision',
-                                icon: '🌍',
-                                text: 'A future where every car seat is a social asset, not wasted space. Where travel is an opportunity to connect, not just commute.',
-                            },
-                        ].map(item => (
-                            <Reveal key={item.label} delay={0.1}>
-                                <div className="bg-white/10 rounded-2xl p-7 text-left border border-white/10" style={{ backdropFilter: 'blur(8px)' }}>
-                                    <div className="text-white mb-3 w-8 h-8">
-                                        {item.label === 'Mission' ? 
-                                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                            : <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        }
-                                    </div>
-                                    <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-2">{item.label}</div>
-                                    <p className="text-blue-50 leading-relaxed">{item.text}</p>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── Values ── */}
-            <section className="py-16 sm:py-24 bg-white">
-                <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <Reveal>
-                        <div className="text-center mb-12">
-                            <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">What We Stand For</div>
-                            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Our values</h2>
-                        </div>
-                    </Reveal>
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                        {VALUES.map((v, i) => (
-                            <Reveal key={v.title} delay={i * 0.08}>
-                                <div className="group bg-gray-50 rounded-2xl p-6 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/40 transition-all duration-200">
-                                    <div className="text-blue-600 mb-3 w-8 h-8">{v.icon}</div>
-                                    <h3 className="font-bold text-gray-900 mb-2">{v.title}</h3>
-                                    <p className="text-sm text-gray-600 leading-relaxed">{v.desc}</p>
-                                </div>
-                            </Reveal>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            {/* ── CTA ── */}
-            <section className="py-16 sm:py-20 bg-gray-50 border-t border-gray-100">
-                <div className="max-w-2xl mx-auto px-4 text-center">
-                    <Reveal>
-                        <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4">Ready to ride with the community?</h2>
-                        <p className="text-gray-500 mb-8">Find a ride or offer yours — every seat filled is a small win for everyone.</p>
-                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                            <Link to="/ride/search" className="px-7 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">
-                                Find a Ride
-                            </Link>
-                            <Link to="/ride/post" className="px-7 py-3 bg-green-500 text-white font-semibold rounded-xl hover:bg-green-600 transition-colors">
-                                Offer a Ride
-                            </Link>
-                        </div>
-                    </Reveal>
-                </div>
-            </section>
-
+      {/* ── Hero — consistent blue (Point 9) ── */}
+      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-500/10 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2" />
         </div>
-    );
+        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
+            Our Story
+          </div>
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6 tracking-tight">
+            We built the ride-sharing<br />
+            <span className="text-green-400">India actually needed.</span>
+          </h1>
+          <p className="text-lg sm:text-xl text-blue-100 leading-relaxed max-w-2xl mx-auto">
+            Not a taxi app. Not a logistics startup. A community of people who believe that empty car seats are a problem worth solving — together.
+          </p>
+        </div>
+      </section>
+
+      {/* ── Point 6: Real dynamic stats bar ── */}
+      <section className="bg-white border-b border-gray-100 shadow-sm">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+            {stats.loading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="h-9 bg-gray-200 rounded w-24 mx-auto mb-2" />
+                  <div className="h-3 bg-gray-100 rounded w-16 mx-auto" />
+                </div>
+              ))
+            ) : (
+              <>
+                <div>
+                  <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
+                    <Counter target={stats.totalRides} suffix="+" />
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">Rides Shared</div>
+                </div>
+                <div>
+                  <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
+                    <Counter target={stats.totalCities} suffix="+" />
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">Cities Connected</div>
+                </div>
+                <div>
+                  <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
+                    <Counter target={stats.totalUsers} suffix="+" />
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">Active Members</div>
+                </div>
+                <div>
+                  <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
+                    <Counter target={stats.averageRating || 4.8} suffix="★" decimals={1} />
+                  </div>
+                  <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">Avg. Rating</div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Problem ── */}
+      <section className="py-16 sm:py-24 bg-gray-50">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">The Problem</div>
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-6 tracking-tight">
+              Every day, millions of cars carry<br className="hidden sm:block" />
+              <span className="text-blue-600"> just one person.</span>
+            </h2>
+          </Reveal>
+          <Reveal delay={0.12}>
+            <p className="text-lg text-gray-600 leading-relaxed mb-4">
+              In India, urban congestion costs the economy billions of hours every year. Cars sit idle 96% of the time. When they do move, 70% have empty seats. Meanwhile, millions of people are paying full-price solo fares.
+            </p>
+            <p className="text-lg text-gray-600 leading-relaxed">
+              The solution already exists — people just need a trusted space to coordinate. That is what we built.
+            </p>
+          </Reveal>
+          <div className="grid sm:grid-cols-3 gap-5 mt-12">
+            {[
+              { stat: '70%', label: 'of cars on Indian roads carry only the driver', color: 'text-red-500' },
+              { stat: '40%', label: 'cheaper than solo travel when seats are shared', color: 'text-green-600' },
+              { stat: '3x', label: 'lower carbon footprint per passenger vs solo car', color: 'text-blue-600' },
+            ].map((item, i) => (
+              <Reveal key={item.stat} delay={i * 0.1}>
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
+                  <div className={`text-4xl font-extrabold mb-2 ${item.color}`}>{item.stat}</div>
+                  <div className="text-sm text-gray-600 leading-snug">{item.label}</div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Timeline ── */}
+      <section className="py-16 sm:py-24 bg-white">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="text-center mb-14">
+              <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">Our Journey</div>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">From frustration to platform</h2>
+            </div>
+          </Reveal>
+          <div className="relative">
+            <div className="absolute left-8 sm:left-1/2 top-0 bottom-0 w-px bg-blue-100 -translate-x-1/2" />
+            <div className="space-y-10">
+              {TIMELINE.map((item, i) => (
+                <Reveal key={item.year} delay={i * 0.08}>
+                  <div className={`relative flex items-start gap-6 ${i % 2 === 0 ? 'sm:flex-row' : 'sm:flex-row-reverse'}`}>
+                    <div className="relative z-10 flex-shrink-0 w-16 h-16 rounded-2xl bg-blue-600 flex flex-col items-center justify-center shadow-lg text-white sm:absolute sm:left-1/2 sm:-translate-x-1/2">
+                      <span className="text-xs font-bold">{item.year}</span>
+                    </div>
+                    <div className={`flex-1 bg-gray-50 rounded-2xl p-5 border border-gray-100 sm:w-[calc(50%-56px)] ${i % 2 === 0 ? 'sm:mr-[calc(50%+28px)]' : 'sm:ml-[calc(50%+28px)]'}`}>
+                      <h3 className="font-bold text-gray-900 mb-1">{item.title}</h3>
+                      <p className="text-sm text-gray-600 leading-relaxed">{item.desc}</p>
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Mission & Vision ── */}
+      <section className="py-16 sm:py-24 bg-gradient-to-br from-blue-700 to-blue-900 text-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <Reveal>
+            <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-3">Purpose</div>
+            <h2 className="text-3xl sm:text-4xl font-extrabold mb-12 tracking-tight">What drives everything we do</h2>
+          </Reveal>
+          <div className="grid sm:grid-cols-2 gap-6">
+            {[
+              { label: 'Mission', text: 'Make shared mobility the default choice for every intercity and intracity journey in India — by building a platform rooted in trust, affordability, and community.' },
+              { label: 'Vision', text: 'A future where every car seat is a social asset, not wasted space. Where travel is an opportunity to connect, not just commute.' },
+            ].map((item, i) => (
+              <Reveal key={item.label} delay={i * 0.1}>
+                <div className="bg-white/10 rounded-2xl p-7 text-left border border-white/10">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-2">{item.label}</div>
+                  <p className="text-blue-50 leading-relaxed">{item.text}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Values ── */}
+      <section className="py-16 sm:py-24 bg-white">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <Reveal>
+            <div className="text-center mb-12">
+              <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">What We Stand For</div>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Our values</h2>
+            </div>
+          </Reveal>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {VALUES.map((v, i) => (
+              <Reveal key={v.title} delay={i * 0.07}>
+                <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100 hover:border-blue-200 hover:bg-blue-50/40 transition-all duration-200">
+                  <div className="text-3xl mb-3">{v.icon}</div>
+                  <h3 className="font-bold text-gray-900 mb-2">{v.title}</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">{v.desc}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section className="py-16 sm:py-20 bg-gray-50 border-t border-gray-100">
+        <div className="max-w-2xl mx-auto px-4 text-center">
+          <Reveal>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4">Ready to ride with the community?</h2>
+            <p className="text-gray-500 mb-8">Find a ride or offer yours — every seat filled is a small win for everyone.</p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link to="/ride/search" onClick={() => window.scrollTo(0,0)} className="px-7 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">Find a Ride</Link>
+              <Link to="/ride/post" onClick={() => window.scrollTo(0,0)} className="px-7 py-3 bg-green-500 text-white font-semibold rounded-xl hover:bg-green-600 transition-colors">Offer a Ride</Link>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+    </div>
+  );
 }
