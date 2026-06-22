@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signupUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
@@ -15,6 +15,9 @@ function Signup() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Always start at the very top of the signup page
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 
   // Password strength calculator
   const getPasswordStrength = (pwd) => {

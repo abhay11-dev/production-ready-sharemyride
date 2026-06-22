@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import toast from 'react-hot-toast';
@@ -15,6 +15,9 @@ function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false); // Email not verified state
+
+  // Always render at the top of the page
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 
   // ── Lockout countdown ──────────────────────────────────────────────────────
   const getLockoutMinutes = () => {

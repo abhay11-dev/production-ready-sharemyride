@@ -271,14 +271,14 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-6 pb-16 px-4 sm:px-6 lg:px-8">
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-5 pb-14 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
             <div className="flex items-center gap-3">
               {avatar ? (
-                <img src={avatar} alt={firstName} className="w-11 h-11 rounded-full object-cover border-2 border-white/30 flex-shrink-0" />
+                <img src={avatar} alt={firstName} className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border-2 border-white/30 flex-shrink-0" />
               ) : (
-                <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
+                <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-base flex-shrink-0">
                   {firstName.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -286,22 +286,22 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
                 <p className="text-blue-200 text-xs font-medium">
                   {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </p>
-                <h1 className="text-xl sm:text-2xl font-bold text-white leading-tight">
+                <h1 className="text-lg sm:text-2xl font-bold text-white leading-tight">
                   {greet()}, {firstName} 👋
                 </h1>
                 <p className="text-blue-200 text-xs mt-0.5">Where are you headed today?</p>
               </div>
             </div>
             <div className="flex gap-2 flex-shrink-0">
-              <Link to="/ride/search" onClick={handleNavClick} className="flex items-center gap-1.5 bg-white text-blue-700 px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-50 transition-colors shadow-sm">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <Link to="/ride/search" onClick={handleNavClick} className="flex items-center gap-1.5 bg-white text-blue-700 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold hover:bg-blue-50 transition-colors shadow-sm">
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 Find a ride
               </Link>
               {(user?.role === 'driver' || user?.isDriverVerified) && (
-                <Link to="/ride/post" onClick={handleNavClick} className="flex items-center gap-1.5 bg-green-500 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-green-400 transition-colors shadow-sm">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <Link to="/ride/post" onClick={handleNavClick} className="flex items-center gap-1.5 bg-green-500 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold hover:bg-green-400 transition-colors shadow-sm">
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                   Offer a ride
@@ -458,15 +458,20 @@ function PublicLanding({ stats, rides, ridesLoading }) {
   };
 
   const handleBrowseAll = (e, btnEl) => {
+    e.preventDefault();
     if (!user) {
-      e.preventDefault();
       showToastThenNavigate(btnEl || e.currentTarget, '/login', 'Sign in to browse all rides');
     } else {
-      handleNavClick();
+      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+      navigate('/ride/search');
     }
   };
 
-  const handleCreateAccount = () => { handleNavClick(); };
+  const handleCreateAccount = useCallback(() => {
+    // Save scroll position so back-button returns here;
+    // Signup page itself will always render at top.
+    sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+  }, []);
 
   return (
     <div className="min-h-screen bg-white">
@@ -476,48 +481,50 @@ function PublicLanding({ stats, rides, ridesLoading }) {
         <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 pointer-events-none" aria-hidden="true" />
         <div className="absolute -bottom-16 -left-16 w-80 h-80 rounded-full bg-green-500/10 pointer-events-none" aria-hidden="true" />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-6 sm:pt-10 sm:pb-8 lg:pt-12 my-5">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-4 sm:pt-10 sm:pb-6 lg:pt-12 lg:pb-8">
           <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 bg-white/15 border border-white/20 text-blue-100 text-xs font-semibold px-3 py-1.5 rounded-full mb-5 backdrop-blur-sm">
+            <div className="inline-flex items-center gap-2 bg-white/15 border border-white/20 text-blue-100 text-xs font-semibold px-3 py-1.5 rounded-full mb-4 sm:mb-5 backdrop-blur-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               Community carpooling · India
             </div>
 
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight tracking-tight mb-4">
+            <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight tracking-tight mb-3 sm:mb-4">
               Your next trip is{' '}
               <span className="text-green-300">already on its way.</span>
             </h1>
-            <p className="text-blue-100 text-base sm:text-lg leading-relaxed mb-8 max-w-xl">
-              Connect with verified drivers and passengers going your way. Share the cost, halve the traffic.
+            <p className="text-blue-100 text-sm sm:text-base lg:text-lg leading-relaxed mb-5 sm:mb-8 max-w-xl">
+              Connect with verified drivers going your way. Share the cost, halve the traffic.
             </p>
 
-            <form onSubmit={handleSearch} className="bg-white rounded-2xl p-2 shadow-2xl shadow-blue-900/30 flex flex-col sm:flex-row gap-2 max-w-xl">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                  <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <input type="text" placeholder="Leaving from…" value={searchFrom} onChange={e => setSearchFrom(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-sm placeholder-gray-400 outline-none min-w-0" />
+            <form onSubmit={handleSearch} className="bg-white rounded-2xl p-2 shadow-2xl shadow-blue-900/30 flex flex-col gap-2 max-w-xl">
+              <div className="flex gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                    <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <input type="text" placeholder="From…" value={searchFrom} onChange={e => setSearchFrom(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-sm placeholder-gray-400 outline-none min-w-0" />
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                    <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m0 0l-7-7m7 7l-7 7" />
+                    </svg>
+                    <input type="text" placeholder="To…" value={searchTo} onChange={e => setSearchTo(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-sm placeholder-gray-400 outline-none min-w-0" />
+                  </div>
                 </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
-                  <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m0 0l-7-7m7 7l-7 7" />
-                  </svg>
-                  <input type="text" placeholder="Going to…" value={searchTo} onChange={e => setSearchTo(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-sm placeholder-gray-400 outline-none min-w-0" />
-                </div>
-              </div>
-              <button type="submit" className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors flex-shrink-0">
+              <button type="submit" className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                Search
+                Search rides
               </button>
             </form>
 
-            <p className="mt-4 text-blue-200 text-sm">
+            <p className="mt-3 sm:mt-4 text-blue-200 text-xs sm:text-sm">
               Driving somewhere?{' '}
               <Link ref={offerRideRef} to={user ? '/ride/post' : '#'} onClick={handleOfferRideClick} className="text-white font-semibold underline underline-offset-2 hover:text-green-300 transition-colors">
                 Offer seats and recover fuel costs →
@@ -530,18 +537,18 @@ function PublicLanding({ stats, rides, ridesLoading }) {
       </section>
 
       {/* ── LIVE RIDE FEED (enhanced) ── */}
-      <section ref={rideSectionRef} id="rides-section" className="bg-gray-50 py-12 sm:py-16">
+      <section ref={rideSectionRef} id="rides-section" className="bg-gray-50 py-8 sm:py-14">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
           {/* Header */}
-          <div className="flex items-end justify-between mb-6 sm:mb-8">
-            <div>
+          <div className="flex items-start justify-between mb-5 sm:mb-8 gap-2">
+            <div className="min-w-0">
               <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Available now</p>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Rides leaving soon</h2>
+              <h2 className="text-lg sm:text-2xl font-bold text-gray-900 leading-tight">Rides leaving soon</h2>
               {!ridesLoading && rides.length > 0 && (
                 <p className="text-xs text-gray-500 mt-1">
                   {rides.length} rides found
-                  {!user && <span className="text-blue-500 font-medium"> · sign in to see prices & book</span>}
+                  {!user && <span className="text-blue-500 font-medium hidden sm:inline"> · sign in to see prices &amp; book</span>}
                 </p>
               )}
             </div>
@@ -549,10 +556,10 @@ function PublicLanding({ stats, rides, ridesLoading }) {
               ref={browseAllRef}
               href="/ride/search"
               onClick={(e) => handleBrowseAll(e, browseAllRef.current)}
-              className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 flex-shrink-0 cursor-pointer"
+              className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 flex-shrink-0 cursor-pointer whitespace-nowrap mt-1"
             >
               Browse all
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </a>
@@ -595,23 +602,23 @@ function PublicLanding({ stats, rides, ridesLoading }) {
 
           {/* Unlock CTA bar (logged-out only) */}
           {!user && !ridesLoading && rides.length > 0 && (
-            <div className="mt-5 bg-white border border-blue-100 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+            <div className="mt-5 bg-white border border-blue-100 rounded-2xl p-4 sm:p-5">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
                   </svg>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Prices and driver details are hidden</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Join free to unlock contact info, live prices, and instant booking</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">Prices &amp; driver details are hidden</p>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">Join free to unlock contact info, live prices, and instant booking</p>
                 </div>
               </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <Link to="/login" onClick={handleNavClick} className="inline-flex items-center gap-1.5 border border-blue-200 text-blue-600 hover:bg-blue-50 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+              <div className="flex gap-2">
+                <Link to="/login" onClick={handleNavClick} className="flex-1 text-center border border-blue-200 text-blue-600 hover:bg-blue-50 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors">
                   Sign in
                 </Link>
-                <Link to="/signup" onClick={handleCreateAccount} className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+                <Link to="/signup" onClick={handleCreateAccount} className="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors">
                   Join free →
                 </Link>
               </div>
@@ -621,16 +628,15 @@ function PublicLanding({ stats, rides, ridesLoading }) {
           {/* See all (logged-in only) */}
           {user && rides.length > 0 && (
             <div className="mt-8 text-center">
-              <a
-                href="/ride/search"
-                onClick={(e) => { handleBrowseAll(e, e.currentTarget); }}
+              <button
+                onClick={() => { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); navigate('/ride/search'); }}
                 className="inline-flex items-center gap-2 border border-blue-200 text-blue-600 hover:bg-blue-50 px-6 py-3 rounded-xl text-sm font-semibold transition-colors cursor-pointer"
               >
                 See all available rides
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
-              </a>
+              </button>
             </div>
           )}
         </div>
@@ -708,23 +714,23 @@ function PublicLanding({ stats, rides, ridesLoading }) {
       </section>
 
       {/* ── FINAL CTA ── */}
-      <section className="py-12 sm:py-16 bg-gradient-to-r from-blue-700 via-blue-600 to-green-600">
+      <section className="py-10 sm:py-16 bg-gradient-to-r from-blue-700 via-blue-600 to-green-600">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">
+          <h2 className="text-xl sm:text-3xl font-bold text-white mb-2 sm:mb-3">
             Ready to share your next ride?
           </h2>
-          <p className="text-blue-100 text-sm sm:text-base mb-8 max-w-lg mx-auto">
+          <p className="text-blue-100 text-xs sm:text-base mb-6 sm:mb-8 max-w-lg mx-auto leading-relaxed">
             Join {stats.totalUsers > 0 ? `${formatNumber(stats.totalUsers)} members` : 'a growing community'} already saving money and reducing traffic together.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link ref={createAccountRef} to="/signup" onClick={handleCreateAccount} className="inline-flex items-center justify-center gap-2 bg-white text-blue-700 px-6 py-3.5 rounded-xl text-sm font-bold hover:bg-blue-50 hover:shadow-lg transition-all duration-150">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center max-w-sm sm:max-w-none mx-auto">
+            <Link ref={createAccountRef} to="/signup" onClick={handleCreateAccount} className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white text-blue-700 px-6 py-3.5 rounded-xl text-sm font-bold hover:bg-blue-50 hover:shadow-lg transition-all duration-150">
               Create free account
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
-            <button onClick={handleBrowseRidesScroll} className="inline-flex items-center justify-center gap-2 border border-white/30 text-white hover:bg-white/10 px-6 py-3.5 rounded-xl text-sm font-semibold transition-colors">
-              Browse rides — no account needed
+            <button onClick={handleBrowseRidesScroll} className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-white/40 text-white hover:bg-white/10 px-6 py-3.5 rounded-xl text-sm font-semibold transition-colors">
+              Browse rides — no sign up
             </button>
           </div>
         </div>

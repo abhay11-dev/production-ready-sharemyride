@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+const SCROLL_KEY = 'home_scroll_y';
 
 /**
  * Comic-style speech-bubble toast attached to a clicked element.
  * - Shows for a few seconds
- * - Redirects to /login
+ * - Saves scroll position then navigates (SPA-style, back-button friendly)
  */
 export default function LoginRequiredSpeechToast({
   rect,
@@ -13,6 +16,7 @@ export default function LoginRequiredSpeechToast({
   durationMs = 2400,
 }) {
   const [vis, setVis] = useState(false);
+  const navigate = useNavigate();
 
   const position = useMemo(() => {
     if (!rect) return null;
@@ -22,18 +26,22 @@ export default function LoginRequiredSpeechToast({
     return { top, left };
   }, [rect]);
 
+  const doRedirect = () => {
+    // Save scroll so the back button returns to the exact button position
+    sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+    onDismiss?.();
+    navigate(redirectTo);
+  };
+
   useEffect(() => {
     const t1 = setTimeout(() => setVis(true), 20);
-    const t2 = setTimeout(() => {
-      onDismiss?.();
-      window.scrollTo(0, 0);
-      window.location.assign(redirectTo);
-    }, durationMs);
+    const t2 = setTimeout(doRedirect, durationMs);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [durationMs, onDismiss, redirectTo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [durationMs]);
 
   if (!rect || !position) return null;
 
@@ -51,11 +59,7 @@ export default function LoginRequiredSpeechToast({
           transition: 'all 0.28s cubic-bezier(0.34,1.56,0.64,1)',
           pointerEvents: 'auto',
         }}
-        onClick={() => {
-          onDismiss?.();
-          window.scrollTo(0, 0);
-          window.location.assign(redirectTo);
-        }}
+        onClick={doRedirect}
       >
         <div
           style={{
@@ -78,7 +82,7 @@ export default function LoginRequiredSpeechToast({
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
             />
           </svg>
           {message}
@@ -113,4 +117,3 @@ export default function LoginRequiredSpeechToast({
     </div>
   );
 }
-

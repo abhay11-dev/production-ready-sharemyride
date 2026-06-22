@@ -2,90 +2,101 @@ import React, { useMemo } from 'react';
 
 /**
  * Professional business-focused animated marquee/banner
- * Displays marketing messages about trust, savings, community, safety, and ride-sharing
- * with subtle car-travel animation effect
+ * Displays marketing messages about trust, savings, community, safety, and ride-sharing.
+ * Fixed seamless loop — single track doubled internally, one animation.
+ * Mobile-first: compact height & font on xs screens.
  */
 export default function PlatformMarquee({ stats }) {
   const messages = useMemo(() => [
-    { icon: '🛡️', text: 'Verified drivers, safe rides — every trip audited by the platform' },
-    { icon: '💰', text: `Join ${stats?.totalUsers ? `${stats.totalUsers.toLocaleString('en-IN')} members` : 'millions'} saving up to 60% on commute costs` },
-    { icon: '🌍', text: `Active across ${stats?.totalCities || 'major'} Indian cities · expanding daily` },
-    { icon: '⭐', text: `Rated ${stats?.averageRating?.toFixed(1) || '4.8'}/5 by passengers · trusted by the community` },
-    { icon: '🚗', text: 'Every shared ride removes one car from the road · cleaner air, better cities' },
-    { icon: '🤝', text: 'Real commuters, real connections · build your trusted circle' },
+    { icon: '🛡️', text: 'Verified drivers · safe rides · every trip audited' },
+    { icon: '💰', text: `${stats?.totalUsers ? `${stats.totalUsers.toLocaleString('en-IN')} members` : 'Thousands'} saving up to 60% on commutes` },
+    { icon: '🌍', text: `Active across ${stats?.totalCities || '40+'} Indian cities · expanding daily` },
+    { icon: '⭐', text: `Rated ${stats?.averageRating?.toFixed(1) || '4.8'}/5 · trusted by the community` },
+    { icon: '🚗', text: 'Every shared ride removes one car from the road' },
+    { icon: '🤝', text: 'Real commuters · real connections · build your circle' },
   ], [stats]);
 
-  // Repeat messages for seamless loop
-  const repeatedMessages = useMemo(() => [...messages, ...messages], [messages]);
+  // Double the array for a seamless infinite loop with a single animation
+  const track = useMemo(() => [...messages, ...messages], [messages]);
 
   return (
-    <div className="w-full bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 py-3 overflow-hidden relative">
-      {/* Animated gradient background effect */}
-      <div className="absolute inset-0 opacity-50">
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-pulse" />
-      </div>
+    <div
+      className="w-full overflow-hidden relative"
+      style={{
+        background: 'linear-gradient(90deg, #1d4ed8 0%, #2563eb 50%, #1e40af 100%)',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      {/* Shimmer overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 50%, rgba(255,255,255,0.04) 100%)',
+        }}
+      />
 
-      {/* Marquee container */}
-      <div className="relative overflow-hidden">
-        <div className="flex gap-8">
-          {/* First set of messages */}
-          <div className="flex gap-8 animate-marquee whitespace-nowrap">
-            {repeatedMessages.map((msg, idx) => (
-              <div
-                key={`first-${idx}`}
-                className="flex items-center gap-2 px-4 py-1 text-sm font-medium text-white/90 hover:text-white transition-colors flex-shrink-0"
-              >
-                <span className="text-lg">{msg.icon}</span>
-                <span>{msg.text}</span>
-                <span className="text-white/30 mx-2">•</span>
-              </div>
-            ))}
-          </div>
+      {/* Edge fade masks */}
+      <div className="absolute top-0 left-0 h-full w-8 sm:w-16 pointer-events-none z-10"
+        style={{ background: 'linear-gradient(to right, #1d4ed8, transparent)' }} />
+      <div className="absolute top-0 right-0 h-full w-8 sm:w-16 pointer-events-none z-10"
+        style={{ background: 'linear-gradient(to left, #1e40af, transparent)' }} />
 
-          {/* Seamless loop - second set */}
-          <div className="flex gap-8 animate-marquee whitespace-nowrap" style={{ animationDelay: '0s' }}>
-            {repeatedMessages.map((msg, idx) => (
-              <div
-                key={`second-${idx}`}
-                className="flex items-center gap-2 px-4 py-1 text-sm font-medium text-white/90 hover:text-white transition-colors flex-shrink-0"
+      {/* Single scrolling track */}
+      <div className="flex items-center py-2.5 sm:py-3" style={{ willChange: 'transform' }}>
+        <div className="flex items-center gap-0 animate-marquee-smr flex-shrink-0">
+          {track.map((msg, idx) => (
+            <div
+              key={idx}
+              className="flex items-center gap-1.5 flex-shrink-0 px-3 sm:px-5"
+            >
+              <span className="text-sm sm:text-base leading-none">{msg.icon}</span>
+              <span
+                className="text-white/90 font-medium whitespace-nowrap"
+                style={{ fontSize: 'clamp(10px, 2.5vw, 13px)' }}
               >
-                <span className="text-lg">{msg.icon}</span>
-                <span>{msg.text}</span>
-                <span className="text-white/30 mx-2">•</span>
-              </div>
-            ))}
-          </div>
+                {msg.text}
+              </span>
+              <span className="text-white/25 ml-3 sm:ml-5 text-xs select-none">◆</span>
+            </div>
+          ))}
+        </div>
+        {/* Aria-hidden duplicate to fill viewport during reset gap */}
+        <div className="flex items-center gap-0 animate-marquee-smr flex-shrink-0" aria-hidden="true">
+          {track.map((msg, idx) => (
+            <div
+              key={`b-${idx}`}
+              className="flex items-center gap-1.5 flex-shrink-0 px-3 sm:px-5"
+            >
+              <span className="text-sm sm:text-base leading-none">{msg.icon}</span>
+              <span
+                className="text-white/90 font-medium whitespace-nowrap"
+                style={{ fontSize: 'clamp(10px, 2.5vw, 13px)' }}
+              >
+                {msg.text}
+              </span>
+              <span className="text-white/25 ml-3 sm:ml-5 text-xs select-none">◆</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Car animation indicator (subtle, bottom-left) */}
-      <div className="absolute bottom-1 left-4 flex items-center gap-1 text-white/40 text-xs pointer-events-none">
-        <svg className="w-3 h-3 animate-bounce" style={{ animationDelay: '0s' }} fill="currentColor" viewBox="0 0 20 20">
-          <path d="M8 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
-          <path d="M3 4a1 1 0 00-1 1v10a1 1 0 001 1h1.05a2.5 2.5 0 014.9 0H10a1 1 0 001-1V5a1 1 0 00-1-1H3zM14 7a1 1 0 00-1 1v6.05A2.5 2.5 0 0115.95 16H17a1 1 0 001-1v-5a1 1 0 00-.293-.707l-2-2A1 1 0 0015 7h-1z" />
-        </svg>
-      </div>
-
-      {/* Gradient fade effect at edges */}
-      <div className="absolute top-0 left-0 w-12 h-full bg-gradient-to-r from-blue-700 to-transparent pointer-events-none" />
-      <div className="absolute top-0 right-0 w-12 h-full bg-gradient-to-l from-blue-500 to-transparent pointer-events-none" />
-
       <style>{`
-        @keyframes marquee {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(-50%);
+        @keyframes marquee-smr {
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee-smr {
+          animation: marquee-smr 40s linear infinite;
+        }
+        @media (max-width: 640px) {
+          .animate-marquee-smr {
+            animation-duration: 28s;
           }
         }
-
-        .animate-marquee {
-          animation: marquee 60s linear infinite;
-        }
-
-        .animate-marquee:hover {
-          animation-play-state: paused;
+        @media (prefers-reduced-motion: reduce) {
+          .animate-marquee-smr {
+            animation: none;
+          }
         }
       `}</style>
     </div>
