@@ -12,28 +12,28 @@ const FOOTER_LINKS = {
   platform: {
     label: 'Platform',
     links: [
-      { label: 'Find a Ride',    to: '/ride/search',           requiresAuth: true  },
-      { label: 'Offer a Ride',   to: '/ride/post',             requiresAuth: true  },
-      { label: 'My Bookings',    to: '/bookings/my-bookings',  requiresAuth: true  },
-      { label: 'Upcoming Trips', to: '/upcoming-rides',        requiresAuth: true  },
+      { label: 'Find a Ride', to: '/ride/search', requiresAuth: true },
+      { label: 'Offer a Ride', to: '/ride/post', requiresAuth: true },
+      { label: 'My Bookings', to: '/bookings/my-bookings', requiresAuth: true },
+      { label: 'Upcoming Trips', to: '/upcoming-rides', requiresAuth: true },
     ],
   },
   company: {
     label: 'Company',
     links: [
-      { label: 'About Us',              to: '/about',         requiresAuth: false },
-      { label: 'How It Works',          to: '/how-it-works',  requiresAuth: false },
-      { label: 'Blog',                  to: '/blog',          requiresAuth: false },
-      { label: 'Community Guidelines',  to: '/guidelines',    requiresAuth: false },
+      { label: 'About Us', to: '/about', requiresAuth: false },
+      { label: 'How It Works', to: '/how-it-works', requiresAuth: false },
+      { label: 'Blog', to: '/blog', requiresAuth: false },
+      { label: 'Community Guidelines', to: '/guidelines', requiresAuth: false },
     ],
   },
   support: {
     label: 'Resources',
     links: [
-      { label: 'Help Centre',    to: '/help',    requiresAuth: false },
-      { label: 'FAQs',           to: '/faq',     requiresAuth: false },
-      { label: 'Contact Us',     to: '/contact', requiresAuth: false },
-      { label: 'Report an Issue',to: '/report',  requiresAuth: false },
+      { label: 'Help Centre', to: '/help', requiresAuth: false },
+      { label: 'FAQs', to: '/faq', requiresAuth: false },
+      { label: 'Contact Us', to: '/contact', requiresAuth: false },
+      { label: 'Report an Issue', to: '/report', requiresAuth: false },
     ],
   },
   legal: {
@@ -164,6 +164,38 @@ function CarEasterEgg({ onDismiss }) {
         @keyframes roadMove { from{transform:translateX(0)}to{transform:translateX(-110px)} }
       `}</style>
     </div>
+  );
+}
+
+/* ─── Indian Flag SVG ───────────────────────────────────────────────────── */
+function IndianFlag({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size * (2 / 3)}
+      viewBox="0 0 900 600"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ display: 'inline-block', verticalAlign: 'middle', borderRadius: '1px' }}
+    >
+      {/* Saffron */}
+      <rect width="900" height="200" fill="#FF9933" />
+      {/* White */}
+      <rect y="200" width="900" height="200" fill="#FFFFFF" />
+      {/* Green */}
+      <rect y="400" width="900" height="200" fill="#138808" />
+      {/* Ashoka Chakra */}
+      <circle cx="450" cy="300" r="80" fill="none" stroke="#000080" strokeWidth="10" />
+      <circle cx="450" cy="300" r="10" fill="#000080" />
+      {Array.from({ length: 24 }).map((_, i) => {
+        const angle = (i * 360) / 24;
+        const rad = (angle * Math.PI) / 180;
+        const x1 = 450 + 10 * Math.cos(rad);
+        const y1 = 300 + 10 * Math.sin(rad);
+        const x2 = 450 + 80 * Math.cos(rad);
+        const y2 = 300 + 80 * Math.sin(rad);
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#000080" strokeWidth="5" />;
+      })}
+    </svg>
   );
 }
 
@@ -303,15 +335,20 @@ function Footer() {
           </div>
         </div>
 
-        {/* ── Point 17: Bottom bar — ONLY copyright + Made in India ── */}
+        {/* ── Bottom bar — copyright + Made in India with flag ── */}
         <div className="border-t border-gray-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
               <p className="text-xs text-gray-500 text-center sm:text-left">
                 &copy; {new Date().getFullYear()} ShareMyRide. All rights reserved.
               </p>
-              <span className="text-xs text-gray-600 flex items-center gap-1">
-                Made in India
+              <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                Made with{' '}
+                <svg className="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z" />
+                </svg>
+                {' '}in India{' '}
+                <IndianFlag size={18} />
               </span>
             </div>
           </div>
