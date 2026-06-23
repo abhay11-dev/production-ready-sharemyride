@@ -291,6 +291,9 @@ function RidePost() {
   const [deletingId, setDeletingId]   = useState(null);
   const [expandedId, setExpandedId]   = useState(null);
 
+  // Scroll to top on page mount
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
+
   // ── Fetch driver's rides ──────────────────────────────────────────────────
   const fetchRides = useCallback(async () => {
     if (!user) return;

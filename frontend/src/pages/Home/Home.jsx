@@ -656,7 +656,7 @@ function EmptyRideFeed() {
       </div>
       <p className="font-semibold text-gray-800 mb-1">No rides currently available</p>
       <p className="text-sm text-gray-500 mb-4">Be the first to offer a ride and help fellow travelers.</p>
-      <Link to="/ride/post" className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">
+      <Link to="/ride/post" onClick={() => window.scrollTo({ top: 0, behavior: 'instant' })} className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
@@ -760,7 +760,7 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
                 <p className="text-xs text-gray-500 mt-0.5">{rides.length} available · updated just now</p>
               )}
             </div>
-            <Link to="/ride/search" onClick={handleNavClick} className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1">
+            <Link to="/ride/search" onClick={() => { handleNavClick(); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1">
               View all
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -829,7 +829,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
 
   const handleOfferRideClick = (e) => {
     if (!user) { e.preventDefault(); showToastThenNavigate(offerRideRef.current, '/login', 'Sign in to offer a ride'); }
-    else handleNavClick();
+    else { handleNavClick(); window.scrollTo({ top: 0, behavior: 'instant' }); }
   };
 
   const handleBrowseRidesScroll = (e) => {

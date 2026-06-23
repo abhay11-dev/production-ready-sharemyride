@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import RideCard from '../../components/ride/RideCard';
 import { searchRides } from '../../services/rideService';
 import LeafletRideMap from '../../components/map/LeafletRideMap';
@@ -21,6 +21,10 @@ function RideSearch() {
   const [connectedRides, setConnectedRides] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // Scroll to top on page mount
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
+
 
   // Map state
   const [mapCenter, setMapCenter] = useState(defaultCenter);
