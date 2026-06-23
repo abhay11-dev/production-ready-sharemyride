@@ -17,7 +17,7 @@ const createTestUser = async () => {
 
     if (user) {
       user.password = hashedPassword;
-      user.isEmailVerified = true;
+      user.emailVerified = true;
       user.verificationStatus = 'verified';
       await user.save();
       console.log('Test user updated successfully.');
@@ -27,8 +27,8 @@ const createTestUser = async () => {
         email,
         password: hashedPassword,
         phone: '9999999999',
-        isEmailVerified: true,
-        verificationStatus: 'verified',
+        emailVerified: true,
+        accountStatus: 'ACTIVE',
       });
       await user.save();
       console.log('Test user created successfully.');

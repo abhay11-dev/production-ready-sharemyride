@@ -1,6 +1,7 @@
 // src/pages/Profile/Profile.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { useSearchParams } from 'react-router-dom';
 import { updateUserProfile } from '../../services/userService';
 import {
   getVerificationStatus,
@@ -142,7 +143,8 @@ function setCachedPhotoUrl(url) {
 
 function Profile() {
   const { user, updateUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('profile');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'verification' ? 'verification' : 'profile');
 
   // ── Profile edit state ──────────────────────────────────────────────────
   const [isEditing, setIsEditing] = useState(false);

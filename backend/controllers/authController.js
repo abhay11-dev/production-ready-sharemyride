@@ -44,9 +44,9 @@ const setRefreshTokenCookie = (res, refreshToken) => {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: '/api/auth',
+    path: '/',
   });
 };
 
@@ -269,7 +269,7 @@ const refreshToken = async (req, res) => {
       );
     } catch {
       // Clear invalid cookie
-      res.clearCookie('refreshToken', { path: '/api/auth' });
+      res.clearCookie('refreshToken', { path: '/' });
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired refresh token. Please log in again.',
@@ -283,7 +283,7 @@ const refreshToken = async (req, res) => {
 
     const user = await User.findById(decoded.id);
     if (!user || !user.isActive || user.accountStatus === 'SUSPENDED') {
-      res.clearCookie('refreshToken', { path: '/api/auth' });
+      res.clearCookie('refreshToken', { path: '/' });
       return res.status(401).json({ success: false, message: 'User not found or inactive' });
     }
 
@@ -308,8 +308,8 @@ const logout = async (req, res) => {
   res.clearCookie('refreshToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    path: '/api/auth'
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    path: '/',
   });
 
   return res.status(200).json({
@@ -483,7 +483,7 @@ const deleteAccount = async (req, res) => {
     await user.save();
 
     // Clear auth cookie on account deletion
-    res.clearCookie('refreshToken', { path: '/api/auth' });
+    res.clearCookie('refreshToken', { path: '/' });
 
     return res.status(200).json({
       success: true,

@@ -262,11 +262,11 @@ function Footer() {
         </div>
 
         {/* ── Main grid ── */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-8 sm:pt-14 sm:pb-10">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-8 lg:gap-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8 sm:pt-14 sm:pb-10">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-6 gap-8 lg:gap-10">
 
-            {/* Brand column — full width on mobile */}
-            <div className="col-span-2 sm:col-span-3 lg:col-span-2">
+            {/* Brand column */}
+            <div className="col-span-2 lg:col-span-2">
               <button
                 onClick={triggerEgg}
                 className="flex items-center gap-2.5 mb-4 group w-fit focus:outline-none"
@@ -313,17 +313,17 @@ function Footer() {
               </div>
             </div>
 
-            {/* Link columns — 2 per row on mobile, 1 per col on lg */}
+            {/* Link columns */}
             {Object.values(FOOTER_LINKS).map(col => (
-              <div key={col.label} className="col-span-1">
-                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-widest mb-3 sm:mb-4">{col.label}</h4>
-                <ul className="space-y-2 sm:space-y-2.5">
+              <div key={col.label}>
+                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-widest mb-4">{col.label}</h4>
+                <ul className="space-y-2.5">
                   {col.links.map(link => (
                     <li key={link.label}>
                       <a
                         href={link.to}
                         onClick={(e) => handleFooterLink(e, link.to, link.requiresAuth, e.currentTarget)}
-                        className="text-xs sm:text-sm text-gray-400 hover:text-white transition-colors duration-150 hover:translate-x-0.5 transform inline-block cursor-pointer"
+                        className="text-sm text-gray-400 hover:text-white transition-colors duration-150 hover:translate-x-0.5 transform inline-block cursor-pointer"
                       >
                         {link.label}
                       </a>
@@ -343,7 +343,7 @@ function Footer() {
                 &copy; {new Date().getFullYear()} ShareMyRide. All rights reserved.
               </p>
               <span className="text-xs text-gray-500 flex items-center gap-1.5">
-                Made in India
+                Made in India{' '}
                 <IndianFlag size={18} />
               </span>
             </div>
