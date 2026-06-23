@@ -88,10 +88,10 @@ exports.createBlogPost = async (req, res) => {
 
         const excerpt = content.substring(0, 150) + (content.length > 150 ? '...' : '');
 
-        // If author is admin, default status is published directly. Otherwise, pending_review.
+        // For demo/immediate visibility purposes, publish all blogs directly.
         const isAdmin = req.user.role === 'admin';
-        const status = isAdmin ? 'published' : 'pending_review';
-        const publishedAt = isAdmin ? new Date() : null;
+        const status = 'published';
+        const publishedAt = new Date();
 
         const post = new BlogPost({
             title,
@@ -128,6 +128,70 @@ exports.createBlogPost = async (req, res) => {
         });
     } catch (error) {
         console.error('Create blog post error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @desc    Update user blog post
+// @route   PUT /api/blogs/:id
+// @access  Private
+exports.updateBlogPost = async (req, res) => {
+    try {
+        const { title, content, category, tags, excerpt } = req.body;
+        const post = await BlogPost.findById(req.params.id);
+
+        if (!post) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        if (post.author.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Not authorized to update this post' });
+        }
+
+        let tagArray = post.tags;
+        if (tags) {
+            if (Array.isArray(tags)) {
+                tagArray = tags;
+            } else if (typeof tags === 'string') {
+                tagArray = tags.split(',').map(t => t.trim()).filter(Boolean);
+            }
+        }
+
+        post.title = title || post.title;
+        post.content = content || post.content;
+        post.category = category || post.category;
+        post.tags = tagArray;
+        post.excerpt = excerpt || (post.content ? post.content.substring(0, 150) + '...' : post.excerpt);
+
+        await post.save();
+
+        res.status(200).json({ success: true, data: post });
+    } catch (error) {
+        console.error('Update blog error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// @desc    Delete user blog post
+// @route   DELETE /api/blogs/:id
+// @access  Private
+exports.deleteBlogPost = async (req, res) => {
+    try {
+        const post = await BlogPost.findById(req.params.id);
+
+        if (!post) {
+            return res.status(404).json({ success: false, message: 'Post not found' });
+        }
+
+        if (post.author.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Not authorized to delete this post' });
+        }
+
+        await BlogPost.findByIdAndDelete(req.params.id);
+
+        res.status(200).json({ success: true, message: 'Post deleted successfully' });
+    } catch (error) {
+        console.error('Delete blog error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };

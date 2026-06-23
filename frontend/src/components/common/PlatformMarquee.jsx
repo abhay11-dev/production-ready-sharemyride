@@ -9,9 +9,9 @@ import React, { useMemo } from 'react';
 export default function PlatformMarquee({ stats }) {
   const messages = useMemo(() => [
     { icon: '🛡️', text: 'Verified drivers · safe rides · every trip audited' },
-    { icon: '💰', text: `${stats?.totalUsers ? `${stats.totalUsers.toLocaleString('en-IN')} members` : 'Thousands'} saving up to 60% on commutes` },
-    { icon: '🌍', text: `Active across ${stats?.totalCities || '40+'} Indian cities · expanding daily` },
-    { icon: '⭐', text: `Rated ${stats?.averageRating?.toFixed(1) || '4.8'}/5 · trusted by the community` },
+    { icon: '💰', text: `${stats?.totalUsers !== undefined && stats?.totalUsers !== null ? `${stats.totalUsers.toLocaleString('en-IN')} members` : '... members'} saving up to 60% on commutes` },
+    { icon: '🌍', text: `Active across ${stats?.totalCities !== undefined && stats?.totalCities !== null ? stats.totalCities : '...'} Indian cities · expanding daily` },
+    { icon: '⭐', text: `Rated ${stats?.averageRating !== undefined && stats?.averageRating !== null ? stats.averageRating.toFixed(1) : '...'}/5 · trusted by the community` },
     { icon: '🚗', text: 'Every shared ride removes one car from the road' },
     { icon: '🤝', text: 'Real commuters · real connections · build your circle' },
   ], [stats]);

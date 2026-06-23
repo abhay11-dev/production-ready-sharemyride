@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth.jsx';
 
 function useScrollTop() { useEffect(() => { window.scrollTo(0, 0); }, []); }
 
@@ -33,20 +34,21 @@ function Reveal({ children, delay = 0, className = '' }) {
 }
 
 const PASSENGER_STEPS = [
-  { n: '01', title: 'Create Your Account', desc: 'Sign up with name, email, and password. Verify your phone number via OTP. Done in under 2 minutes — free forever.', tags: ['Email signup', 'Phone OTP', 'Free account'] },
-  { n: '02', title: 'Search for a Ride', desc: 'Enter your origin, destination, and travel date. Browse real-time results from verified drivers going your way.', tags: ['Live results', 'Date filter', 'Route matching'] },
-  { n: '03', title: 'Review the Driver', desc: 'Check the driver\'s profile, verified badge, rating history, vehicle details, and preferences before you request.', tags: ['Verified badge', 'Star ratings', 'Vehicle info'] },
-  { n: '04', title: 'Request a Seat', desc: 'Click "Request to Join". The driver reviews your profile and accepts or declines — you get notified instantly.', tags: ['Instant notification', 'Driver approval', 'In-app messaging'] },
-  { n: '05', title: 'Travel Together', desc: 'Meet at the pickup point. Share the journey and the cost. Your contribution goes directly toward the driver\'s fuel.', tags: ['Cost sharing', 'Pickup location', 'Contact shared'] },
-  { n: '06', title: 'Rate the Experience', desc: 'After arrival, rate your driver. Your honest review helps build a trustworthy community for every future traveler.', tags: ['1-5 stars', 'Written review', 'Community trust'] },
+  { n: '01', title: 'Create & Verify Account', desc: 'Sign up in seconds. Verify your email and complete your profile. Our system ensures a trusted community from step one.', tags: ['Instant signup', 'Email verification', 'Secure platform'] },
+  { n: '02', title: 'Find Your Perfect Ride', desc: 'Search with exact origin and destination. Use our advanced filters for dates, time, and preferences. See real-time matches instantly.', tags: ['Advanced search', 'Live matches', 'Smart filtering'] },
+  { n: '03', title: 'Review Driver & Vehicle', desc: 'Total transparency. View the driver\'s verified badge, comprehensive ratings, vehicle details, and exact route before requesting.', tags: ['Verified profiles', 'Full transparency', 'Vehicle details'] },
+  { n: '04', title: 'Book Your Seat', desc: 'Send a request with one click. Once the driver approves, your seat is confirmed and you get instant notifications with trip details.', tags: ['One-click request', 'Instant alerts', 'Guaranteed seat'] },
+  { n: '05', title: 'Travel & Share Costs', desc: 'Coordinate easily via in-app features. Enjoy a comfortable ride and simply split the fuel costs directly—fair and affordable.', tags: ['Easy coordination', 'Comfortable ride', 'Fair cost split'] },
+  { n: '06', title: 'Rate & Review', desc: 'After the trip, rate your experience. Your feedback directly influences driver standing and keeps our community safe and high-quality.', tags: ['Impactful feedback', 'Quality control', 'Community driven'] },
 ];
 
 const DRIVER_STEPS = [
-  { n: '01', title: 'Complete Verification', desc: 'Submit your Aadhaar, driving licence, and profile photo. Our team reviews and approves within 24-48 hours.', tags: ['Aadhaar check', 'Licence check', '24-48h approval'] },
-  { n: '02', title: 'Post Your Ride', desc: 'Enter origin, destination, date, departure time, available seats, and your cost-per-seat. Goes live instantly.', tags: ['Set your price', 'Add waypoints', 'Live instantly'] },
-  { n: '03', title: 'Manage Requests', desc: 'Passengers request seats. Review their profile and rating, then accept or decline. You are in full control.', tags: ['Passenger profiles', 'Accept / decline', 'Full control'] },
-  { n: '04', title: 'Complete the Ride', desc: 'Pick up confirmed passengers, travel together, and collect the agreed cost-share at the destination.', tags: ['Cost sharing', 'Fuel recovery', 'Community building'] },
-  { n: '05', title: 'Build Your Reputation', desc: 'Earn ratings from passengers. High-rated drivers get priority placement in search results and community trust.', tags: ['Priority listing', 'Trust score', 'Community recognition'] },
+  { n: '01', title: 'Driver Verification', desc: 'Submit your driving credentials securely. Our automated system and team review ensures you get verified and ready to drive quickly.', tags: ['Secure upload', 'Fast verification', 'Trusted status'] },
+  { n: '02', title: 'Publish Your Route', desc: 'Enter your start, end, date, and available seats. Our system calculates optimal cost-sharing. Your ride goes live to thousands instantly.', tags: ['Smart pricing', 'Instant visibility', 'Flexible routes'] },
+  { n: '03', title: 'Approve Passengers', desc: 'Receive booking requests in real-time. Review passenger profiles and ratings to decide who rides with you. Complete control.', tags: ['Real-time requests', 'Profile review', 'Full control'] },
+  { n: '04', title: 'The Shared Journey', desc: 'Pick up your passengers at agreed points. Share the journey, reduce traffic, and make your daily commute much more enjoyable.', tags: ['Smooth pickup', 'Reduce traffic', 'Better commute'] },
+  { n: '05', title: 'Recover Fuel Costs', desc: 'Receive passenger contributions seamlessly. Recover your driving expenses while helping others travel affordably.', tags: ['Expense recovery', 'Seamless process', 'Win-win'] },
+  { n: '06', title: 'Grow Your Reputation', desc: 'Earn top ratings for safe and pleasant rides. Higher ratings mean your future rides fill up even faster on the platform.', tags: ['Top ratings', 'Priority listing', 'Platform growth'] },
 ];
 
 const SAFETY_POINTS = [
@@ -60,6 +62,7 @@ const SAFETY_POINTS = [
 
 export default function HowItWorks() {
   useScrollTop();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('passenger');
 
   const steps = activeTab === 'passenger' ? PASSENGER_STEPS : DRIVER_STEPS;
@@ -68,20 +71,20 @@ export default function HowItWorks() {
     <div className="min-h-screen bg-gray-50">
 
       {/* ── Hero — consistent blue (Point 9) ── */}
-      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden">
+      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-screen flex flex-col justify-center">
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-20 -right-20 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-400/10 rounded-full blur-3xl" />
+          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-500/10 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2" />
         </div>
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center">
+        <div className="relative w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
             The Journey
           </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-5 tracking-tight">
-            How ShareMyRide<br />
-            <span className="text-green-400">actually works</span>
+          <h1 className="text-4xl sm:text-5xl lg:text-7xl font-extrabold text-white leading-tight mb-6 tracking-tight">
+            How ShareMyRide<br className="hidden sm:block" />
+            <span className="text-green-400"> actually works</span>
           </h1>
-          <p className="text-lg text-blue-100 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-lg sm:text-xl text-blue-100 leading-relaxed max-w-2xl mx-auto px-2 sm:px-0">
             From sign-up to shared journey — a clear, visual walkthrough for passengers and drivers.
           </p>
         </div>
@@ -195,14 +198,14 @@ export default function HowItWorks() {
             <p className="text-blue-100 mb-8 text-sm leading-relaxed">
               Join thousands of travelers already sharing rides, saving money, and building community across India.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link to="/ride/search" onClick={() => window.scrollTo(0,0)} className="px-7 py-3 bg-white text-blue-700 font-semibold rounded-xl hover:bg-blue-50 transition-colors text-sm">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
+              <Link to={user ? "/ride/search" : "/login"} onClick={() => window.scrollTo(0,0)} className="px-8 py-4 bg-white text-blue-700 text-sm sm:text-base font-bold rounded-xl hover:bg-blue-50 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">
                 Find a Ride
               </Link>
-              <Link to="/ride/post" onClick={() => window.scrollTo(0,0)} className="px-7 py-3 bg-green-500 text-white font-semibold rounded-xl hover:bg-green-600 transition-colors text-sm">
+              <Link to={user ? "/ride/post" : "/login"} onClick={() => window.scrollTo(0,0)} className="px-8 py-4 bg-green-500 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-green-600 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">
                 Offer a Ride
               </Link>
-              <Link to="/faq" onClick={() => window.scrollTo(0,0)} className="px-7 py-3 border border-white/30 text-white font-semibold rounded-xl hover:bg-white/10 transition-colors text-sm">
+              <Link to="/faq" onClick={() => window.scrollTo(0,0)} className="px-8 py-4 border border-white/30 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-white/10 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">
                 Read FAQs
               </Link>
             </div>

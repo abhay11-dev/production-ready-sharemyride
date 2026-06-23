@@ -6,6 +6,7 @@ const inquirySchema = new mongoose.Schema(
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
         name: { type: String, required: true, trim: true },
         email: { type: String, required: true, lowercase: true, trim: true },
+        phone: { type: String, default: null },
 
         /* ── What they submitted ── */
         type: {
@@ -30,6 +31,7 @@ const inquirySchema = new mongoose.Schema(
                 'community_report',
                 'support_request',
             ],
+            default: 'contact_general'
         },
         subject: { type: String, required: true, trim: true },
         message: { type: String, required: true },
@@ -50,24 +52,24 @@ const inquirySchema = new mongoose.Schema(
         ticketNumber: { type: String, unique: true },
         status: {
             type: String,
-            enum: ['open', 'in_progress', 'waiting_on_user', 'resolved', 'closed', 'archived'],
+            enum: ['open', 'in_progress', 'waiting_on_user', 'resolved', 'closed', 'archived', 'seen', 'replied'],
             default: 'open',
         },
-        priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
+        priority: { type: String, enum: ['low', 'medium', 'high', 'urgent', 'critical'], default: 'medium' },
         assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
         /* ── Admin workflow ── */
         internalNotes: [
             {
                 note: String,
-                addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+                addedBy: { type: String }, // support email or admin username
                 addedAt: { type: Date, default: Date.now },
             },
         ],
         adminReplies: [
             {
                 message: String,
-                sentBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+                sentBy: { type: String }, // admin email or username
                 sentAt: { type: Date, default: Date.now },
                 emailSent: { type: Boolean, default: false },
             },
@@ -78,6 +80,13 @@ const inquirySchema = new mongoose.Schema(
         emailSentToUser: { type: Boolean, default: false },
         confirmationEmailAt: Date,
         adminEmailAt: Date,
+
+        emailsSent: {
+            confirmationEmail: { type: Boolean, default: false },
+            confirmationEmailAt: Date,
+            adminAlertEmail: { type: Boolean, default: false },
+            adminAlertEmailAt: Date,
+        },
 
         /* ── Soft-delete / archive ── */
         isArchived: { type: Boolean, default: false },
@@ -99,6 +108,17 @@ inquirySchema.pre('save', async function (next) {
     }
     next();
 });
+
+/* ── Virtuals for backward compatibility with ticketId and inquiryType ── */
+inquirySchema.virtual('ticketId').get(function () {
+    return this.ticketNumber;
+});
+inquirySchema.virtual('inquiryType').get(function () {
+    return this.type;
+});
+
+inquirySchema.set('toJSON', { virtuals: true });
+inquirySchema.set('toObject', { virtuals: true });
 
 /* ── Indexes ── */
 inquirySchema.index({ status: 1, createdAt: -1 });

@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require("cors");
+const cookieParser = require('cookie-parser');
 const path = require('path');
 
 const app = express();
@@ -38,6 +39,7 @@ console.log('🔐 JWT_SECRET loaded:', process.env.JWT_SECRET ? 'YES ✅' : 'NO 
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // ← Required to read HttpOnly refresh-token cookie
 
 // MongoDB connection with better error handling
 let isConnected = false;

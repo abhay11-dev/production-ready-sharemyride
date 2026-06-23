@@ -4,6 +4,8 @@ const {
     getPublishedBlogs,
     getBlogBySlug,
     createBlogPost,
+    updateBlogPost,
+    deleteBlogPost,
     likeBlogPost,
     commentBlogPost,
     getAllBlogsAdmin,
@@ -20,6 +22,8 @@ router.get('/post/:slug', getBlogBySlug);
 
 // Authenticated user routes
 router.post('/', protect, createBlogPost);
+router.put('/:id', protect, updateBlogPost);
+router.delete('/:id', protect, deleteBlogPost);
 router.post('/:id/like', protect, likeBlogPost);
 router.post('/:id/comments', protect, commentBlogPost);
 

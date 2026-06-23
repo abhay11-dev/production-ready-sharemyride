@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 
 const FAQS = [
@@ -112,6 +112,20 @@ export default function FAQ() {
     const [search, setSearch] = useState('');
     const [activeCategory, setActiveCategory] = useState('All');
     const [openItem, setOpenItem] = useState(null);
+    const faqSectionRef = useRef(null);
+
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, []);
+
+    useEffect(() => {
+        if (search || activeCategory !== 'All') {
+            const timer = setTimeout(() => {
+                faqSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [search, activeCategory]);
 
     const categories = ['All', ...FAQS.map(f => f.category)];
 
@@ -134,8 +148,12 @@ export default function FAQ() {
         <div className="min-h-screen bg-gray-50">
 
             {/* ── Hero ── */}
-            <section className="bg-gradient-to-br from-blue-700 to-blue-900 py-16 sm:py-24">
-                <div className="max-w-3xl mx-auto px-4 text-center">
+            <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-[90vh] flex flex-col justify-center">
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute -top-20 -right-20 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl" />
+                    <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-400/10 rounded-full blur-3xl" />
+                </div>
+                <div className="relative max-w-3xl mx-auto px-4 text-center mt-12 sm:mt-0">
                     <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-3">FAQ</div>
                     <h1 className="text-3xl sm:text-5xl font-extrabold text-white mb-5 tracking-tight">
                         Frequently asked questions
@@ -158,7 +176,7 @@ export default function FAQ() {
             </section>
 
             {/* ── Category pills ── */}
-            <div className="bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm">
+            <div ref={faqSectionRef} className="bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex gap-2 overflow-x-auto">
                     {categories.map(cat => {
                         const group = FAQS.find(f => f.category === cat);
@@ -247,10 +265,10 @@ export default function FAQ() {
                     <div className="text-xl font-bold text-gray-900 mb-2">Can't find what you're looking for?</div>
                     <p className="text-gray-500 text-sm mb-7">Our support team is available on weekdays 9am – 6pm IST.</p>
                     <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                        <Link to="/help" className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors text-sm">
+                        <Link to="/help" onClick={() => window.scrollTo(0, 0)} className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors text-sm">
                             Help Centre
                         </Link>
-                        <Link to="/contact" className="px-6 py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors text-sm">
+                        <Link to="/contact" onClick={() => window.scrollTo(0, 0)} className="px-6 py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors text-sm">
                             Contact Us
                         </Link>
                     </div>

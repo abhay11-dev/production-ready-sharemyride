@@ -14,15 +14,41 @@ function useScrollTop() {
 }
 
 // Blog Card Component
-function BlogCard({ blog, onLike, onSelect }) {
+function BlogCard({ blog, onLike, onSelect, onEdit, onDelete, currentUser }) {
+  const isAuthor = currentUser && (currentUser._id === blog.author?._id || currentUser.id === blog.author?._id);
+
   return (
-    <div 
-      className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer group"
+    <div
+      className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer group relative"
       onClick={() => onSelect(blog)}
     >
+      {/* Edit / Delete actions for Author */}
+      {isAuthor && (
+        <div className="absolute top-3 right-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onEdit(blog); }} 
+            className="p-1.5 bg-white/90 rounded-lg text-blue-600 hover:bg-white shadow-sm"
+            title="Edit Blog"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(blog); }} 
+            className="p-1.5 bg-white/90 rounded-lg text-red-600 hover:bg-white shadow-sm"
+            title="Delete Blog"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       <div className="h-40 bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center">
-        <svg className="w-16 h-16 text-white/40" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.3A4.5 4.5 0 1113.5 13H11V9.413l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z" />
+        <svg className="w-16 h-16 text-white/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C6.5 6.253 2 10.998 2 17s4.5 10.747 10 10.747c5.5 0 10-4.999 10-11.747 0-5.502-4.5-10.747-10-10.747z" />
         </svg>
       </div>
 
@@ -35,7 +61,6 @@ function BlogCard({ blog, onLike, onSelect }) {
         <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">
           {blog.title}
         </h3>
-        <p className="text-sm text-gray-600 mb-4 line-clamp-2">{blog.excerpt || blog.content?.substring(0, 100)}</p>
 
         <div className="flex items-center gap-3 pt-4 border-t border-gray-100 text-sm">
           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-xs font-bold text-blue-600">
@@ -61,26 +86,26 @@ export default function Blog() {
   useScrollTop();
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedBlog, setSelectedBlog] = useState(null);
   const [showWriteForm, setShowWriteForm] = useState(false);
-  const [writeForm, setWriteForm] = useState({ title: '', excerpt: '', content: '', tags: '' });
+  const [editingBlogId, setEditingBlogId] = useState(null);
+  const [writeForm, setWriteForm] = useState({ title: '', content: '', tags: '', category: 'Travel Stories' });
   const [submitting, setSubmitting] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [sortBy, setSortBy] = useState('newest');
 
   useEffect(() => {
     loadBlogs();
-  }, [sortBy]);
+  }, []);
 
   const loadBlogs = async () => {
     try {
       setLoading(true);
       // Try to load from API, fall back to empty if endpoint doesn't exist
       try {
-        const res = await api.get('/blogs', { params: { sort: sortBy, limit: 20 } });
+        const res = await api.get('/blogs', { params: { limit: 20 } });
         setBlogs(res.data?.data || []);
       } catch (err) {
         // API endpoint not ready, show placeholder message
@@ -98,12 +123,14 @@ export default function Blog() {
       return;
     }
     try {
-      await api.post(`/blogs/${blogId}/like`);
+      const res = await api.post(`/blogs/${blogId}/like`);
       loadBlogs();
+      if (selectedBlog && (selectedBlog._id === blogId || selectedBlog.id === blogId)) {
+        setSelectedBlog(prev => ({ ...prev, likes: res.data.likeCount }));
+      }
       toast.success('Liked!');
     } catch (err) {
-      // Silently fail if endpoint not ready
-      console.log('Like feature coming soon');
+      toast.error(err.response?.data?.message || 'Failed to like blog');
     }
   };
 
@@ -120,20 +147,53 @@ export default function Blog() {
 
     setSubmitting(true);
     try {
-      await api.post('/blogs', {
-        title: writeForm.title,
-        excerpt: writeForm.excerpt || writeForm.content.substring(0, 100),
-        content: writeForm.content,
-        tags: writeForm.tags.split(',').map(t => t.trim()).filter(t => t),
-      });
-      setWriteForm({ title: '', excerpt: '', content: '', tags: '' });
+      if (editingBlogId) {
+        await api.put(`/blogs/${editingBlogId}`, {
+          title: writeForm.title,
+          content: writeForm.content,
+          category: writeForm.category,
+          tags: writeForm.tags.split(',').map(t => t.trim()).filter(t => t),
+        });
+        toast.success('Blog updated successfully!');
+      } else {
+        await api.post('/blogs', {
+          title: writeForm.title,
+          content: writeForm.content,
+          category: writeForm.category,
+          tags: writeForm.tags.split(',').map(t => t.trim()).filter(t => t),
+        });
+        toast.success('Blog published!');
+      }
+      setWriteForm({ title: '', content: '', tags: '', category: 'Travel Stories' });
+      setEditingBlogId(null);
       setShowWriteForm(false);
-      toast.success('Blog published!');
       loadBlogs();
     } catch (err) {
-      toast.error('Blog system coming soon!');
+      toast.error(err.response?.data?.message || 'Failed to save blog');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleEditInit = (blog) => {
+    setWriteForm({
+      title: blog.title || '',
+      content: blog.content || '',
+      tags: blog.tags ? blog.tags.join(', ') : '',
+      category: blog.category || 'Travel Stories'
+    });
+    setEditingBlogId(blog._id || blog.id);
+    setShowWriteForm(true);
+  };
+
+  const handleDeleteBlog = async (blog) => {
+    if (!window.confirm('Are you sure you want to delete this blog?')) return;
+    try {
+      await api.delete(`/blogs/${blog._id || blog.id}`);
+      toast.success('Blog deleted');
+      loadBlogs();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete blog');
     }
   };
 
@@ -145,43 +205,53 @@ export default function Blog() {
     }
 
     try {
-      await api.post(`/blogs/${selectedBlog._id}/comments`, { text: newComment });
+      const res = await api.post(`/blogs/${selectedBlog._id}/comments`, { content: newComment });
       setNewComment('');
       toast.success('Comment added!');
+      
+      // Update local state to reflect new comment immediately
+      if (res.data?.data) {
+        setSelectedBlog(prev => ({
+          ...prev,
+          comments: [...(prev.comments || []), res.data.data]
+        }));
+      }
       loadBlogs();
     } catch (err) {
-      toast.error('Comment system coming soon!');
+      toast.error(err.response?.data?.message || 'Failed to add comment');
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden pt-24 pb-16">
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute -top-24 -right-24 w-96 h-96 bg-white/20 rounded-full blur-3xl" />
+      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden py-32 sm:py-48 flex flex-col items-center justify-center">
+        <div className="absolute inset-0 opacity-20 pointer-events-none">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-white/20 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-500/10 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2" />
         </div>
 
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
+        <div className="relative w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center flex flex-col items-center justify-center space-y-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest">
             Community Blog
           </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white mb-4 tracking-tight">
-            Stories from the Road
+          <h1 className="text-4xl sm:text-5xl lg:text-7xl font-extrabold text-white tracking-tight leading-tight">
+            Stories from<br className="hidden sm:block" />
+            <span className="text-green-400"> the Road</span>
           </h1>
-          <p className="text-blue-100 text-lg max-w-2xl mx-auto mb-8">
-            Travel diaries, carpooling wisdom, and sustainability insights from the ShareMyRide community
+          <p className="text-lg sm:text-xl text-blue-100 leading-relaxed max-w-2xl mx-auto px-2 sm:px-0">
+            Travel diaries, carpooling wisdom, and sustainability insights from the ShareMyRide community.
           </p>
 
           {user && (
             <button
-              onClick={() => setShowWriteForm(!showWriteForm)}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-white text-blue-600 rounded-xl font-semibold hover:bg-blue-50 transition-colors shadow-lg"
+              onClick={() => setShowWriteForm(true)}
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white text-blue-700 text-sm sm:text-base rounded-xl font-bold hover:bg-blue-50 transition-colors shadow-lg w-full sm:w-auto justify-center"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
-              Write a Blog
+              Start Writing
             </button>
           )}
         </div>
@@ -192,9 +262,9 @@ export default function Blog() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-96 overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">Write a Blog</h2>
+              <h2 className="text-2xl font-bold text-gray-900">{editingBlogId ? 'Edit Blog' : 'Write a Blog'}</h2>
               <button
-                onClick={() => setShowWriteForm(false)}
+                onClick={() => { setShowWriteForm(false); setEditingBlogId(null); setWriteForm({ title: '', content: '', tags: '', category: 'Travel Stories' }); }}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -215,15 +285,19 @@ export default function Blog() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">Summary</label>
-                <input
-                  type="text"
-                  value={writeForm.excerpt}
-                  onChange={(e) => setWriteForm({ ...writeForm, excerpt: e.target.value })}
-                  placeholder="Brief summary..."
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                />
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-900 mb-2">Category *</label>
+                <select
+                  value={writeForm.category}
+                  onChange={(e) => setWriteForm({ ...writeForm, category: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
+                >
+                  <option value="Travel Stories">Travel Stories</option>
+                  <option value="Carpooling Tips">Carpooling Tips</option>
+                  <option value="Community Stories">Community Stories</option>
+                  <option value="Sustainability">Sustainability</option>
+                  <option value="Industry Insights">Industry Insights</option>
+                </select>
               </div>
 
               <div>
@@ -258,7 +332,7 @@ export default function Blog() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowWriteForm(false)}
+                  onClick={() => { setShowWriteForm(false); setEditingBlogId(null); setWriteForm({ title: '', content: '', tags: '', category: 'Travel Stories' }); }}
                   className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
                 >
                   Cancel
@@ -270,19 +344,11 @@ export default function Blog() {
       )}
 
       {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Sort Options */}
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-gray-900">Latest Stories</h2>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-          >
-            <option value="newest">Newest</option>
-            <option value="trending">Trending</option>
-            <option value="rating">Top Rated</option>
-          </select>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+
+        {/* Sort Options Removed */}
+        <div className="mb-8">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">Latest Stories</h2>
         </div>
 
         {loading ? (
@@ -291,20 +357,32 @@ export default function Blog() {
             <p className="text-gray-600 mt-4">Loading stories...</p>
           </div>
         ) : blogs.length === 0 ? (
-          <div className="text-center py-16">
-            <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C6.5 6.253 2 10.998 2 17s4.5 10.747 10 10.747c5.5 0 10-4.999 10-11.747 0-5.502-4.5-10.747-10-10.747z" />
-            </svg>
-            <p className="text-gray-600 text-lg mb-4">No blogs yet. Be the first to share your story!</p>
-            {user && (
+          <div className="text-center py-20 bg-white rounded-3xl border border-gray-100 shadow-sm max-w-3xl mx-auto px-4 mt-8">
+            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-blue-100">
+              <svg className="w-12 h-12 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </div>
+            <h3 className="text-3xl font-extrabold text-gray-900 mb-4">No blogs yet</h3>
+            <p className="text-gray-500 text-lg mb-10 max-w-lg mx-auto">
+              Our community is just getting started. Be the pioneer and share the first story about your travel experiences.
+            </p>
+            {user ? (
               <button
                 onClick={() => setShowWriteForm(true)}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-sm"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
                 Write the First Blog
+              </button>
+            ) : (
+              <button
+                onClick={() => { window.scrollTo(0, 0); navigate('/login'); }}
+                className="inline-flex items-center gap-2 px-8 py-4 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 transition-colors shadow-sm"
+              >
+                Log in to Share Your Story
               </button>
             )}
           </div>
@@ -313,13 +391,15 @@ export default function Blog() {
             {blogs.map((blog) => (
               <div
                 key={blog._id || blog.id}
-                onClick={() => setSelectedBlog(blog)}
-                className="cursor-pointer"
+                className="relative"
               >
                 <BlogCard
                   blog={blog}
+                  currentUser={user}
                   onLike={() => handleLikeBlog(blog._id || blog.id)}
                   onSelect={() => setSelectedBlog(blog)}
+                  onEdit={handleEditInit}
+                  onDelete={handleDeleteBlog}
                 />
               </div>
             ))}
@@ -424,7 +504,7 @@ export default function Blog() {
                           <p className="text-sm font-semibold text-gray-900">{comment.author?.name || 'User'}</p>
                           <p className="text-xs text-gray-500">{new Date(comment.createdAt).toLocaleDateString()}</p>
                         </div>
-                        <p className="text-sm text-gray-700 ml-10">{comment.text}</p>
+                        <p className="text-sm text-gray-700 ml-10">{comment.content}</p>
                       </div>
                     ))
                   ) : (

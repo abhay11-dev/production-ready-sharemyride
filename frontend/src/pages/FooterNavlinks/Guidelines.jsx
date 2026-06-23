@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import api from '../../config/api';
 
 function useReveal(threshold = 0.12) {
     const ref = useRef(null);
@@ -35,7 +36,7 @@ const PRINCIPLES = [
         icon: '🤝',
         title: 'Respect',
         color: 'blue',
-        desc: 'Every person on this platform — regardless of gender, religion, background, or destination — deserves to be treated with dignity. No exceptions.',
+        desc: 'Every person on this platform — regardless of gender, religion, background, or destination — deserves to be treated with dignity.',
         rules: ['Use polite, inclusive language at all times', 'Respect personal space and privacy during rides', 'Do not discriminate based on identity or appearance'],
     },
     {
@@ -114,7 +115,7 @@ const CONSEQUENCES = [
     { level: 'Warning', color: 'amber', desc: 'First-time, minor violations receive a formal warning with a clear explanation of what went wrong.' },
     { level: 'Temporary Suspension', color: 'orange', desc: 'Repeated minor violations or a single serious violation result in a temporary account suspension (7–30 days).' },
     { level: 'Permanent Ban', color: 'red', desc: 'Severe violations (harassment, fraud, safety endangerment) result in permanent removal from the platform.' },
-    { level: 'Legal Referral', color: 'gray', desc: 'Criminal behaviour — including assault, fraud, or threats — is reported to law enforcement authorities.' },
+    { level: 'Legal Referral', color: 'gray', desc: 'Criminal behaviour — including assault, fraud, or threats — is reported to law enforcement authorities. Safety is must and always first.' },
 ];
 
 const consequenceColors = {
@@ -126,17 +127,51 @@ const consequenceColors = {
 
 export default function Guidelines() {
     const [openPrinciple, setOpenPrinciple] = useState(null);
+    const [platformStats, setPlatformStats] = useState({
+        users: '...',
+        rating: '...',
+        cities: '...',
+        rides: '...'
+    });
+
+    useEffect(() => {
+        window.scrollTo(0, 0);
+
+        const fetchStats = async () => {
+            try {
+                const res = await api.get('/stats/home');
+                if (res.data?.success) {
+                    const data = res.data.data;
+                    setPlatformStats({
+                        users: `${(data.totalUsers || 0).toLocaleString()}`,
+                        rating: `${(data.averageRating || 0).toFixed(1)}★`,
+                        cities: `${(data.totalCities || 0).toLocaleString()}`,
+                        rides: `${(data.totalRides || 0).toLocaleString()}`
+                    });
+                }
+            } catch (err) {
+                console.error("Failed to fetch platform stats", err);
+                setPlatformStats({
+                    users: '0',
+                    rating: '0.0★',
+                    cities: '0',
+                    rides: '0'
+                });
+            }
+        };
+        fetchStats();
+    }, []);
 
     return (
         <div className="min-h-screen bg-gray-50">
 
             {/* ── Hero ── */}
-            <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden">
+            <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-[90vh] flex flex-col justify-center">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute -top-20 -right-20 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl" />
                     <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-400/10 rounded-full blur-3xl" />
                 </div>
-                <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center">
+                <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center mt-12 sm:mt-0">
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
                         Community First
                     </div>
@@ -163,10 +198,10 @@ export default function Guidelines() {
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                         {[
-                            { value: '6,800+', label: 'Verified Members' },
-                            { value: '4.8★', label: 'Avg. Community Rating' },
-                            { value: '<24h', label: 'Report Resolution Time' },
-                            { value: '99.2%', label: 'Rides Completed Safely' },
+                            { value: platformStats.users, label: 'Verified Members' },
+                            { value: platformStats.rating, label: 'Avg. Community Rating' },
+                            { value: platformStats.cities, label: 'Cities Covered' },
+                            { value: platformStats.rides, label: 'Rides Shared' },
                         ].map(s => (
                             <div key={s.label}>
                                 <div className="text-2xl font-extrabold text-blue-600">{s.value}</div>

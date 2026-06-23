@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../config/api.js';
+import { useAuth } from '../../hooks/useAuth.jsx';
 
 /* ─── Scroll-to-top on mount (Point 10) ── */
 function useScrollTop() {
@@ -56,11 +57,8 @@ function Counter({ target, suffix = '', decimals = 0 }) {
 }
 
 const TIMELINE = [
-  { year: '2022', title: 'The Idea', desc: 'Frustrated by expensive solo commutes and empty car seats, our founder envisioned a platform where trust between strangers could fill those seats — and cut costs and carbon together.' },
-  { year: '2023', title: 'First Version', desc: 'A basic ride-listing MVP went live. Early users started sharing rides between cities, building micro-communities of commuters who became regulars.' },
-  { year: '2024', title: 'Community Grows', desc: 'Driver verification, real-time booking, and a rating system launched. Thousands of rides happened. The community started self-policing with integrity.' },
-  { year: '2025', title: 'Platform Matures', desc: 'Waypoint routing, cost-sharing calculators, and safety features launched. ShareMyRide became the go-to platform for intercity shared travel across India.' },
-  { year: '2026+', title: 'The Road Ahead', desc: 'Corporate carpooling, EV-first routing, and rural connectivity. Scaling to every district in India, one shared seat at a time.' },
+  { year: '2025', title: 'The Idea', desc: 'The real story began when our founder\'s father highlighted a common problem. As an aspiring software developer wanting to give back to those who provided the right to education, the founder started building the platform.' },
+  { year: '2026', title: 'Business Ready', desc: 'We are now business-level ready. Our platform is polished, fully prepared for the market, and ready to connect communities by making shared mobility accessible to everyone.' }
 ];
 
 const VALUES = [
@@ -74,6 +72,7 @@ const VALUES = [
 
 export default function About() {
   useScrollTop();
+  const { user } = useAuth();
 
   /* Point 6: real dynamic stats */
   const [stats, setStats] = useState({ totalRides: 0, totalCities: 0, totalUsers: 0, averageRating: 0, loading: true });
@@ -83,9 +82,9 @@ export default function About() {
       .then(res => {
         const d = res.data?.data || res.data || {};
         setStats({
-          totalRides:    d.totalRides    || 0,
-          totalCities:   d.totalCities   || 0,
-          totalUsers:    d.totalUsers    || 0,
+          totalRides: d.totalRides || 0,
+          totalCities: d.totalCities || 0,
+          totalUsers: d.totalUsers || 0,
           averageRating: d.averageRating || 0,
           loading: false,
         });
@@ -97,20 +96,20 @@ export default function About() {
     <div className="min-h-screen bg-gray-50">
 
       {/* ── Hero — consistent blue (Point 9) ── */}
-      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden">
+      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-screen flex flex-col justify-center">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
           <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-500/10 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2" />
         </div>
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center">
+        <div className="relative w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
             Our Story
           </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6 tracking-tight">
-            We built the ride-sharing<br />
-            <span className="text-green-400">India actually needed.</span>
+          <h1 className="text-4xl sm:text-5xl lg:text-7xl font-extrabold text-white leading-tight mb-6 tracking-tight">
+            We built the ride-sharing<br className="hidden sm:block" />
+            <span className="text-green-400"> India actually needed.</span>
           </h1>
-          <p className="text-lg sm:text-xl text-blue-100 leading-relaxed max-w-2xl mx-auto">
+          <p className="text-lg sm:text-xl text-blue-100 leading-relaxed max-w-2xl mx-auto px-2 sm:px-0">
             Not a taxi app. Not a logistics startup. A community of people who believe that empty car seats are a problem worth solving — together.
           </p>
         </div>
@@ -234,7 +233,7 @@ export default function About() {
           <div className="grid sm:grid-cols-2 gap-6">
             {[
               { label: 'Mission', text: 'Make shared mobility the default choice for every intercity and intracity journey in India — by building a platform rooted in trust, affordability, and community.' },
-              { label: 'Vision', text: 'A future where every car seat is a social asset, not wasted space. Where travel is an opportunity to connect, not just commute.' },
+              { label: 'Vision', text: 'A future where every car seat is a social asset, not wasted space. Where travel is an opportunity to connect, not just commute.Not just carpooling - building communities.' },
             ].map((item, i) => (
               <Reveal key={item.label} delay={i * 0.1}>
                 <div className="bg-white/10 rounded-2xl p-7 text-left border border-white/10">
@@ -276,9 +275,9 @@ export default function About() {
           <Reveal>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4">Ready to ride with the community?</h2>
             <p className="text-gray-500 mb-8">Find a ride or offer yours — every seat filled is a small win for everyone.</p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link to="/ride/search" onClick={() => window.scrollTo(0,0)} className="px-7 py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">Find a Ride</Link>
-              <Link to="/ride/post" onClick={() => window.scrollTo(0,0)} className="px-7 py-3 bg-green-500 text-white font-semibold rounded-xl hover:bg-green-600 transition-colors">Offer a Ride</Link>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
+              <Link to={user ? "/ride/search" : "/login"} onClick={() => window.scrollTo(0, 0)} className="px-8 py-4 bg-blue-600 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">Find a Ride</Link>
+              <Link to={user ? "/ride/post" : "/login"} onClick={() => window.scrollTo(0, 0)} className="px-8 py-4 bg-green-500 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-green-600 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">Offer a Ride</Link>
             </div>
           </Reveal>
         </div>

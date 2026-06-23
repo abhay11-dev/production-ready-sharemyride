@@ -81,7 +81,10 @@ function Car3D() {
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.2;
-        if (mountRef.current) mountRef.current.appendChild(renderer.domElement);
+        if (mountRef.current) {
+          mountRef.current.innerHTML = ''; // Prevent duplication in strict mode
+          mountRef.current.appendChild(renderer.domElement);
+        }
 
         // Lights
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
@@ -850,64 +853,64 @@ function PublicLanding({ stats, rides, ridesLoading }) {
   return (
     <div className="min-h-screen bg-white">
 
-      {/* ── HERO — fills viewport height exactly ── */}
+      {/* ── HERO — fills viewport height exactly minus navbar ── */}
       <section
         ref={heroRef}
         className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-500 overflow-hidden flex flex-col"
-        style={{ minHeight: '100svh' }}
+        style={{ height: 'calc(100svh - 64px)', minHeight: '550px' }}
       >
         <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 pointer-events-none" aria-hidden="true" />
         <div className="absolute -bottom-16 -left-16 w-80 h-80 rounded-full bg-green-500/10 pointer-events-none" aria-hidden="true" />
 
         {/* Main hero content — grows to fill available space above marquee */}
-        <div className="flex-1 flex items-center">
-          <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-0">
+        <div className="flex-1 flex items-center pt-16 sm:pt-0 pb-4 sm:pb-0 overflow-y-auto custom-scrollbar">
+          <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col lg:flex-row lg:items-center lg:gap-0 w-full">
 
               {/* Left: text + search */}
-              <div className="lg:w-1/2 xl:w-[52%]">
-                <div className="inline-flex items-center gap-2 bg-white/15 border border-white/20 text-blue-100 text-xs font-semibold px-3 py-1.5 rounded-full mb-4 sm:mb-5 backdrop-blur-sm">
+              <div className="lg:w-1/2 xl:w-[52%] flex flex-col justify-center min-h-[min(500px,65vh)]">
+                <div className="inline-flex items-center gap-2 bg-white/15 border border-white/20 text-blue-100 text-[10px] sm:text-xs font-semibold px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3 sm:mb-5 backdrop-blur-sm self-start">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                   Community carpooling · India
                 </div>
 
-                <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight tracking-tight mb-3 sm:mb-4">
+                <h1 className="text-[26px] leading-[1.1] sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight mb-2 sm:mb-4">
                   Your next trip is{' '}
                   <span className="text-green-300">already on its way.</span>
                 </h1>
-                <p className="text-blue-100 text-sm sm:text-base lg:text-lg leading-relaxed mb-5 sm:mb-8 max-w-xl">
+                <p className="text-blue-100 text-xs sm:text-base lg:text-lg leading-relaxed mb-4 sm:mb-8 max-w-xl">
                   Connect with verified drivers going your way. Share the cost, halve the traffic.
                 </p>
 
-                <form onSubmit={handleSearch} className="bg-white rounded-2xl p-2 shadow-2xl shadow-blue-900/30 flex flex-col gap-2 max-w-xl">
-                  <div className="flex gap-2">
+                <form onSubmit={handleSearch} className="bg-white rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-2xl shadow-blue-900/30 flex flex-col gap-1.5 sm:gap-2 max-w-xl shrink-0">
+                  <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                      <div className="flex items-center gap-2 px-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-gray-50 border border-gray-100">
                         <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        <input type="text" placeholder="From…" value={searchFrom} onChange={e => setSearchFrom(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-sm placeholder-gray-400 outline-none min-w-0" />
+                        <input type="text" placeholder="From…" value={searchFrom} onChange={e => setSearchFrom(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-xs sm:text-sm placeholder-gray-400 outline-none min-w-0" />
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                      <div className="flex items-center gap-2 px-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-gray-50 border border-gray-100">
                         <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m0 0l-7-7m7 7l-7 7" />
                         </svg>
-                        <input type="text" placeholder="To…" value={searchTo} onChange={e => setSearchTo(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-sm placeholder-gray-400 outline-none min-w-0" />
+                        <input type="text" placeholder="To…" value={searchTo} onChange={e => setSearchTo(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-xs sm:text-sm placeholder-gray-400 outline-none min-w-0" />
                       </div>
                     </div>
                   </div>
-                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-colors">
+                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     Search rides
                   </button>
                 </form>
 
-                <p className="mt-3 sm:mt-4 text-blue-200 text-xs sm:text-sm">
+                <p className="mt-2 sm:mt-4 text-blue-200 text-[10px] sm:text-sm">
                   Driving somewhere?{' '}
                   <Link ref={offerRideRef} to={user ? '/ride/post' : '#'} onClick={handleOfferRideClick} className="text-white font-semibold underline underline-offset-2 hover:text-green-300 transition-colors">
                     Offer seats and recover fuel costs →
@@ -916,7 +919,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
               </div>
 
               {/* Right: 3D car — desktop only */}
-              <div className="hidden lg:flex lg:w-1/2 xl:w-[48%] items-center justify-center" style={{ height: 420 }}>
+              <div className="hidden lg:flex lg:w-1/2 xl:w-[48%] items-center justify-center h-[280px] xl:h-[420px] pointer-events-none">
                 <Car3D />
               </div>
 
@@ -979,7 +982,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                 { icon: '🛡️', text: 'Verified drivers only' },
                 { icon: '⭐', text: 'Rated community' },
                 { icon: '💸', text: 'Split fuel costs' },
-                { icon: '🌍', text: '40+ cities active' },
+                { icon: '🌍', text: `${stats?.totalCities !== undefined && stats?.totalCities !== null ? `${stats.totalCities} cities active` : '... cities active'}` },
                 { icon: '⚡', text: 'Instant booking' },
               ].map(p => (
                 <span key={p.text} className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 px-3 py-1.5 rounded-full">

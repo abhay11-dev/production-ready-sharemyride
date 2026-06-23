@@ -270,6 +270,7 @@ const refreshToken = async (req, res) => {
     } catch {
       // Clear invalid cookie
       res.clearCookie('refreshToken', { path: '/' });
+      res.clearCookie('refreshToken', { path: '/api/auth' });
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired refresh token. Please log in again.',
@@ -284,6 +285,7 @@ const refreshToken = async (req, res) => {
     const user = await User.findById(decoded.id);
     if (!user || !user.isActive || user.accountStatus === 'SUSPENDED') {
       res.clearCookie('refreshToken', { path: '/' });
+      res.clearCookie('refreshToken', { path: '/api/auth' });
       return res.status(401).json({ success: false, message: 'User not found or inactive' });
     }
 
@@ -311,6 +313,7 @@ const logout = async (req, res) => {
     sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
     path: '/',
   });
+  res.clearCookie('refreshToken', { path: '/api/auth' });
 
   return res.status(200).json({
     success: true,

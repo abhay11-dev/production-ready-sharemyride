@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 
 function useScrollTop() { useEffect(() => { window.scrollTo(0, 0); }, []); }
@@ -117,6 +117,17 @@ export default function HelpCenter() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState(null);
   const [openArticle, setOpenArticle] = useState(null);
+  const articlesSectionRef = useRef(null);
+
+  useEffect(() => {
+    if (activeCategory || search) {
+      // Small timeout to allow DOM to render the section before scrolling
+      const timer = setTimeout(() => {
+        articlesSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeCategory, search]);
 
   const filtered = CATEGORIES
     .map(cat => ({
@@ -133,11 +144,12 @@ export default function HelpCenter() {
     <div className="min-h-screen bg-gray-50">
 
       {/* ── Hero — consistent blue (Points 9, 11) ── */}
-      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden">
+      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-[90vh] flex flex-col justify-center">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute -top-20 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-400/10 rounded-full blur-3xl" />
         </div>
-        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center">
+        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 text-center mt-12 sm:mt-0">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
             Help Centre
           </div>
@@ -216,7 +228,7 @@ export default function HelpCenter() {
 
       {/* ── Articles ── */}
       {(search || activeCategory) && (
-        <section className="py-10 sm:py-14">
+        <section ref={articlesSectionRef} className="py-10 sm:py-14">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
             {search && (
               <div className="text-sm text-gray-500 mb-6">
