@@ -1,3 +1,4 @@
+// src/services/rideService.js
 import api from '../config/api';
 
 /**
@@ -11,64 +12,33 @@ export const postRide = async (rideData) => {
 };
 
 /**
- * Search for available rides with enhanced error handling and debugging
+ * Search for available rides
  */
 export const searchRides = async (start, end, date = null, additionalFilters = {}) => {
   try {
     const params = {};
-    
-    if (start && start.trim()) {
-      params.start = start.trim();
-    }
-    
-    if (end && end.trim()) {
-      params.end = end.trim();
-    }
-    
-    if (date) {
-      params.date = date;
-    }
-    
+
+    if (start && start.trim()) params.start = start.trim();
+    if (end && end.trim()) params.end = end.trim();
+    if (date) params.date = date;
+
     Object.assign(params, additionalFilters);
-    
-    console.log('🔍 Frontend: Calling API with params:', params);
-    
+
     const response = await api.get('/rides/search', { params });
-    
-    console.log('📦 Frontend: Raw API response:', response);
-    console.log('📊 Frontend: Response data type:', typeof response.data);
-    console.log('📊 Frontend: Response data:', response.data);
-    console.log('📊 Frontend: Is Array?', Array.isArray(response.data));
-    
-    // Handle different response formats
+
     let rides;
-    
     if (Array.isArray(response.data)) {
-      // Direct array response
       rides = response.data;
-      console.log('✅ Frontend: Direct array detected');
-    } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
-      // Wrapped in { data: [] }
+    } else if (response.data?.data && Array.isArray(response.data.data)) {
       rides = response.data.data;
-      console.log('✅ Frontend: Wrapped array detected');
-    } else if (response.data && response.data.rides && Array.isArray(response.data.rides)) {
-      // Wrapped in { rides: [] }
+    } else if (response.data?.rides && Array.isArray(response.data.rides)) {
       rides = response.data.rides;
-      console.log('✅ Frontend: Rides array detected');
     } else {
-      console.warn('⚠️ Frontend: Unexpected response format:', response.data);
       rides = [];
     }
-    
-    console.log('✅ Frontend: Final rides count:', rides.length);
-    
+
     return rides;
-    
   } catch (error) {
-    console.error('❌ Frontend: Search API error');
-    console.error('Error object:', error);
-    console.error('Error response:', error.response);
-    console.error('Error data:', error.response?.data);
     throw error;
   }
 };
@@ -84,23 +54,24 @@ export const getRideById = async (rideId) => {
 };
 
 /**
- * Get all rides posted by the current user
- * @param {Object} [filters] - Optional filters
- * @param {string} filters.status - Filter by ride status (active, completed, cancelled)
- * @returns {Promise<Array>} Array of user's rides
+ * Get all rides posted by the current user.
+ * @param {Object} [filters]
+ * @param {string} [filters.status] - 'active' | 'completed' | 'cancelled' | 'in_progress' | 'expired'
+ *   Omit to get all statuses. Defaults to 'active' for backward compatibility if not supplied.
+ * @returns {Promise<Array>}
  */
 export const getMyRides = async (filters = {}) => {
-  const response = await api.get('/rides/my', { params: filters });
-  
-  // Handle different response formats
-  if (Array.isArray(response.data)) {
-    return response.data;
-  } else if (response.data.data && Array.isArray(response.data.data)) {
-    return response.data.data;
-  } else if (response.data.rides && Array.isArray(response.data.rides)) {
-    return response.data.rides;
-  }
-  
+  // Build params: only include status if explicitly provided in filters.
+  // RidePost page now passes { status: 'active' | 'completed' | 'cancelled' }
+  // so the controller receives a real filter value each time.
+  const params = {};
+  if (filters.status) params.status = filters.status;
+
+  const response = await api.get('/rides/my', { params });
+
+  if (Array.isArray(response.data)) return response.data;
+  if (response.data?.data && Array.isArray(response.data.data)) return response.data.data;
+  if (response.data?.rides && Array.isArray(response.data.rides)) return response.data.rides;
   return response.data;
 };
 
@@ -150,10 +121,6 @@ export const getRideBookings = async (rideId) => {
 
 /**
  * Get available seats for a specific segment of the ride
- * @param {string} rideId - Ride ID
- * @param {string} pickupPoint - Pickup location
- * @param {string} dropPoint - Drop location
- * @returns {Promise<Object>} Available seats info
  */
 export const checkSegmentAvailability = async (rideId, pickupPoint, dropPoint) => {
   const response = await api.get(`/rides/${rideId}/availability`, {
@@ -164,21 +131,17 @@ export const checkSegmentAvailability = async (rideId, pickupPoint, dropPoint) =
 
 /**
  * Increment view count for a ride
- * @param {string} rideId - Ride ID
- * @returns {Promise<void>}
  */
 export const incrementViewCount = async (rideId) => {
   try {
     await api.post(`/rides/${rideId}/view`);
-  } catch (error) {
-    console.error('Failed to increment view count:', error);
+  } catch {
+    // Non-critical — fail silently
   }
 };
 
 /**
  * Get featured/verified rides
- * @param {Object} [filters] - Optional filters
- * @returns {Promise<Array>} Array of featured rides
  */
 export const getFeaturedRides = async (filters = {}) => {
   const response = await api.get('/rides/featured', { params: filters });
@@ -187,9 +150,6 @@ export const getFeaturedRides = async (filters = {}) => {
 
 /**
  * Get rides with partial route matching
- * @param {string} start - Starting location
- * @param {string} end - Destination
- * @returns {Promise<Array>} Array of rides that pass through or near the route
  */
 export const searchPartialRoutes = async (start, end) => {
   const response = await api.get('/rides/search/partial', {

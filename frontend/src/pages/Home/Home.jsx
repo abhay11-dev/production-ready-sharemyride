@@ -442,7 +442,7 @@ function Car3D() {
       )}
 
       {/* Star rating */}
-      {loaded && (
+      {/* {loaded && (
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
           <span className="text-white/40 text-xs">Rate this car</span>
           <div className="flex gap-0.5">
@@ -461,7 +461,7 @@ function Car3D() {
             <span className="text-green-300 text-xs font-medium">{rating}/5 ⭐ Thanks!</span>
           )}
         </div>
-      )}
+      )} */}
 
       {/* ShareMyRide badge */}
       {loaded && (

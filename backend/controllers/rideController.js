@@ -186,26 +186,39 @@ exports.postRide = async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 // GET MY RIDES (DRIVER)
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// GET MY RIDES (DRIVER)
+// Supports ?status=active|completed|cancelled|in_progress|expired
+// If no status param, returns all rides for the driver.
+// ═══════════════════════════════════════════════════════════════════════════
 exports.getMyRides = async (req, res) => {
   try {
     const userId = req.user._id;
     const { status, limit = 50, page = 1 } = req.query;
 
+    const VALID_STATUSES = ['active', 'in_progress', 'completed', 'cancelled', 'expired'];
+
+    // Base query: all rides belonging to this driver
     const query = {
       $or: [{ driverId: userId }, { postedBy: userId }, { driver: userId }],
-      rideStatus: status || 'active',
-      isActive: true
     };
 
-    if (status && status !== 'active') {
-      delete query.isActive;
+    if (status && VALID_STATUSES.includes(status)) {
       query.rideStatus = status;
+      // Only enforce isActive filter for the active status
+      if (status === 'active') {
+        query.isActive = true;
+      }
     }
+    // If no status filter, return ALL rides for the driver regardless of status
 
     const [rides, total] = await Promise.all([
       Ride.find(query)
         .populate('driverId', 'name email phone avatar ratingSummary')
-        .populate({ path: 'bookings', populate: { path: 'passengerId', select: 'name email phone avatar' } })
+        .populate({
+          path: 'bookings',
+          populate: { path: 'passengerId', select: 'name email phone avatar' }
+        })
         .sort({ createdAt: -1 })
         .limit(parseInt(limit))
         .skip((parseInt(page) - 1) * parseInt(limit))
@@ -218,10 +231,14 @@ exports.getMyRides = async (req, res) => {
       count: rides.length,
       total,
       data: rides,
-      pagination: { page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / parseInt(limit)) }
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
     });
   } catch (error) {
-    console.error('❌ getMyRides error:', error.message);
+    console.error('getMyRides error:', error.message);
     res.status(500).json({ success: false, message: 'Error fetching rides' });
   }
 };
