@@ -4,6 +4,18 @@ const Booking = require('../models/Booking');
 const { getRouteDetails } = require('../services/utils/routeMatching.js');
 const { checkRouteMatch, calculateSegmentFare } = require('../services/utils/routeMatching.js');
 
+const isValidISODateOnly = (value) => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+
+const normalizeIndiaLocation = (value) => {
+  const cleaned = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  return /\bindia\b/i.test(cleaned) ? cleaned : `${cleaned}, India`;
+};
+
 // ─── Haversine distance ───────────────────────────────────────────────────────
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R = 6371;
@@ -55,6 +67,7 @@ exports.postRide = async (req, res) => {
     waypoints, routeCoordinates, routeMapURL,
     vehicle, preferences, notes, pickupInstructions,
     tollIncluded, negotiableFare,
+    isRoundTrip, returnDate,
     recurringRide, recurringDays,
     allowPartialRoute, maxDetourAllowed,
     liveLocationSharing
@@ -67,7 +80,22 @@ exports.postRide = async (req, res) => {
     });
   }
 
+  if (!isValidISODateOnly(date)) {
+    return res.status(400).json({ success: false, message: 'Date must be a valid YYYY-MM-DD value' });
+  }
+
+  if (isRoundTrip && returnDate && !isValidISODateOnly(returnDate)) {
+    return res.status(400).json({ success: false, message: 'Return date must be a valid YYYY-MM-DD value' });
+  }
+
   try {
+    const normalizedStart = normalizeIndiaLocation(start);
+    const normalizedEnd = normalizeIndiaLocation(end);
+
+    if (normalizedStart.length < 6 || normalizedEnd.length < 6) {
+      return res.status(400).json({ success: false, message: 'Enter a more specific Indian pickup and destination' });
+    }
+
     // Fetch route from Google Maps if not provided
     let finalRouteCoordinates = routeCoordinates || [];
     let finalTotalDistance = parseFloat(totalDistance) || 0;
@@ -76,7 +104,7 @@ exports.postRide = async (req, res) => {
 
     if (!routeCoordinates?.length) {
       try {
-        const routeData = await getRouteDetails(start, end);
+        const routeData = await getRouteDetails(normalizedStart, normalizedEnd);
         finalRouteCoordinates = routeData.coordinates;
         finalTotalDistance = routeData.distance / 1000;
         finalEstimatedDuration = Math.round(routeData.duration / 60);
@@ -104,8 +132,8 @@ exports.postRide = async (req, res) => {
       driverId: req.user._id,
       postedBy: req.user._id,
 
-      start: start.trim(),
-      end: end.trim(),
+      start: normalizedStart,
+      end: normalizedEnd,
       date,
       time,
       seats: parseInt(seats),
@@ -133,7 +161,13 @@ exports.postRide = async (req, res) => {
 
       routeCoordinates: finalRouteCoordinates,
       routePolyline,
-      waypoints: waypoints || [],
+      waypoints: Array.isArray(waypoints)
+        ? waypoints.map((w, i) => ({
+          ...w,
+          location: normalizeIndiaLocation(w.location),
+          order: w.order || i + 1
+        })).filter(w => w.location)
+        : [],
       routeMapURL: routeMapURL || '',
       allowPartialRoute: allowPartialRoute !== false,
       maxDetourAllowed: parseFloat(maxDetourAllowed) || 5,
@@ -305,6 +339,10 @@ exports.searchRides = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Start and end locations are required' });
     }
 
+    if (date && !isValidISODateOnly(date)) {
+      return res.status(400).json({ success: false, message: 'Date must be a valid YYYY-MM-DD value' });
+    }
+
     const query = { isActive: true, rideStatus: 'active' };
 
     if (date) {
@@ -332,8 +370,10 @@ exports.searchRides = async (req, res) => {
       .sort({ date: 1, time: 1 })
       .lean();
 
-    const startLower = start.toLowerCase().trim();
-    const endLower = end.toLowerCase().trim();
+    const normalizedStart = normalizeIndiaLocation(start);
+    const normalizedEnd = normalizeIndiaLocation(end);
+    const startLower = normalizedStart.toLowerCase().trim();
+    const endLower = normalizedEnd.toLowerCase().trim();
 
     const textMatched = [];
     const routeMatched = [];
@@ -367,7 +407,7 @@ exports.searchRides = async (req, res) => {
         try {
           const match = await checkRouteMatch(
             { start: ride.start, end: ride.end, coordinates: ride.routeCoordinates, polyline: ride.routePolyline },
-            start, end, 15000
+            normalizedStart, normalizedEnd, 15000
           );
           if (match.isMatch) {
             const fareDetails = calculateSegmentFare(ride, match.segmentDistance);
@@ -375,8 +415,8 @@ exports.searchRides = async (req, res) => {
               ...ride,
               matchType: 'on_route',
               matchQuality: match.matchQuality,
-              matchedPickup: start,
-              matchedDrop: end,
+              matchedPickup: normalizedStart,
+              matchedDrop: normalizedEnd,
               segmentDistance: match.segmentDistanceKm,
               segmentFare: fareDetails.totalFare,
               fareBreakdown: fareDetails,

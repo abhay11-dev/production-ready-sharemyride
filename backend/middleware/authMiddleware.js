@@ -173,14 +173,9 @@ exports.requireVerifiedDriver = (req, res, next) => {
     });
   }
 
-  if (req.user.role !== 'driver') {
-    return res.status(403).json({
-      success: false,
-      message: 'You must have the driver role to perform this action.'
-    });
-  }
+  const isApprovedDriver = req.user.isDriverVerified === true || req.user.driverVerification?.status === 'approved';
 
-  if (req.user.driverVerification?.status !== 'approved') {
+  if (!isApprovedDriver) {
     return res.status(403).json({
       success: false,
       message: 'Driver verification not approved.',
@@ -198,4 +193,3 @@ module.exports = {
   protectAdmin: exports.protectAdmin,
   requireVerifiedDriver: exports.requireVerifiedDriver
 };
-

@@ -10,8 +10,31 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import RideCard from '../../components/ride/RideCard';
 import RideMap from '../../components/map/RideMap';
 import { searchRides } from '../../services/rideService';
+import { getMyBookings } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
+
+const clampDateInput = (value) => {
+  if (!value) return '';
+  const [year = '', month = '', day = ''] = value.split('-');
+  return [year.slice(0, 4), month.slice(0, 2), day.slice(0, 2)]
+    .filter(Boolean)
+    .join('-');
+};
+
+const isValidRideDate = (value, minDate) => {
+  if (!value) return true;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  if (value < minDate) return false;
+  const parsed = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+
+const normalizeIndiaLocation = (value) => {
+  const cleaned = value.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  return /\bindia\b/i.test(cleaned) ? cleaned : `${cleaned}, India`;
+};
 
 // ─── Skeleton card matching Home.jsx ─────────────────────────────────────────
 function SkeletonCard() {
@@ -115,6 +138,8 @@ function RideSearch() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const searchCardRef = useRef(null);
+  const startInputRef = useRef(null);
 
   // ── Search inputs ─────────────────────────────────────────────────────────
   const [start, setStart] = useState(searchParams.get('start') || '');
@@ -126,6 +151,7 @@ function RideSearch() {
   const [connectedRides, setConnected]  = useState([]);
   const [isLoading, setIsLoading]       = useState(false);
   const [hasSearched, setHasSearched]   = useState(false);
+  const [isFirstRideFree, setIsFirstRideFree] = useState(false);
 
   // ── Map state ─────────────────────────────────────────────────────────────
   const [startMarker, setStartMarker]   = useState(null);
@@ -147,8 +173,39 @@ function RideSearch() {
     if (searchParams.get('start') && searchParams.get('end')) {
       handleSearch();
     }
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.setTimeout(() => {
+      if (window.location.hash === '#search' || searchParams.toString()) {
+        searchCardRef.current?.scrollIntoView({ behavior: 'instant', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+    }, 0);
   }, []); // eslint-disable-line
+
+  useEffect(() => {
+    let active = true;
+    async function loadPassengerOffer() {
+      if (!user) {
+        setIsFirstRideFree(false);
+        return;
+      }
+
+      if (Number(user.totalRidesAsPassenger) > 0) {
+        setIsFirstRideFree(false);
+        return;
+      }
+
+      try {
+        const bookings = await getMyBookings({ limit: 1 });
+        if (active) setIsFirstRideFree(bookings.length === 0);
+      } catch {
+        if (active) setIsFirstRideFree(false);
+      }
+    }
+
+    loadPassengerOffer();
+    return () => { active = false; };
+  }, [user]);
 
   const applyFilters = useCallback((list) => {
     return list.filter(ride => {
@@ -165,10 +222,18 @@ function RideSearch() {
 
   const activeFilterCount = [minSeats, maxFare, vehicleType, acOnly, womenOnly, verifiedOnly].filter(Boolean).length;
 
-  const handleSearch = async (e) => {
+  const today = new Date().toISOString().split('T')[0];
+
+  const handleSearch = async (e, options = {}) => {
     if (e?.preventDefault) e.preventDefault();
+    const silent = options.silent === true;
+
     if (!start.trim() || !end.trim()) {
       toast.error('Enter both origin and destination');
+      return;
+    }
+    if (!isValidRideDate(date, today)) {
+      toast.error('Enter a valid 4-digit ride date');
       return;
     }
     if (!user) {
@@ -184,16 +249,18 @@ function RideSearch() {
     setConnected([]);
     setRideRoutes([]);
 
-    const loadingId = toast.loading('Searching rides…', {
+    const loadingId = silent ? null : toast.loading('Searching rides…', {
       style: { background: '#2563eb', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
     });
 
     try {
-      const results = await searchRides(start.trim(), end.trim(), date || null);
-      toast.dismiss(loadingId);
+      const searchStart = normalizeIndiaLocation(start);
+      const searchEnd = normalizeIndiaLocation(end);
+      const results = await searchRides(searchStart, searchEnd, date || null);
+      if (loadingId) toast.dismiss(loadingId);
 
       if (!results?.length) {
-        toast.error(`No rides found from ${start} to ${end}`, { id: 'no-results' });
+        if (!silent) toast.error(`No rides found from ${start} to ${end}`, { id: 'no-results' });
         return;
       }
 
@@ -230,24 +297,26 @@ function RideSearch() {
       }
 
       if (connected.length > 0) {
-        toast.success(`${connected.length} ride${connected.length !== 1 ? 's' : ''} cover your route!`, {
+        if (!silent) toast.success(`${connected.length} ride${connected.length !== 1 ? 's' : ''} cover your route!`, {
           icon: '🎯',
           style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
         });
       } else {
-        toast.success(`${filtered.length} ride${filtered.length !== 1 ? 's' : ''} found`, {
+        if (!silent) toast.success(`${filtered.length} ride${filtered.length !== 1 ? 's' : ''} found for this route`, {
           style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
         });
       }
 
       // Scroll results into view on mobile
-      setTimeout(() => {
-        document.getElementById('search-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 400);
+      if (!silent) {
+        setTimeout(() => {
+          document.getElementById('search-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 400);
+      }
 
     } catch (err) {
-      toast.dismiss(loadingId);
-      toast.error(err?.response?.data?.message || 'Search failed. Please try again.', {
+      if (loadingId) toast.dismiss(loadingId);
+      if (!silent) toast.error(err?.response?.data?.message || 'Search failed. Please try again.', {
         style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
       });
     } finally {
@@ -263,9 +332,12 @@ function RideSearch() {
     setMinSeats(''); setMaxFare(''); setVehicleType('');
     setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false);
     setShowFilters(false);
+    window.setTimeout(() => {
+      searchCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      startInputRef.current?.focus({ preventScroll: true });
+    }, 0);
   };
 
-  const today = new Date().toISOString().split('T')[0];
   const otherRides = rides.filter(r => !connectedRides.find(c => c._id === r._id));
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -273,7 +345,7 @@ function RideSearch() {
     <div className="min-h-screen bg-gray-50">
 
       {/* ── Hero strip — identical to Home.jsx LoggedInDashboard ── */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-5 pb-14 px-4 sm:px-6 lg:px-8">
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-6 pb-8 sm:pt-8 sm:pb-10 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
             <div>
@@ -284,26 +356,15 @@ function RideSearch() {
               <h1 className="text-lg sm:text-2xl font-bold text-white leading-tight">Find a Ride</h1>
               <p className="text-blue-200 text-xs sm:text-sm mt-1">Search rides going your way · smart route overlap matching</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Link
-                to="/ride/post"
-                className="inline-flex items-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Offer a ride
-              </Link>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Content — -mt-8 overlap ── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 pb-16">
+      {/* ── Content — spaced below hero instead of overlapping ── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-8 pb-16">
 
         {/* ── Search card ─────────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-md overflow-hidden mb-5">
+        <div id="search" ref={searchCardRef} className="bg-white rounded-2xl border border-gray-100 shadow-md overflow-hidden mb-5 scroll-mt-4">
           <div className="h-1 bg-gradient-to-r from-blue-600 to-blue-400" />
           <div className="p-5 sm:p-6">
             <div className="flex items-center gap-2 mb-5">
@@ -319,6 +380,13 @@ function RideSearch() {
             </div>
 
             <form onSubmit={handleSearch} noValidate>
+              {isFirstRideFree && (
+                <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+                  <p className="text-sm font-bold text-green-800">Your first booking is fee-free</p>
+                  <p className="mt-0.5 text-xs text-green-700">Search and book your first ride with platform fee and GST waived.</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                 {/* From */}
                 <div>
@@ -329,6 +397,7 @@ function RideSearch() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     <input
+                      ref={startInputRef}
                       type="text"
                       value={start}
                       onChange={e => setStart(e.target.value)}
@@ -365,7 +434,8 @@ function RideSearch() {
                     type="date"
                     value={date}
                     min={today}
-                    onChange={e => setDate(e.target.value)}
+                    max="9999-12-31"
+                    onChange={e => setDate(clampDateInput(e.target.value))}
                     disabled={isLoading}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-60"
                   />
@@ -540,7 +610,11 @@ function RideSearch() {
                       </div>
                       <RideCard
                         ride={ride}
-                        onBookingSuccess={() => handleSearch()}
+                        isFirstRideFree={isFirstRideFree}
+                        onBookingSuccess={() => {
+                          setIsFirstRideFree(false);
+                          handleSearch(null, { silent: true });
+                        }}
                       />
                     </div>
                   </div>
@@ -571,7 +645,14 @@ function RideSearch() {
                     id={`ride-card-${ride._id}`}
                     className={`transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-2xl' : ''}`}
                   >
-                    <RideCard ride={ride} onBookingSuccess={() => handleSearch()} />
+                    <RideCard
+                      ride={ride}
+                      isFirstRideFree={isFirstRideFree}
+                      onBookingSuccess={() => {
+                        setIsFirstRideFree(false);
+                        handleSearch(null, { silent: true });
+                      }}
+                    />
                   </div>
                 ))}
               </div>

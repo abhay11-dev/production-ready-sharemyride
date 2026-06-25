@@ -443,14 +443,12 @@ const handleMakePayment = async (booking) => {
               const driver = booking.driver || booking.driverId || {};
               const ride = booking.ride || booking.rideId || {};
               
-              // ✅ NEW PAYMENT SYSTEM: Platform takes 8% from base fare + 18% GST on that 8%
+              // Passenger-side business model: 3% platform fee, then 5% GST on fare + fee.
               const baseFare = booking.baseFare || 0;
-              const platformDeduction = baseFare * 0.08; // 8% of base fare
-              const gstOnPlatformFee = platformDeduction * 0.18; // 18% GST on the 8%
-              const driverReceives = baseFare - platformDeduction - gstOnPlatformFee;
-              
-              // Passenger pays the full base fare (platform fee is deducted from driver's earnings)
-              const totalPassengerPays = baseFare;
+              const platformDeduction = booking.passengerServiceFee ?? booking.platformFee ?? (baseFare * 0.03);
+              const gstOnPlatformFee = booking.passengerServiceFeeGST ?? booking.gst ?? ((baseFare + platformDeduction) * 0.05);
+              const driverReceives = baseFare;
+              const totalPassengerPays = booking.finalAmount || booking.totalFare || (baseFare + platformDeduction + gstOnPlatformFee);
 
               return (
                 <div key={booking._id} className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 border-2 border-gray-200 hover:shadow-2xl transition-all">
@@ -645,18 +643,18 @@ const handleMakePayment = async (booking) => {
                                 <span className="font-semibold">₹{baseFare.toFixed(2)}</span>
                               </div>
                               <div className="flex justify-between text-sm text-gray-500">
-                                <span className="pl-4">+ Platform Fee (8%):</span>
+                                <span className="pl-4">+ Platform Fee (3%):</span>
                                 <span>₹{platformDeduction.toFixed(2)}</span>
                               </div>
                               <div className="flex justify-between text-sm text-gray-500">
-                                <span className="pl-4">+ GST on Platform Fee (18%):</span>
+                                <span className="pl-4">+ GST (5% on fare + fee):</span>
                                 <span>₹{gstOnPlatformFee.toFixed(2)}</span>
                               </div>
                              
                               <div className="border-t-2 border-gray-300 pt-2 mt-2 flex justify-between">
                                 <span className="font-bold text-gray-800">You Paid:</span>
                                 <span className="font-bold text-green-600 text-lg">
-                                  ₹{(baseFare + platformDeduction + gstOnPlatformFee).toFixed(2)}
+                                  ₹{totalPassengerPays.toFixed(2)}
                                 </span>
                               </div>
                             </div>
@@ -706,12 +704,12 @@ const handleMakePayment = async (booking) => {
                             <span>₹{baseFare.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-xs text-gray-500 pl-4">
-                            <span>Platform deducts from driver (8%):</span>
-                            <span>-₹{platformDeduction.toFixed(2)}</span>
+                            <span>Passenger-side platform fee (3%):</span>
+                            <span>₹{platformDeduction.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-xs text-gray-500 pl-4">
-                            <span>GST on platform fee (18%):</span>
-                            <span>-₹{gstOnPlatformFee.toFixed(2)}</span>
+                            <span>GST (5% on fare + fee):</span>
+                            <span>₹{gstOnPlatformFee.toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-xs text-blue-600 pl-4 pt-1">
                             <span>Driver receives:</span>

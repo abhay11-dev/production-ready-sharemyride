@@ -183,15 +183,9 @@ exports.requireVerifiedDriver = (req, res, next) => {
     });
   }
 
-  if (req.user.role !== 'driver') {
-    return res.status(403).json({
-      success: false,
-      message: 'You must have the driver role to perform this action.',
-      actionCode: 'ROLE_MISMATCH'
-    });
-  }
+  const isApprovedDriver = req.user.isDriverVerified === true || req.user.driverVerification?.status === 'approved';
 
-  if (req.user.driverVerification?.status !== 'approved') {
+  if (!isApprovedDriver) {
     return res.status(403).json({
       success: false,
       message: 'Your driver verification is not approved yet. Complete the verification process to post rides.',

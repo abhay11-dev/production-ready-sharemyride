@@ -12,6 +12,7 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
   const [commissionBreakdown, setCommissionBreakdown] = useState(null);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isFirstRideFree = booking?.isFirstRideFree === true;
 
   // Load Razorpay script
   useEffect(() => {
@@ -25,13 +26,15 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
     };
   }, []);
 
-  // Calculate passenger-side breakdown using new 8% fee structure
+  // Calculate passenger-side breakdown using 3% platform fee + 5% GST on fare plus fee.
   const calculatePassengerBreakdown = () => {
     if (!booking) return null;
     
     // Use the base fare from booking or calculate from total
-    const baseFare = booking.baseFare || (booking.totalFare / (1 + 0.08 + (0.08 * 0.18))); // Reverse calc with 8% + GST
-    const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare);
+    const baseFare = booking.baseFare || (booking.totalFare / (1 + 0.03 + (1.03 * 0.05)));
+    const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare, 1, {
+      waivePlatformCharges: isFirstRideFree,
+    });
     
     return {
       baseFare: baseFare,
@@ -241,6 +244,7 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
             seatsBooked={booking.seatsBooked || 1}
             showPassengerView={true}
             showDriverView={false}
+            waivePlatformCharges={isFirstRideFree}
             compact={true}
             className="mb-4"
           />
@@ -253,18 +257,31 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
             </div>
             
             <div className="flex justify-between text-gray-600">
-              <span>Service Fee (8%)</span>
-              <span>₹{(passengerBreakdown?.passengerServiceFee * (booking.seatsBooked || 1)).toFixed(2)}</span>
+              <span>Platform Fee (3%)</span>
+              <span className={isFirstRideFree ? 'text-gray-400 line-through' : ''}>
+                ₹{(passengerBreakdown?.passengerServiceFee * (booking.seatsBooked || 1)).toFixed(2)}
+              </span>
             </div>
             
             <div className="flex justify-between text-gray-600">
-              <span>GST on Service Fee (18%)</span>
-              <span>₹{(passengerBreakdown?.passengerServiceFeeGST * (booking.seatsBooked || 1)).toFixed(2)}</span>
+              <span>GST (5% on fare + platform fee)</span>
+              <span className={isFirstRideFree ? 'text-gray-400 line-through' : ''}>
+                ₹{(passengerBreakdown?.passengerServiceFeeGST * (booking.seatsBooked || 1)).toFixed(2)}
+              </span>
             </div>
+
+            {isFirstRideFree && (
+              <div className="flex justify-between rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
+                <span className="font-semibold">First ride waiver</span>
+                <span className="font-bold">
+                  -₹{(((passengerBreakdown?.passengerServiceFee || 0) + (passengerBreakdown?.passengerServiceFeeGST || 0)) * (booking.seatsBooked || 1)).toFixed(2)}
+                </span>
+              </div>
+            )}
             
             <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t">
               <span>Total Amount</span>
-              <span>₹{booking.totalFare.toFixed(2)}</span>
+              <span>₹{(booking.finalAmount || booking.totalFare || passengerBreakdown?.total || 0).toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -281,7 +298,7 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
               <p className="font-semibold mb-2">🔒 Secure Payment with Automatic Payout</p>
               <div className="space-y-1 text-xs">
                 <p>• Your payment is processed securely through Razorpay</p>
-                <p>• Driver receives earnings (after 8% platform fee + GST) within 1-2 business days</p>
+                <p>• Driver receives the fare they set; passenger-side add-ons follow the 3% + 5% GST model</p>
                 <p>• 256-bit SSL encryption protects your payment data</p>
                 <p>• Full refund available if ride is cancelled by driver</p>
               </div>
@@ -330,7 +347,7 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
-              Pay ₹{booking.totalFare.toFixed(2)}
+              Pay ₹{(booking.finalAmount || booking.totalFare || 0).toFixed(2)}
             </>
           )}
         </button>

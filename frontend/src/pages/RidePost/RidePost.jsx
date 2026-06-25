@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import RideForm from '../../components/ride/RideForm';
 import { postRide, getMyRides, deleteRide } from '../../services/rideService';
+import { getVerificationStatus } from '../../services/driverVerificationService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 import PaymentCalculator from '../../utils/paymentCalculator';
@@ -498,7 +499,7 @@ function VerificationGate({ verificationStatus }) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero strip — exact same as Home.jsx dashboard hero */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-5 pb-14 px-4 sm:px-6 lg:px-8">
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-6 pb-8 sm:pt-8 sm:pb-10 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center gap-2 mb-1">
             <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -509,8 +510,8 @@ function VerificationGate({ verificationStatus }) {
         </div>
       </div>
 
-      {/* Main content — floats up over hero like Home.jsx dashboard */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 pb-16">
+      {/* Main content — spaced below hero instead of overlapping */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-8 pb-16">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {/* Left: gate card */}
@@ -621,6 +622,9 @@ function RidePost() {
   const [deletingId, setDeletingId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [statusFilter, setStatusFilter] = useState('active');
+  const [hasPostedAnyRide, setHasPostedAnyRide] = useState(true);
+  const [verificationStatus, setVerificationStatus] = useState(user?.driverVerification?.status || 'not_started');
+  const [isVerified, setIsVerified] = useState(user?.isDriverVerified === true || user?.driverVerification?.status === 'approved');
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
 
@@ -641,6 +645,53 @@ function RidePost() {
 
   useEffect(() => { fetchRides(); }, [fetchRides]);
 
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+    const fetchRideHistory = async () => {
+      try {
+        const allRides = await getMyRides({});
+        if (isMounted) setHasPostedAnyRide(Array.isArray(allRides) && allRides.length > 0);
+      } catch {
+        if (isMounted) setHasPostedAnyRide(true);
+      }
+    };
+
+    fetchRideHistory();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setVerificationStatus('not_started');
+      setIsVerified(false);
+      return;
+    }
+
+    let isMounted = true;
+    const syncVerification = async () => {
+      try {
+        const res = await getVerificationStatus();
+        const payload = res?.data || res;
+        const latestStatus = payload?.status || user?.driverVerification?.status || 'not_started';
+        const latestVerified = payload?.isDriverVerified === true || latestStatus === 'approved' || user?.isDriverVerified === true;
+        if (isMounted) {
+          setVerificationStatus(latestStatus);
+          setIsVerified(latestVerified);
+        }
+      } catch {
+        if (isMounted) {
+          const fallbackStatus = user?.driverVerification?.status || 'not_started';
+          setVerificationStatus(fallbackStatus);
+          setIsVerified(user?.isDriverVerified === true || fallbackStatus === 'approved');
+        }
+      }
+    };
+
+    syncVerification();
+    return () => { isMounted = false; };
+  }, [user?._id, user?.isDriverVerified, user?.driverVerification?.status]);
+
   // ── Auth loading ──────────────────────────────────────────────────────────
   if (authLoading) {
     return (
@@ -657,21 +708,10 @@ function RidePost() {
   if (!user) return <AuthGate />;
 
   // ── Not verified ──────────────────────────────────────────────────────────
-  const verificationStatus = user?.driverVerification?.status || 'not_started';
-  const isVerified = user?.isDriverVerified === true || verificationStatus === 'approved';
   if (!isVerified) return <VerificationGate verificationStatus={verificationStatus} />;
 
   // ── Post ride handler ─────────────────────────────────────────────────────
   const handlePostRide = async (rideData) => {
-    if (!user?.isDriverVerified && user?.role !== 'driver') {
-      toast.error('Only verified drivers can post rides. Complete verification first.', {
-        duration: 5000,
-        icon: '🔒',
-        style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
-      });
-      return;
-    }
-
     setIsPosting(true);
     const postingToast = toast.loading('Publishing your ride…', {
       style: { background: '#2563EB', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
@@ -681,6 +721,7 @@ function RidePost() {
       const response = await postRide(rideData);
       const newRide = response?.data || response;
       setRides(prev => [newRide, ...prev]);
+      setHasPostedAnyRide(true);
       toast.dismiss(postingToast);
       toast.success('Ride published! It is now visible to nearby passengers.', {
         icon: '🚗',
@@ -692,7 +733,10 @@ function RidePost() {
       }, 600);
     } catch (err) {
       toast.dismiss(postingToast);
-      const msg = err?.response?.data?.message || err?.message || 'Failed to post ride';
+      const rawMsg = err?.response?.data?.message || err?.message || '';
+      const msg = /verified|verification|driver role|perform this action|permission/i.test(rawMsg)
+        ? 'Could not publish ride. Please try again.'
+        : (rawMsg || 'Failed to post ride');
       toast.error(msg, {
         duration: 4000,
         style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
@@ -766,7 +810,7 @@ function RidePost() {
     <div className="min-h-screen bg-gray-50">
 
       {/* ── Hero strip — identical structure to Home.jsx LoggedInDashboard ── */}
-      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-5 pb-14 px-4 sm:px-6 lg:px-8">
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-6 pb-8 sm:pt-8 sm:pb-10 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -818,8 +862,8 @@ function RidePost() {
         </div>
       </div>
 
-      {/* ── Content — floats up over hero with -mt-8, same as Home.jsx ── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 pb-16">
+      {/* ── Content — spaced below hero instead of overlapping ── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-8 pb-16">
 
         {/* ── Quick stat strip — above the form, same as Home.jsx stats strip ── */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-md p-4 sm:p-5 mb-5 grid grid-cols-2 sm:grid-cols-4 gap-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
@@ -875,7 +919,7 @@ function RidePost() {
                     <h2 className="text-base font-bold text-gray-900 leading-tight">Post a ride</h2>
                   </div>
                 </div>
-                <RideForm onSubmit={handlePostRide} isLoading={isPosting} />
+                <RideForm onSubmit={handlePostRide} isLoading={isPosting} isFirstRideOffer={!hasPostedAnyRide} />
               </div>
             </div>
           </div>

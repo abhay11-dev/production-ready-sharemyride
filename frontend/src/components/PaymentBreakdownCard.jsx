@@ -2,20 +2,34 @@
 import React from 'react';
 import PaymentCalculator from '../utils/paymentCalculator';
 
+const formatMoney = (value) => {
+  const amount = Number(value || 0);
+  const rounded = Math.round(amount * 100) / 100;
+  return `₹${rounded.toLocaleString('en-IN', {
+    maximumFractionDigits: rounded % 1 === 0 ? 0 : 2,
+    minimumFractionDigits: 0,
+  })}`;
+};
+
 const PaymentBreakdownCard = ({ 
   baseFare, 
   seatsBooked = 1, 
   showDriverView = false, 
   showPassengerView = true,
+  waivePlatformCharges = false,
+  waiverTitle = 'First ride celebration',
+  waiverMessage = 'This is your first booking, so the platform fee and GST are waived.',
   className = "",
   compact = false 
 }) => {
-  const driverCalc = PaymentCalculator.calculateDriverEarnings(baseFare);
-  const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare);
+  const driverCalc = PaymentCalculator.calculateDriverEarnings(baseFare, seatsBooked);
+  const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare, seatsBooked, { waivePlatformCharges });
   
   const totalBaseFare = baseFare * seatsBooked;
-  const totalDriverNet = driverCalc.driverNetAmount * seatsBooked;
-  const totalPassengerPays = passengerCalc.totalPassengerPays * seatsBooked;
+  const totalDriverNet = driverCalc.totalDriverEarnings;
+  const totalPassengerPays = passengerCalc.totalForAllSeats;
+  const totalPlatformFee = passengerCalc.serviceFeeTotal;
+  const totalGST = passengerCalc.gstOnServiceFeeTotal;
 
   if (compact) {
     return (
@@ -30,7 +44,7 @@ const PaymentBreakdownCard = ({
             </span>
           </div>
           <span className="text-xl font-bold text-blue-600">
-            ₹{showDriverView ? totalDriverNet.toFixed(2) : totalPassengerPays.toFixed(2)}
+            {showDriverView ? formatMoney(totalDriverNet) : formatMoney(totalPassengerPays)}
           </span>
         </div>
       </div>
@@ -55,6 +69,32 @@ const PaymentBreakdownCard = ({
       </div>
 
       <div className="p-6">
+        {waivePlatformCharges && showPassengerView && (
+          <div className="relative mb-6 overflow-hidden rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-sky-50 to-amber-50 p-4">
+            <div className="absolute -top-5 right-6 h-16 w-16 rounded-full border-4 border-amber-200 opacity-60 animate-ping" />
+            <div className="absolute bottom-2 right-5 flex gap-1">
+              {['bg-emerald-400', 'bg-blue-400', 'bg-amber-400', 'bg-pink-400'].map((color, index) => (
+                <span
+                  key={color}
+                  className={`h-2 w-2 rounded-full ${color} animate-bounce`}
+                  style={{ animationDelay: `${index * 120}ms` }}
+                />
+              ))}
+            </div>
+            <div className="relative flex items-start gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white text-emerald-600 shadow-sm">
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-emerald-900">{waiverTitle}</p>
+                <p className="mt-1 text-xs leading-relaxed text-emerald-800">{waiverMessage}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Base Fare Section */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
@@ -67,8 +107,8 @@ const PaymentBreakdownCard = ({
           </div>
           <div className="bg-green-50 rounded-lg p-4 border border-green-200">
             <div className="flex justify-between items-center">
-              <span className="text-gray-700">₹{baseFare.toFixed(2)} × {seatsBooked} seat{seatsBooked > 1 ? 's' : ''}</span>
-              <span className="text-xl font-bold text-green-600">₹{totalBaseFare.toFixed(2)}</span>
+              <span className="text-gray-700">{formatMoney(baseFare)} × {seatsBooked} seat{seatsBooked > 1 ? 's' : ''}</span>
+              <span className="text-xl font-bold text-green-600">{formatMoney(totalBaseFare)}</span>
             </div>
           </div>
         </div>
@@ -90,19 +130,19 @@ const PaymentBreakdownCard = ({
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Base Amount</span>
-                    <span className="font-medium">₹{totalBaseFare.toFixed(2)}</span>
+                    <span className="font-medium">{formatMoney(totalBaseFare)}</span>
                   </div>
                   
                   <div className="border-t border-orange-200 pt-2">
-                    <p className="text-xs text-orange-700 font-medium mb-2">Platform Deductions:</p>
+                    <p className="text-xs text-orange-700 font-medium mb-2">Passenger-side platform charges:</p>
                     <div className="space-y-1 pl-3">
                       <div className="flex justify-between text-xs">
                         <span className="text-gray-500">• Passenger-side platform fee (3%)</span>
-                        <span className="text-gray-600">+₹{(driverCalc.platformFee * seatsBooked).toFixed(2)}</span>
+                        <span className="text-gray-600">+{formatMoney(driverCalc.platformFee * seatsBooked)}</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">• GST on platform fee (5%)</span>
-                        <span className="text-gray-600">+₹{(driverCalc.gstOnPlatformFee * seatsBooked).toFixed(2)}</span>
+                        <span className="text-gray-500">• GST (5% on fare + platform fee)</span>
+                        <span className="text-gray-600">+{formatMoney(driverCalc.gstOnPlatformFee * seatsBooked)}</span>
                       </div>
                     </div>
                   </div>
@@ -110,7 +150,7 @@ const PaymentBreakdownCard = ({
                   <div className="border-t border-orange-300 pt-2 mt-3">
                     <div className="flex justify-between items-center">
                       <span className="font-semibold text-gray-900">You Receive</span>
-                      <span className="text-xl font-bold text-green-600">₹{totalDriverNet.toFixed(2)}</span>
+                      <span className="text-xl font-bold text-green-600">{formatMoney(totalDriverNet)}</span>
                     </div>
                   </div>
                 </div>
@@ -140,18 +180,29 @@ const PaymentBreakdownCard = ({
                 
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Platform Fee (3%)</span>
-                  <span className="font-medium">₹{(passengerCalc.passengerServiceFee * seatsBooked).toFixed(2)}</span>
+                  <span className={`font-medium ${waivePlatformCharges ? 'text-gray-400 line-through' : ''}`}>
+                    {formatMoney(totalPlatformFee)}
+                  </span>
                 </div>
                 
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">GST on platform fee (5%)</span>
-                  <span className="font-medium">₹{(passengerCalc.gstOnServiceFee * seatsBooked).toFixed(2)}</span>
+                  <span className="text-gray-600">GST (5% on fare + platform fee)</span>
+                  <span className={`font-medium ${waivePlatformCharges ? 'text-gray-400 line-through' : ''}`}>
+                    {formatMoney(totalGST)}
+                  </span>
                 </div>
+
+                {waivePlatformCharges && (
+                  <div className="flex justify-between rounded-lg bg-emerald-100 px-3 py-2 text-sm">
+                    <span className="font-semibold text-emerald-800">First ride waiver</span>
+                    <span className="font-bold text-emerald-700">-{formatMoney(totalPlatformFee + totalGST)}</span>
+                  </div>
+                )}
                 
                 <div className="border-t border-blue-300 pt-2 mt-3">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-gray-900">Total Amount</span>
-                    <span className="text-xl font-bold text-blue-600">₹{totalPassengerPays.toFixed(2)}</span>
+                    <span className="text-xl font-bold text-blue-600">{formatMoney(totalPassengerPays)}</span>
                   </div>
                 </div>
               </div>

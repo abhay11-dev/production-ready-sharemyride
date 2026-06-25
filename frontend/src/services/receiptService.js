@@ -264,18 +264,15 @@ class ReceiptService {
       // Passenger view
       fareData = [
         ['Base Fare', `₹${baseFare.toFixed(2)}`],
-        ['Service Fee', `₹${serviceFee.toFixed(2)}`],
-        ['GST (18% on Service)', `₹${gst.toFixed(2)}`],
+        ['Platform Fee (3%)', `₹${serviceFee.toFixed(2)}`],
+        ['GST (5% on fare + fee)', `₹${gst.toFixed(2)}`],
       ];
     } else {
       // Driver view
-      const platformFeeAmount = serviceFee;
-      const platformFeeGST = gst;
-      
       fareData = [
         ['Base Fare', `₹${baseFare.toFixed(2)}`],
-        ['Platform Fee (8%)', `- ₹${platformFeeAmount.toFixed(2)}`],
-        ['GST on Fee (18%)', `- ₹${platformFeeGST.toFixed(2)}`],
+        ['Platform fee', 'No driver deduction'],
+        ['GST', 'Passenger-side only'],
       ];
     }
 
@@ -304,7 +301,7 @@ class ReceiptService {
       doc.text('TOTAL PAID', 25, yPos);
       doc.text(`₹${totalFare.toFixed(2)}`, pageWidth - 25, yPos, { align: 'right' });
     } else {
-      const netEarnings = baseFare - serviceFee - gst;
+      const netEarnings = baseFare;
       doc.text('NET EARNINGS', 25, yPos);
       doc.text(`₹${netEarnings.toFixed(2)}`, pageWidth - 25, yPos, { align: 'right' });
     }

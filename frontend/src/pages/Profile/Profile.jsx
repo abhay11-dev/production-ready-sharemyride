@@ -44,6 +44,27 @@ const StepCheck = ({ done, label, sublabel }) => (
   </div>
 );
 
+const DocumentPreviewCard = ({ label, url }) => {
+  if (!url) return null;
+  const isImage = /\.(jpe?g|png|webp)$/i.test(url);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">{label}</p>
+      {isImage ? (
+        <img src={url} alt={label} className="h-28 w-full rounded-lg object-cover border border-gray-100" />
+      ) : (
+        <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7m0 0l-7 7m7-7H4" />
+          </svg>
+          Open file
+        </a>
+      )}
+    </div>
+  );
+};
+
 // ─── Document Upload Card ─────────────────────────────────────────────────────
 const DocUploadField = ({ label, accept, file, onChange, uploaded, previewUrl }) => {
   const inputRef = useRef();
@@ -354,14 +375,14 @@ function Profile() {
         </div>
 
         {/* ── Tabs ────────────────────────────────────────────────────── */}
-        <div className="flex gap-4 mb-6 bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-6 bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100">
           {[
             { key: 'profile', label: 'Profile' },
             {
               key: 'verification',
               label: (
-                <span className="flex items-center gap-5 ml-8">
-                  Driver Verification
+                <span className="flex flex-wrap items-center justify-center gap-2">
+                  <span>Driver Verification</span>
                   {verif && <VerificationBadge status={verif.status} />}
                 </span>
               )
@@ -370,8 +391,8 @@ function Profile() {
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className={`flex-1 mr-5 py-2.5 text-sm font-semibold rounded-xl transition-all ${activeTab === key
-                ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md transform scale-[1.02]'
+              className={`flex-1 min-w-0 py-2.5 px-3 text-sm font-semibold rounded-xl transition-all ${activeTab === key
+                ? 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md transform scale-[1.01]'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-white'
                 }`}
             >
@@ -719,7 +740,7 @@ function Profile() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <DocUploadField
                       label="Front side *"
                       accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -735,6 +756,13 @@ function Profile() {
                       uploaded={verif?.aadhaarBackUploaded}
                     />
                   </div>
+
+                  {(verif?.documents?.aadhaar?.frontImageUrl || verif?.documents?.aadhaar?.backImageUrl) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <DocumentPreviewCard label="Aadhaar front" url={verif?.documents?.aadhaar?.frontImageUrl} />
+                      <DocumentPreviewCard label="Aadhaar back" url={verif?.documents?.aadhaar?.backImageUrl} />
+                    </div>
+                  )}
 
                   <button
                     onClick={handleAadhaarUpload}
@@ -801,7 +829,7 @@ function Profile() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <DocUploadField
                       label="Front side *"
                       accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -817,6 +845,13 @@ function Profile() {
                       uploaded={verif?.dlBackUploaded}
                     />
                   </div>
+
+                  {(verif?.documents?.drivingLicense?.frontImageUrl || verif?.documents?.drivingLicense?.backImageUrl) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <DocumentPreviewCard label="Driving license front" url={verif?.documents?.drivingLicense?.frontImageUrl} />
+                      <DocumentPreviewCard label="Driving license back" url={verif?.documents?.drivingLicense?.backImageUrl} />
+                    </div>
+                  )}
 
                   <button
                     onClick={handleDLUpload}

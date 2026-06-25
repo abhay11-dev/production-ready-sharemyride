@@ -154,6 +154,11 @@ const bookingSchema = new mongoose.Schema({
     min: 0,
     default: 0
   },
+
+  isFirstRideFree: {
+    type: Boolean,
+    default: false
+  },
   
   // Total amount passenger pays
   totalFare: {
@@ -764,12 +769,15 @@ bookingSchema.methods.resolveEmergency = function(notes) {
 };
 
 // Calculate fare breakdown
-bookingSchema.methods.calculateFare = function(baseFarePerSeat, seatsBooked, serviceFee = 10) {
+bookingSchema.methods.calculateFare = function(baseFarePerSeat, seatsBooked, waivePlatformCharges = false) {
   this.baseFare = baseFarePerSeat * seatsBooked;
-  this.passengerServiceFee = serviceFee * seatsBooked;
-  this.passengerServiceFeeGST = this.passengerServiceFee * 0.18;
+  const platformFee = this.baseFare * 0.03;
+  const gst = (this.baseFare + platformFee) * 0.05;
+  this.passengerServiceFee = waivePlatformCharges ? 0 : platformFee;
+  this.passengerServiceFeeGST = waivePlatformCharges ? 0 : gst;
   this.totalFare = this.baseFare + this.passengerServiceFee + this.passengerServiceFeeGST;
   this.finalAmount = this.totalFare - (this.discountAmount || 0);
+  this.isFirstRideFree = waivePlatformCharges;
   return this;
 };
 

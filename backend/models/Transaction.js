@@ -54,7 +54,7 @@ const transactionSchema = new mongoose.Schema({
   },
   platformFeePercentage: {
     type: Number,
-    default: 8, // 8%
+    default: 3, // 3%
     min: 0,
     max: 100
   },
@@ -65,7 +65,7 @@ const transactionSchema = new mongoose.Schema({
   },
   gstOnPlatformFeePercentage: {
     type: Number,
-    default: 18, // 18%
+    default: 5, // 5%
     min: 0,
     max: 100
   },
@@ -83,18 +83,18 @@ const transactionSchema = new mongoose.Schema({
   // PAYMENT AMOUNTS - Passenger Side
   passengerServiceFee: {
     type: Number,
-    default: 10, // ₹10 fixed
+    default: 0,
     required: true
   },
   gstOnPassengerServiceFee: {
     type: Number,
-    default: 1.80, // 18% of ₹10
+    default: 0,
     required: true
   },
   totalPassengerServiceCharges: {
     type: Number,
     required: true,
-    default: 11.80 // ₹10 + ₹1.80
+    default: 0
   },
 
   // TOTAL AMOUNTS
@@ -210,70 +210,49 @@ const transactionSchema = new mongoose.Schema({
 
 /**
  * Calculate all payment amounts based on base fare and seats
- * @param {number} baseFare - Base fare per seat set by driver
+ * @param {number} baseFare - Total driver-set fare for the booked seats
  * @param {number} seatsBooked - Number of seats booked
- * @param {number} passengerServiceFee - Fixed service fee (default ₹10)
- * @param {number} platformFeePercentage - Platform fee percentage (default 8%)
- * @param {number} gstPercentage - GST percentage (default 18%)
+ * @param {number|null} passengerServiceFee - Total platform fee stored on booking, or null to calculate 3%
+ * @param {number} platformFeePercentage - Platform fee percentage (default 3%)
+ * @param {number} gstPercentage - GST percentage (default 5%)
  */
 transactionSchema.methods.calculateAmounts = function(
   baseFare,
   seatsBooked = 1,
-  passengerServiceFee = 10,
-  platformFeePercentage = 8,
-  gstPercentage = 18
+  passengerServiceFee = null,
+  platformFeePercentage = 3,
+  gstPercentage = 5
 ) {
-  const fare = parseFloat(baseFare);
+  const fare = parseFloat(baseFare) || 0;
   const seats = parseInt(seatsBooked);
-  const serviceFee = parseFloat(passengerServiceFee);
   const platformPercent = parseFloat(platformFeePercentage) / 100;
   const gstPercent = parseFloat(gstPercentage) / 100;
 
-  // ===== DRIVER SIDE CALCULATIONS =====
-  // Platform fee: 8% of base fare per seat
-  const platformFeePerSeat = fare * platformPercent;
-  
-  // GST on platform fee: 18% of platform fee
-  const gstOnPlatformFeePerSeat = platformFeePerSeat * gstPercent;
-  
-  // Driver net amount per seat
-  const driverNetPerSeat = fare - platformFeePerSeat - gstOnPlatformFeePerSeat;
+  // Driver receives exactly the fare they set. Platform charges are passenger-side.
+  const driverNetTotal = fare;
 
-  // ===== PASSENGER SIDE CALCULATIONS =====
-  // Fixed service fee + GST
-  const gstOnServiceFee = serviceFee * gstPercent;
+  const calculatedPlatformFee = fare * platformPercent;
+  const serviceFee = passengerServiceFee === null || passengerServiceFee === undefined
+    ? calculatedPlatformFee
+    : parseFloat(passengerServiceFee) || 0;
+  const gstOnServiceFee = serviceFee > 0 ? (fare + serviceFee) * gstPercent : 0;
   const totalServiceCharges = serviceFee + gstOnServiceFee;
-  
-  // Total passenger pays per seat
-  const passengerPaysPerSeat = fare + totalServiceCharges;
 
-  // ===== TOTALS FOR ALL SEATS =====
   this.baseFare = fare;
   this.seatsBooked = seats;
   
-  // Driver deductions (total for all seats)
   this.platformFeePercentage = platformFeePercentage;
-  this.platformFee = platformFeePerSeat * seats;
-  
+  this.platformFee = 0;
   this.gstOnPlatformFeePercentage = gstPercentage;
-  this.gstOnPlatformFee = gstOnPlatformFeePerSeat * seats;
+  this.gstOnPlatformFee = 0;
+  this.driverNetAmount = driverNetTotal;
   
-  this.driverNetAmount = driverNetPerSeat * seats;
+  this.passengerServiceFee = serviceFee;
+  this.gstOnPassengerServiceFee = gstOnServiceFee;
+  this.totalPassengerServiceCharges = totalServiceCharges;
+  this.totalAmount = fare + totalServiceCharges;
   
-  // Passenger charges (total for all seats)
-  this.passengerServiceFee = serviceFee * seats;
-  this.gstOnPassengerServiceFee = gstOnServiceFee * seats;
-  this.totalPassengerServiceCharges = totalServiceCharges * seats;
-  
-  // Total amount passenger pays
-  this.totalAmount = passengerPaysPerSeat * seats;
-  
-  // Platform total commission (from both driver and passenger)
-  this.platformTotalCommission = 
-    this.platformFee + 
-    this.gstOnPlatformFee + 
-    this.passengerServiceFee + 
-    this.gstOnPassengerServiceFee;
+  this.platformTotalCommission = this.passengerServiceFee + this.gstOnPassengerServiceFee;
 
   // Validation
   const calculatedTotal = this.driverNetAmount + this.platformTotalCommission;
@@ -342,15 +321,15 @@ transactionSchema.methods.getBreakdown = function() {
     // Driver receives
     driver: {
       baseFare: this.baseFare,
-      platformFee: -this.platformFee,
-      gstOnPlatformFee: -this.gstOnPlatformFee,
+      platformFee: 0,
+      gstOnPlatformFee: 0,
       netAmount: this.driverNetAmount,
       seatsBooked: this.seatsBooked
     },
     
     // Passenger pays
     passenger: {
-      baseFare: this.baseFare * this.seatsBooked,
+      baseFare: this.baseFare,
       serviceFee: this.passengerServiceFee,
       gstOnServiceFee: this.gstOnPassengerServiceFee,
       totalAmount: this.totalAmount,
@@ -359,7 +338,7 @@ transactionSchema.methods.getBreakdown = function() {
     
     // Platform earns
     platform: {
-      fromDriver: this.platformFee + this.gstOnPlatformFee,
+      fromDriver: 0,
       fromPassenger: this.passengerServiceFee + this.gstOnPassengerServiceFee,
       total: this.platformTotalCommission
     }

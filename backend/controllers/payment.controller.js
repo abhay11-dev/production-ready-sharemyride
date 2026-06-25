@@ -173,9 +173,9 @@ exports.createPaymentOrder = async (req, res) => {
     transaction.calculateAmounts(
       booking.baseFare,
       booking.seatsBooked || 1,
-      booking.passengerServiceFee || 10,
-      8,
-      18
+      booking.passengerServiceFee ?? null,
+      3,
+      5
     );
     
     await transaction.save();

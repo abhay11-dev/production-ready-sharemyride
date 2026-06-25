@@ -2,8 +2,9 @@ import React, { useState, useContext } from 'react';
 import { UserContext } from '../../contexts/UserContext';
 import { createBooking } from '../../services/bookingService';
 import toast from 'react-hot-toast';
+import PaymentCalculator from '../../utils/paymentCalculator';
 
-function BookingModal({ ride, onClose, onSuccess }) {
+function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
   const { user } = useContext(UserContext);
   const [seatsToBook, setSeatsToBook] = useState(1);
   const [pickupLocation, setPickupLocation] = useState(ride.matchedPickup || ride.start);
@@ -11,11 +12,16 @@ function BookingModal({ ride, onClose, onSuccess }) {
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Calculate fares
-  const baseFare = (ride.segmentFare || ride.fare || 0) * seatsToBook;
-  const platformFee = Math.round(baseFare * 0.03);
-  const gst = Math.round(platformFee * 0.05);
-  const totalFare = baseFare + platformFee + gst;
+  // Calculate fares with the shared business model.
+  const farePerSeat = ride.segmentFare || ride.fare || 0;
+  const standardFareDetails = PaymentCalculator.calculatePassengerTotal(farePerSeat, seatsToBook);
+  const fareDetails = PaymentCalculator.calculatePassengerTotal(farePerSeat, seatsToBook, {
+    waivePlatformCharges: isFirstRideFree,
+  });
+  const baseFare = fareDetails.baseFareTotal;
+  const platformFee = fareDetails.serviceFeeTotal;
+  const gst = fareDetails.gstOnServiceFeeTotal;
+  const totalFare = fareDetails.totalForAllSeats;
 
   const availableSeats = ride.availableSeats ?? ride.seats;
   const maxSeats = Math.min(availableSeats, 4); // Max 4 seats per booking
@@ -44,14 +50,16 @@ function BookingModal({ ride, onClose, onSuccess }) {
           coordinates: ride.dropCoordinates || {}
         },
         passengerNotes: notes,
-        paymentMethod: razorpay,
+        paymentMethod: 'upi',
         specialRequirements: {}
       };
 
       const response = await createBooking(bookingData);
 
       toast.dismiss(bookingToast);
-      toast.success('Booking created successfully!');
+      toast.success(response?.isFirstRideFree || isFirstRideFree
+        ? 'Booking created. First ride fees waived!'
+        : 'Booking created successfully!');
       
       if (onSuccess) {
         onSuccess(response);
@@ -193,24 +201,35 @@ function BookingModal({ ride, onClose, onSuccess }) {
               </svg>
               Fare Breakdown
             </h3>
+
+            {isFirstRideFree && (
+              <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                <p className="text-xs font-bold text-green-800">First ride offer active</p>
+                <p className="mt-0.5 text-xs text-green-700">Platform fee and GST are waived for this booking.</p>
+              </div>
+            )}
             
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Base Fare ({seatsToBook} seat{seatsToBook > 1 ? 's' : ''})</span>
-                <span className="font-semibold text-gray-900">₹{baseFare}</span>
+                <span className="font-semibold text-gray-900">₹{baseFare.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Platform Fee (3%)</span>
-                <span className="font-semibold text-gray-900">₹{platformFee}</span>
+                <span className={`font-semibold ${isFirstRideFree ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                  ₹{(isFirstRideFree ? standardFareDetails.serviceFeeTotal : platformFee).toFixed(2)}
+                </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">GST (5% on fee)</span>
-                <span className="font-semibold text-gray-900">₹{gst}</span>
+                <span className="text-gray-600">GST (5% on fare + fee)</span>
+                <span className={`font-semibold ${isFirstRideFree ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                  ₹{(isFirstRideFree ? standardFareDetails.gstOnServiceFeeTotal : gst).toFixed(2)}
+                </span>
               </div>
               <div className="border-t-2 border-blue-200 pt-2 mt-2">
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-gray-900">Total Amount</span>
-                  <span className="text-2xl font-bold text-blue-600">₹{totalFare}</span>
+                  <span className="text-2xl font-bold text-blue-600">₹{totalFare.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -258,7 +277,7 @@ function BookingModal({ ride, onClose, onSuccess }) {
                   Creating...
                 </span>
               ) : (
-                `Confirm Booking - ₹${totalFare}`
+                `Confirm Booking - ₹${totalFare.toFixed(2)}`
               )}
             </button>
           </div>

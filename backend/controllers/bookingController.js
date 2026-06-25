@@ -2,6 +2,24 @@ const Booking = require('../models/Booking');
 const Ride = require('../models/Ride');
 const User = require('../models/User');
 
+const PLATFORM_FEE_RATE = 0.03;
+const GST_RATE = 0.05;
+
+const calculatePassengerFare = (baseFare, waivePlatformCharges = false) => {
+  const platformFee = baseFare * PLATFORM_FEE_RATE;
+  const gst = (baseFare + platformFee) * GST_RATE;
+  const chargeTotal = waivePlatformCharges ? 0 : platformFee + gst;
+
+  return {
+    serviceFee: waivePlatformCharges ? 0 : platformFee,
+    gst: waivePlatformCharges ? 0 : gst,
+    totalFare: baseFare + chargeTotal,
+    originalServiceFee: platformFee,
+    originalGst: gst,
+    waivedAmount: waivePlatformCharges ? platformFee + gst : 0,
+  };
+};
+
 // ========================================
 // CREATE BOOKING (PASSENGER BOOKS A RIDE)
 // ========================================
@@ -186,6 +204,8 @@ let serviceFee = 0;
 let gst = 0;
 let totalFare = 0;
 let calculatedSegmentFare = null;
+const previousPassengerBookings = await Booking.countDocuments({ passenger: userId });
+const isFirstRideFree = previousPassengerBookings === 0;
 
 // 🎯 CRITICAL: Check if this is a SEGMENT booking first
 const isSegmentBooking = matchType === 'on_route' && userSearchDistance && userSearchDistance > 0;
@@ -202,18 +222,13 @@ if (isSegmentBooking && ride.perKmRate) {
   
   // ✅ USE USER'S SEGMENT DISTANCE, NOT TOTAL DISTANCE
   baseFare = ride.perKmRate * userSearchDistance * seatsBooked;
-  
-  // Platform fee (8% of base fare)
-  serviceFee = baseFare * 0.15;
-  
-  // GST (18% of platform fee)
-  gst = serviceFee * 0.18;
-  
-  // Total passenger pays
-  totalFare = baseFare + serviceFee + gst;
+  const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
+  serviceFee = fareDetails.serviceFee;
+  gst = fareDetails.gst;
+  totalFare = fareDetails.totalFare;
   
   // Store the segment fare per seat (for reference)
-  calculatedSegmentFare = segmentFare || (ride.perKmRate * userSearchDistance * 1.0944); // 1.0944 = 1 + 0.08 + (0.08 * 0.18)
+  calculatedSegmentFare = segmentFare || calculatePassengerFare(ride.perKmRate * userSearchDistance, isFirstRideFree).totalFare;
   
   console.log('✅ Segment fare calculated:', {
     userSearchDistance,
@@ -231,9 +246,10 @@ else if (ride.fareMode === 'per_km' && ride.perKmRate && ride.totalDistance) {
   console.log('📏 FULL ROUTE PER KM - Calculating full route fare...');
   
   baseFare = ride.perKmRate * ride.totalDistance * seatsBooked;
-  serviceFee = baseFare * 0.08;
-  gst = serviceFee * 0.18;
-  totalFare = baseFare + serviceFee + gst;
+  const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
+  serviceFee = fareDetails.serviceFee;
+  gst = fareDetails.gst;
+  totalFare = fareDetails.totalFare;
   
   console.log('✅ Full route fare calculated:', {
     totalDistance: ride.totalDistance,
@@ -247,9 +263,10 @@ else {
   console.log('💵 FIXED FARE - Using ride.fare...');
   
   baseFare = (ride.fare || 0) * seatsBooked;
-  serviceFee = baseFare * 0.08;
-  gst = serviceFee * 0.18;
-  totalFare = baseFare + serviceFee + gst;
+  const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
+  serviceFee = fareDetails.serviceFee;
+  gst = fareDetails.gst;
+  totalFare = fareDetails.totalFare;
   
   console.log('✅ Fixed fare calculated:', {
     fare: ride.fare,
@@ -264,6 +281,7 @@ console.log('\n💰 FINAL FARE CALCULATION:', {
   serviceFee: serviceFee.toFixed(2),
   gst: gst.toFixed(2),
   totalFare: totalFare.toFixed(2),
+  isFirstRideFree,
   userSearchDistance,
   matchType,
   segmentFare: calculatedSegmentFare?.toFixed(2) || 'N/A'
@@ -303,6 +321,7 @@ const bookingData = {
   finalAmount: totalFare,
   platformFee: serviceFee,
   gst: gst,
+  isFirstRideFree,
   
   // Status
   status: 'pending',

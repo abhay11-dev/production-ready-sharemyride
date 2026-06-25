@@ -20,8 +20,10 @@ function VerifiedBadge() {
 }
 
 // ─── Fare calculation helpers (use PaymentCalculator — never hardcode %) ──────
-function calcPassengerFare(baseFare, seats = 1) {
-  const calc = PaymentCalculator.calculatePassengerTotal(parseFloat(baseFare) || 0, seats);
+function calcPassengerFare(baseFare, seats = 1, waivePlatformCharges = false) {
+  const calc = PaymentCalculator.calculatePassengerTotal(parseFloat(baseFare) || 0, seats, {
+    waivePlatformCharges,
+  });
   return {
     baseFare: calc.baseFareTotal,
     serviceFee: calc.serviceFeeTotal,
@@ -31,11 +33,18 @@ function calcPassengerFare(baseFare, seats = 1) {
   };
 }
 
-function calcSegmentFare(perKmRate, distanceKm, seats = 1) {
+function calcSegmentFare(perKmRate, distanceKm, seats = 1, waivePlatformCharges = false) {
   const base = (parseFloat(perKmRate) || 0) * (parseFloat(distanceKm) || 0) * seats;
-  const fee  = base * PaymentCalculator.PLATFORM_FEE_PERCENTAGE;
-  const gst  = fee  * PaymentCalculator.GST_PERCENTAGE;
-  return { base, fee, gst, total: base + fee + gst };
+  const fee = base * PaymentCalculator.PLATFORM_FEE_PERCENTAGE;
+  const gst = (base + fee) * PaymentCalculator.GST_PERCENTAGE;
+  return {
+    base,
+    fee: waivePlatformCharges ? 0 : fee,
+    gst: waivePlatformCharges ? 0 : gst,
+    waivedFee: fee,
+    waivedGst: gst,
+    total: waivePlatformCharges ? base : base + fee + gst,
+  };
 }
 
 function formatDate(d) {
@@ -50,7 +59,26 @@ function formatTime(t) {
 }
 
 // ─── Booking Modal ────────────────────────────────────────────────────────────
-function BookingModal({ ride, onClose, onSuccess }) {
+function WaivedBadge() {
+  return (
+    <span className="ml-2 inline-flex items-center rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-700">
+      waived
+    </span>
+  );
+}
+
+function FirstRidePassengerCallout() {
+  return (
+    <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+      <p className="text-sm font-bold text-green-800">First ride offer active</p>
+      <p className="mt-1 text-xs leading-relaxed text-green-700">
+        Your first booking has platform fee and GST waived. You pay only the fare the driver set.
+      </p>
+    </div>
+  );
+}
+
+function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
   const [seats, setSeats]       = useState(1);
   const [pickup, setPickup]     = useState(ride.start || '');
   const [drop, setDrop]         = useState(ride.end   || '');
@@ -65,19 +93,27 @@ function BookingModal({ ride, onClose, onSuccess }) {
   // Compute fare for current seat selection
   let fareDisplay;
   if (isSegment && perKmRate) {
-    fareDisplay = calcSegmentFare(perKmRate, ride.userSearchDistance, seats);
+    fareDisplay = calcSegmentFare(perKmRate, ride.userSearchDistance, seats, isFirstRideFree);
   } else if (fareMode === 'per_km' && perKmRate && ride.totalDistance) {
-    fareDisplay = calcSegmentFare(perKmRate, ride.totalDistance, seats);
+    fareDisplay = calcSegmentFare(perKmRate, ride.totalDistance, seats, isFirstRideFree);
   } else {
-    const f = calcPassengerFare(ride.fare, seats);
-    fareDisplay = { base: f.baseFare, fee: f.serviceFee, gst: f.serviceFeeGST, total: f.total };
+    const standard = calcPassengerFare(ride.fare, seats, false);
+    const f = calcPassengerFare(ride.fare, seats, isFirstRideFree);
+    fareDisplay = {
+      base: f.baseFare,
+      fee: f.serviceFee,
+      gst: f.serviceFeeGST,
+      waivedFee: standard.serviceFee,
+      waivedGst: standard.serviceFeeGST,
+      total: f.total,
+    };
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await createBooking({
+      const response = await createBooking({
         rideId: ride._id,
         seatsBooked: seats,
         pickupLocation: { address: isSegment ? (ride.userPickup || pickup) : pickup },
@@ -90,7 +126,8 @@ function BookingModal({ ride, onClose, onSuccess }) {
         matchQuality:       ride.matchQuality    || null,
       });
 
-      toast.success('Booking request sent!', {
+      const waived = response?.isFirstRideFree || isFirstRideFree;
+      toast.success(waived ? 'Booking request sent. First ride fees waived!' : 'Booking request sent!', {
         style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
       });
       if (onSuccess) onSuccess();
@@ -121,6 +158,8 @@ function BookingModal({ ride, onClose, onSuccess }) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {isFirstRideFree && <FirstRidePassengerCallout />}
+
           {/* Route summary */}
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Your journey</p>
@@ -201,11 +240,17 @@ function BookingModal({ ride, onClose, onSuccess }) {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Platform fee ({(PaymentCalculator.PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}%)</span>
-                <span className="font-medium text-gray-800">₹{fareDisplay.fee.toFixed(2)}</span>
+                <span className={`font-medium ${isFirstRideFree ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                  ₹{(isFirstRideFree ? fareDisplay.waivedFee : fareDisplay.fee).toFixed(2)}
+                  {isFirstRideFree && <WaivedBadge />}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">GST ({(PaymentCalculator.GST_PERCENTAGE * 100).toFixed(0)}% on fee)</span>
-                <span className="font-medium text-gray-800">₹{fareDisplay.gst.toFixed(2)}</span>
+                <span className="text-gray-500">GST ({(PaymentCalculator.GST_PERCENTAGE * 100).toFixed(0)}% on fare + fee)</span>
+                <span className={`font-medium ${isFirstRideFree ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                  ₹{(isFirstRideFree ? fareDisplay.waivedGst : fareDisplay.gst).toFixed(2)}
+                  {isFirstRideFree && <WaivedBadge />}
+                </span>
               </div>
               <div className="flex justify-between pt-2 border-t border-green-200 font-bold text-green-700">
                 <span>Total</span>
@@ -240,7 +285,7 @@ function BookingModal({ ride, onClose, onSuccess }) {
 }
 
 // ─── Details Modal ────────────────────────────────────────────────────────────
-function DetailsModal({ ride, onClose }) {
+function DetailsModal({ ride, onClose, isFirstRideFree = false }) {
   const [tab, setTab] = useState('overview');
   const driver = ride.driverId || ride.driver || {};
   const driverInfo = ride.driverInfo || {};
@@ -248,7 +293,8 @@ function DetailsModal({ ride, onClose }) {
   const prefs = ride.preferences || {};
   const fareMode = ride.fareMode || 'fixed';
   const perKmRate = ride.perKmRate || 0;
-  const singleFare = calcPassengerFare(ride.fare || 0, 1);
+  const standardSingleFare = calcPassengerFare(ride.fare || 0, 1, false);
+  const singleFare = calcPassengerFare(ride.fare || 0, 1, isFirstRideFree);
 
   const tabs = ['overview', 'driver', 'vehicle', 'preferences'];
 
@@ -305,13 +351,24 @@ function DetailsModal({ ride, onClose }) {
 
               <div className="bg-green-50 border border-green-100 rounded-xl p-4 space-y-2">
                 <p className="text-xs font-bold text-green-700 uppercase tracking-widest">Pricing</p>
+                {isFirstRideFree && (
+                  <p className="rounded-lg border border-green-200 bg-white/70 px-3 py-2 text-xs font-semibold text-green-700">
+                    First booking offer: platform fee and GST waived.
+                  </p>
+                )}
                 {fareMode === 'per_km' ? (
                   <p className="text-sm font-semibold text-gray-900">₹{perKmRate}/km</p>
                 ) : (
                   <>
                     <div className="flex justify-between text-sm"><span className="text-gray-500">Base fare</span><span>₹{(ride.fare || 0).toFixed(2)}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-gray-500">Platform fee</span><span>₹{singleFare.serviceFee.toFixed(2)}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-gray-500">GST</span><span>₹{singleFare.serviceFeeGST.toFixed(2)}</span></div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Platform fee</span>
+                      <span className={isFirstRideFree ? 'text-gray-400 line-through' : ''}>₹{(isFirstRideFree ? standardSingleFare.serviceFee : singleFare.serviceFee).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">GST</span>
+                      <span className={isFirstRideFree ? 'text-gray-400 line-through' : ''}>₹{(isFirstRideFree ? standardSingleFare.serviceFeeGST : singleFare.serviceFeeGST).toFixed(2)}</span>
+                    </div>
                     <div className="flex justify-between text-sm font-bold text-green-700 pt-1 border-t border-green-200"><span>You pay / seat</span><span>₹{singleFare.perSeat.toFixed(2)}</span></div>
                   </>
                 )}
@@ -439,7 +496,7 @@ function ContactModal({ ride, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN RIDE CARD
 // ═══════════════════════════════════════════════════════════════════════════════
-function RideCard({ ride, onBookingSuccess }) {
+function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
   const { user } = useAuth();
   const [modal, setModal] = useState(null); // 'book' | 'details' | 'contact' | null
 
@@ -463,14 +520,14 @@ function RideCard({ ride, onBookingSuccess }) {
   let displayPrice;
   let displayPriceLabel;
   if (isSegment && perKmRate) {
-    const f = calcSegmentFare(perKmRate, ride.userSearchDistance, 1);
+    const f = calcSegmentFare(perKmRate, ride.userSearchDistance, 1, isFirstRideFree);
     displayPrice      = `₹${f.total.toFixed(0)}`;
     displayPriceLabel = 'your segment';
   } else if (fareMode === 'per_km') {
     displayPrice      = `₹${perKmRate}/km`;
     displayPriceLabel = 'rate';
   } else {
-    const f = calcPassengerFare(ride.fare || 0, 1);
+    const f = calcPassengerFare(ride.fare || 0, 1, isFirstRideFree);
     displayPrice      = `₹${f.perSeat.toFixed(0)}`;
     displayPriceLabel = 'per seat';
   }
@@ -551,6 +608,12 @@ function RideCard({ ride, onBookingSuccess }) {
             </div>
           )}
 
+          {isFirstRideFree && (
+            <div className="mb-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
+              First booking: platform fee and GST waived
+            </div>
+          )}
+
           {/* Vehicle subtitle */}
           {[vehicle.color, vehicle.model, vehicle.type].filter(Boolean).length > 0 && (
             <p className="text-xs text-gray-400 mb-3 truncate">
@@ -626,8 +689,8 @@ function RideCard({ ride, onBookingSuccess }) {
         </div>
       </div>
 
-      {modal === 'book'    && <BookingModal  ride={ride} onClose={() => setModal(null)} onSuccess={onBookingSuccess} />}
-      {modal === 'details' && <DetailsModal  ride={ride} onClose={() => setModal(null)} />}
+      {modal === 'book'    && <BookingModal  ride={ride} onClose={() => setModal(null)} onSuccess={onBookingSuccess} isFirstRideFree={isFirstRideFree} />}
+      {modal === 'details' && <DetailsModal  ride={ride} onClose={() => setModal(null)} isFirstRideFree={isFirstRideFree} />}
       {modal === 'contact' && <ContactModal  ride={ride} onClose={() => setModal(null)} />}
     </>
   );

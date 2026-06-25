@@ -1,11 +1,52 @@
 const axios = require('axios');
 const polyline = require('polyline');
+const { Client } = require('@googlemaps/google-maps-services-js');
 
 // Free Nominatim geocoding API
 const NOMINATIM_BASE_URL = 'https://nominatim.openstreetmap.org';
+const googleClient = new Client({});
+const geocodeCache = new Map();
+const routeCache = new Map();
 
 // Add delay between requests to respect rate limits
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const normalizeIndianAddress = (address) => {
+  const cleaned = String(address || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  return /\bindia\b/i.test(cleaned) ? cleaned : `${cleaned}, India`;
+};
+
+const cacheKey = (value) => normalizeIndianAddress(value).toLowerCase();
+
+const isIndiaResult = (result) => {
+  const address = result.address || {};
+  return address.country_code === 'in' || /\bindia\b/i.test(result.display_name || '');
+};
+
+const geocodeWithGoogle = async (address) => {
+  const response = await googleClient.geocode({
+    params: {
+      address,
+      components: { country: 'IN' },
+      region: 'in',
+      key: process.env.GOOGLE_MAPS_API_KEY,
+    },
+  });
+
+  if (response.data.status !== 'OK' || !response.data.results.length) {
+    throw new Error('Address not found');
+  }
+
+  const result = response.data.results[0];
+  const location = result.geometry.location;
+  return {
+    lat: location.lat,
+    lng: location.lng,
+    formattedAddress: result.formatted_address,
+    provider: 'google',
+  };
+};
 
 /**
  * Geocode an address to get coordinates using Nominatim (Free)
@@ -13,14 +54,35 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * @returns {Promise<Object>} {lat, lng, formattedAddress}
  */
 const geocodeAddress = async (address) => {
+  const normalizedAddress = normalizeIndianAddress(address);
+  const key = cacheKey(normalizedAddress);
+  if (geocodeCache.has(key)) return geocodeCache.get(key);
+
   try {
+    if (!normalizedAddress || normalizedAddress.length < 3) {
+      throw new Error('Enter a more specific Indian location');
+    }
+
+    if (process.env.GOOGLE_MAPS_API_KEY) {
+      try {
+        const coords = await geocodeWithGoogle(normalizedAddress);
+        geocodeCache.set(key, coords);
+        console.log(`   📍 Google geocoded "${normalizedAddress}" → ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
+        return coords;
+      } catch (googleError) {
+        console.warn(`   ⚠️ Google geocode failed for "${normalizedAddress}": ${googleError.message}`);
+      }
+    }
+
     await delay(1000); // 1 second delay to respect rate limits
     
     const response = await axios.get(`${NOMINATIM_BASE_URL}/search`, {
       params: {
-        q: address,
+        q: normalizedAddress,
         format: 'json',
-        limit: 1,
+        limit: 5,
+        addressdetails: 1,
+        countrycodes: 'in',
       },
       headers: {
         'User-Agent': 'ShareMyRide-App/1.0',
@@ -32,15 +94,17 @@ const geocodeAddress = async (address) => {
       throw new Error('Address not found');
     }
 
-    const result = response.data[0];
+    const result = response.data.find(isIndiaResult) || response.data[0];
     
     const coords = {
       lat: parseFloat(result.lat),
       lng: parseFloat(result.lon),
       formattedAddress: result.display_name,
+      provider: 'nominatim',
     };
     
-    console.log(`   📍 Geocoded "${address}" → ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
+    geocodeCache.set(key, coords);
+    console.log(`   📍 Geocoded "${normalizedAddress}" → ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
     
     return coords;
   } catch (error) {
@@ -101,7 +165,7 @@ const calculateStraightLineRoute = (startCoords, endCoords) => {
   }
   
   // Approximate duration (assuming 60 km/h average speed)
-  const duration = (distance / 1000) * 3600 / 60;
+  const duration = ((distance / 1000) / 60) * 3600;
   
   return {
     coordinates,
@@ -117,29 +181,81 @@ const calculateStraightLineRoute = (startCoords, endCoords) => {
  * @returns {Promise<Object>} Route data with coordinates
  */
 const getRouteDetails = async (origin, destination) => {
+  const normalizedOrigin = typeof origin === 'string' ? normalizeIndianAddress(origin) : origin;
+  const normalizedDestination = typeof destination === 'string' ? normalizeIndianAddress(destination) : destination;
+  const key = `${cacheKey(typeof normalizedOrigin === 'string' ? normalizedOrigin : JSON.stringify(normalizedOrigin))}|${cacheKey(typeof normalizedDestination === 'string' ? normalizedDestination : JSON.stringify(normalizedDestination))}`;
+  if (routeCache.has(key)) return routeCache.get(key);
+
   try {
     console.log(`\n🗺️ Getting route...`);
+
+    if (process.env.GOOGLE_MAPS_API_KEY && typeof normalizedOrigin === 'string' && typeof normalizedDestination === 'string') {
+      try {
+        const response = await googleClient.directions({
+          params: {
+            origin: normalizedOrigin,
+            destination: normalizedDestination,
+            mode: 'driving',
+            region: 'in',
+            alternatives: false,
+            key: process.env.GOOGLE_MAPS_API_KEY,
+          },
+        });
+
+        if (response.data.status === 'OK' && response.data.routes.length) {
+          const route = response.data.routes[0];
+          const leg = route.legs[0];
+          const encodedPolyline = route.overview_polyline.points;
+          const routeData = {
+            polyline: encodedPolyline,
+            coordinates: polyline.decode(encodedPolyline).map(([lat, lng]) => ({ lat, lng })),
+            distance: leg.distance.value,
+            duration: leg.duration.value,
+            distanceText: leg.distance.text,
+            durationText: leg.duration.text,
+            startCoordinates: {
+              lat: leg.start_location.lat,
+              lng: leg.start_location.lng,
+              formattedAddress: leg.start_address,
+              provider: 'google',
+            },
+            endCoordinates: {
+              lat: leg.end_location.lat,
+              lng: leg.end_location.lng,
+              formattedAddress: leg.end_address,
+              provider: 'google',
+            },
+            method: 'google-directions',
+          };
+          routeCache.set(key, routeData);
+          console.log(`   ✅ Google route: ${routeData.distanceText}, ${routeData.durationText}`);
+          return routeData;
+        }
+      } catch (googleError) {
+        console.warn(`   ⚠️ Google directions failed: ${googleError.message}`);
+      }
+    }
     
     // Step 1: Get start coordinates
     let startCoords;
-    if (typeof origin === 'object' && origin.lat !== undefined && origin.lng !== undefined) {
-      startCoords = origin;
+    if (typeof normalizedOrigin === 'object' && normalizedOrigin.lat !== undefined && normalizedOrigin.lng !== undefined) {
+      startCoords = normalizedOrigin;
       console.log(`   Start (provided): ${startCoords.lat.toFixed(4)}, ${startCoords.lng.toFixed(4)}`);
-    } else if (typeof origin === 'string') {
-      console.log(`   Geocoding start: "${origin}"`);
-      startCoords = await geocodeAddress(origin);
+    } else if (typeof normalizedOrigin === 'string') {
+      console.log(`   Geocoding start: "${normalizedOrigin}"`);
+      startCoords = await geocodeAddress(normalizedOrigin);
     } else {
       throw new Error('Invalid origin format');
     }
 
     // Step 2: Get end coordinates
     let endCoords;
-    if (typeof destination === 'object' && destination.lat !== undefined && destination.lng !== undefined) {
-      endCoords = destination;
+    if (typeof normalizedDestination === 'object' && normalizedDestination.lat !== undefined && normalizedDestination.lng !== undefined) {
+      endCoords = normalizedDestination;
       console.log(`   End (provided): ${endCoords.lat.toFixed(4)}, ${endCoords.lng.toFixed(4)}`);
-    } else if (typeof destination === 'string') {
-      console.log(`   Geocoding end: "${destination}"`);
-      endCoords = await geocodeAddress(destination);
+    } else if (typeof normalizedDestination === 'string') {
+      console.log(`   Geocoding end: "${normalizedDestination}"`);
+      endCoords = await geocodeAddress(normalizedDestination);
     } else {
       throw new Error('Invalid destination format');
     }
@@ -164,7 +280,7 @@ const getRouteDetails = async (origin, destination) => {
 
     console.log(`   ✅ Route created: ${distanceKm} km, ~${durationHours} hours`);
 
-    return {
+    const routeData = {
       polyline: null,
       coordinates: route.coordinates,
       distance: route.distance,
@@ -175,6 +291,8 @@ const getRouteDetails = async (origin, destination) => {
       endCoordinates: endCoords,
       method: 'straight-line',
     };
+    routeCache.set(key, routeData);
+    return routeData;
   } catch (error) {
     console.error('❌ Route Error:', error.message);
     throw error;
@@ -384,8 +502,8 @@ const calculateSegmentFare = (ride, segmentDistanceMeters) => {
     baseFare = (ride.fare || 0) * proportion;
   }
   
-  const platformFee = baseFare * 0.08;
-  const gst = platformFee * 0.18;
+  const platformFee = baseFare * 0.03;
+  const gst = (baseFare + platformFee) * 0.05;
   const totalFare = baseFare + platformFee + gst;
   
   return {

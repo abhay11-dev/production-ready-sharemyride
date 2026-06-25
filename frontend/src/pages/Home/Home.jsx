@@ -827,7 +827,8 @@ function PublicLanding({ stats, rides, ridesLoading }) {
     const params = new URLSearchParams();
     if (searchFrom) params.set('start', searchFrom);
     if (searchTo) params.set('end', searchTo);
-    navigate(`/ride/search?${params.toString()}`);
+    const query = params.toString();
+    navigate(`/ride/search${query ? `?${query}` : ''}#search`);
   };
 
   const handleOfferRideClick = (e) => {
