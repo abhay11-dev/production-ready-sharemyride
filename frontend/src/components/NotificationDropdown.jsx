@@ -116,16 +116,44 @@ function NotificationDropdown() {
 
   const handleReject = async (bookingId, e) => {
     e.stopPropagation();
-    if (!window.confirm('Are you sure you want to reject this booking?')) {
-      return;
-    }
-    
+
+    const booking = notifications.find(n => n._id === bookingId);
+    const passengerName = booking?.passenger?.name || booking?.passengerId?.name || 'this passenger';
+
+    toast.custom((t) => (
+      <div className={`bg-white border border-red-100 shadow-xl rounded-xl p-4 max-w-sm w-full transition-all ${t.visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
+        <p className="text-sm font-bold text-gray-900 mb-1">Reject ride request?</p>
+        <p className="text-xs text-gray-500 mb-3">
+          This will decline {passengerName}'s request and return the seat(s) to your ride.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => toast.dismiss(t.id)}
+            className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              toast.dismiss(t.id);
+              rejectBooking(bookingId);
+            }}
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+    ), { duration: 8000, position: 'top-center' });
+  };
+
+  const rejectBooking = async (bookingId) => {
     setProcessingId(bookingId);
     
     try {
-      await updateBookingStatus(bookingId, 'rejected', { 
-        reason: 'Driver rejected the booking' 
-      });
+      await updateBookingStatus(bookingId, 'rejected', 'Driver rejected the booking');
       
       toast.success('Ride request rejected', {
         duration: 3000,
@@ -143,7 +171,7 @@ function NotificationDropdown() {
         },
       });
       
-      setNotifications(notifications.filter(n => n._id !== bookingId));
+      setNotifications(prev => prev.filter(n => n._id !== bookingId));
     } catch (error) {
       console.error('Error rejecting booking:', error);
       toast.error(error.response?.data?.message || 'Failed to reject ride request', {

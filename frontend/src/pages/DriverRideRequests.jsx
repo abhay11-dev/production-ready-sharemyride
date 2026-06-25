@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth.jsx';
+import { useAuth } from '../hooks/useAuth.jsx';
 import {
   getDriverBookings,
   updateBookingStatus,
   formatBookingStatus,
-} from '../../services/bookingService.js';
+} from '../services/bookingService.js';
 import toast from 'react-hot-toast';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,6 +50,11 @@ function timeAgo(isoStr) {
 
 function getInitial(name) {
   return (name || 'U').charAt(0).toUpperCase();
+}
+
+function formatUpper(value) {
+  if (!value) return '—';
+  return String(value).toUpperCase();
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
@@ -423,9 +428,8 @@ function BookingCard({ booking, onAction }) {
                   ...(booking.rejectedAt ? [{ label: 'Rejected on', value: formatDateTime(booking.rejectedAt) }] : []),
                   ...(booking.cancelledAt ? [{ label: 'Cancelled on', value: formatDateTime(booking.cancelledAt) }] : []),
                   ...(booking.completedAt ? [{ label: 'Completed on', value: formatDateTime(booking.completedAt) }] : []),
-                  { label: 'Payment method', value: (booking.paymentMethod || 'cash').toUpperCase() },
-                  { label: 'Payment status', value: (booking.paymentStatus || 'pending') },
-                  ...(booking.matchType ? [{ label: 'Match type', value: booking.matchType }] : []),
+                  { label: 'Payment status', value: formatUpper(booking.paymentStatus || 'pending') },
+                  ...(booking.matchType ? [{ label: 'Match type', value: formatUpper(booking.matchType) }] : []),
                   ...(booking.cancellationReason ? [{ label: 'Cancel reason', value: booking.cancellationReason }] : []),
                   ...(booking.rejectionReason ? [{ label: 'Reject reason', value: booking.rejectionReason }] : []),
                 ].map(({ label, value }) => (
@@ -715,7 +719,7 @@ function DriverRideRequests() {
                 Refresh
               </button>
               <Link
-                to="/driver/bookings"
+                to="/driver/upcoming-rides"
                 className="flex items-center gap-2 bg-white text-blue-700 hover:bg-blue-50 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
               >
                 My rides →

@@ -707,7 +707,7 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
           {[
             { label: 'Upcoming Trips', to: '/upcoming-rides', icon: '📅', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' },
             { label: 'My Bookings', to: '/bookings/my-bookings', icon: '🎫', bg: 'bg-green-50 border-green-100', text: 'text-green-700' },
-            { label: 'Ride Requests', to: '/notifications', icon: '🔔', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
+            { label: 'Ride Requests', to: '/driver/bookings', icon: '🔔', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
             { label: 'Profile', to: '/profile', icon: '👤', bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },
           ].map(card => (
             <Link key={card.label} to={card.to} onClick={handleNavClick} className={`${card.bg} border rounded-2xl p-4 sm:p-5 flex flex-col items-start gap-2 hover:shadow-md transition-all duration-150`}>

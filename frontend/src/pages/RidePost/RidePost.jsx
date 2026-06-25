@@ -209,7 +209,7 @@ function RideCard({ ride, onDelete, isDeleting, onExpand, isExpanded }) {
               </span>
             )}
             <Link
-              to="/notifications"
+              to="/driver/bookings"
               className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full font-semibold hover:bg-blue-200 transition-colors"
             >
               Manage →
@@ -840,7 +840,7 @@ function RidePost() {
             {/* Quick nav links — same style as Home.jsx quick action cards */}
             <div className="flex items-center gap-2 flex-wrap">
               <Link
-                to="/notifications"
+                to="/driver/bookings"
                 className="inline-flex items-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -948,7 +948,7 @@ function RidePost() {
             {/* Quick links — same quick action card pattern as Home.jsx */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Ride Requests', to: '/notifications', icon: '🔔', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
+                { label: 'Ride Requests', to: '/driver/bookings', icon: '🔔', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
                 { label: 'Upcoming Rides', to: '/upcoming-rides', icon: '📅', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' },
                 { label: 'My Bookings', to: '/bookings/my-bookings', icon: '🎫', bg: 'bg-green-50 border-green-100', text: 'text-green-700' },
                 { label: 'My Profile', to: '/profile', icon: '👤', bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },

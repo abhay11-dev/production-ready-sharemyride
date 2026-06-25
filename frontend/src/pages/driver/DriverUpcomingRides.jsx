@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import api from '../../config/api';
+import { getDriverBookings } from '../../services/bookingService';
 
 const DriverUpcomingRides = () => {
   const [upcomingRides, setUpcomingRides] = useState([]);
@@ -12,17 +12,22 @@ const DriverUpcomingRides = () => {
 
   const fetchUpcomingRides = async () => {
     try {
-      const response = await api.get('/bookings/driver-bookings');
+      const bookings = await getDriverBookings();
+      const normalizedBookings = bookings.map((booking) => ({
+        ...booking,
+        rideId: booking.rideId || booking.ride,
+        passengerId: booking.passengerId || booking.passenger,
+      }));
       
       // Filter for upcoming rides
-      const upcoming = response.data.filter(booking => {
+      const upcoming = normalizedBookings.filter(booking => {
         const rideDate = new Date(booking.rideId?.date);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         return (
-          (booking.status === 'accepted' || booking.status === 'completed') &&
-          booking.paymentStatus === 'completed' &&
+          ['accepted', 'completed'].includes(booking.status) &&
+          !Number.isNaN(rideDate.getTime()) &&
           rideDate >= today
         );
       });
@@ -181,7 +186,7 @@ const DriverUpcomingRides = () => {
                       </a>
                     )}
                     <Link
-                      to="/notifications"
+                      to="/driver/bookings"
                       className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

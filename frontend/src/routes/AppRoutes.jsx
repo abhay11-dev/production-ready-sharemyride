@@ -12,7 +12,7 @@ import RidePost from '../pages/RidePost/RidePost';
 import Profile from '../pages/Profile/Profile.jsx';
 import NotificationsPage from '../pages/NotificationsPage';
 import MyBookings from '../pages/bookings/MyBookings.jsx';
-import DriverBookings from '../pages/bookings/DriverBookings.jsx';
+import DriverRideRequests from '../pages/DriverRideRequests.jsx';
 import { useAuth } from '../hooks/useAuth';
 import PaymentSetupForm from '../pages/PaymentSetupForm.jsx';
 import UpcomingRides from '../pages/rides/UpcomingRides';
@@ -192,7 +192,15 @@ function AppRoutes() {
         path="/bookings/driver" 
         element={
           <ProtectedRoute>
-            <DriverBookings />
+            <DriverRideRequests />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/driver/bookings" 
+        element={
+          <ProtectedRoute>
+            <DriverRideRequests />
           </ProtectedRoute>
         } 
       />
