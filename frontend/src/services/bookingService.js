@@ -222,15 +222,9 @@ export const calculateRefund = (rideDate, totalFare) => {
 
   if (hoursUntilRide > 24) {
     return totalFare; // 100% refund
-  } else if (hoursUntilRide > 12) {
-    return totalFare * 0.75; // 75% refund
-  } else if (hoursUntilRide > 6) {
-    return totalFare * 0.50; // 50% refund
-  } else if (hoursUntilRide > 2) {
-    return totalFare * 0.25; // 25% refund
   }
-  
-  return 0; // No refund
+
+  return totalFare * 0.97; // 97% refund; 3% retained as the late-cancellation fee
 };
 
 /**

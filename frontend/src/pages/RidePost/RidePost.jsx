@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 import PaymentCalculator from '../../utils/paymentCalculator';
 import PaymentBreakdownCard from '../../components/PaymentBreakdownCard';
+import api from '../../config/api.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDate(dateStr) {
@@ -380,6 +381,43 @@ function AuthGate() {
 // ─── Driver Verification Gate ─────────────────────────────────────────────────
 function VerificationGate({ verificationStatus }) {
   const navigate = useNavigate();
+  const [platformStats, setPlatformStats] = useState({
+    totalUsers: 0,
+    verifiedDrivers: 0,
+    totalRides: 0,
+    totalCities: 0,
+    averageRating: 0,
+    loading: true,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchStats = async () => {
+      try {
+        const res = await api.get('/stats/home');
+        const data = res?.data?.data || {};
+        if (!isMounted) return;
+        setPlatformStats({
+          totalUsers: Number(data.totalUsers || 0),
+          verifiedDrivers: Number(data.verifiedDrivers || 0),
+          totalRides: Number(data.totalRides || 0),
+          totalCities: Number(data.totalCities || 0),
+          averageRating: Number(data.averageRating || 0),
+          loading: false,
+        });
+      } catch {
+        if (isMounted) {
+          setPlatformStats((prev) => ({ ...prev, loading: false }));
+        }
+      }
+    };
+
+    fetchStats();
+    return () => { isMounted = false; };
+  }, []);
+
+  const formatNumber = (value) => new Intl.NumberFormat('en-IN').format(value || 0);
+  const formatRating = (value) => `${Number(value || 0).toFixed(1)}★`;
 
   const CONFIG = {
     not_started: {
@@ -521,7 +559,7 @@ function VerificationGate({ verificationStatus }) {
 
                 {/* CTA button */}
                 <button
-                  onClick={() => navigate('/driver-verification')}
+                  onClick={() => navigate('/profile?tab=verification')}
                   className={`w-full py-3 rounded-xl font-semibold text-sm transition-colors shadow-sm ${c.ctaStyle}`}
                 >
                   {c.cta}
@@ -547,15 +585,17 @@ function VerificationGate({ verificationStatus }) {
               </div>
             </div>
 
-            {/* Platform trust stat — same pattern as Home.jsx stats strip */}
+            {/* Platform trust stat — real live data from the backend */}
             <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-100 rounded-2xl p-4 sm:p-5">
-              <p className="text-xs font-bold text-green-700 uppercase tracking-widest mb-3">Community trust</p>
+              <p className="text-xs font-bold text-green-700 uppercase tracking-widest mb-3">Live platform stats</p>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { num: '100%', label: 'Verified drivers' },
-                  { num: '4.8★', label: 'Avg. driver rating' },
+                  { num: platformStats.loading ? '—' : formatNumber(platformStats.verifiedDrivers), label: 'Verified drivers' },
+                  { num: platformStats.loading ? '—' : formatRating(platformStats.averageRating), label: 'Avg. community rating' },
+                  { num: platformStats.loading ? '—' : formatNumber(platformStats.totalRides), label: 'Rides shared' },
+                  { num: platformStats.loading ? '—' : formatNumber(platformStats.totalCities), label: 'Cities covered' },
                 ].map(s => (
-                  <div key={s.label} className="text-center">
+                  <div key={s.label} className="text-center rounded-xl bg-white/70 p-2.5">
                     <p className="text-lg font-bold text-gray-900">{s.num}</p>
                     <p className="text-xs text-gray-500">{s.label}</p>
                   </div>
@@ -623,12 +663,26 @@ function RidePost() {
 
   // ── Post ride handler ─────────────────────────────────────────────────────
   const handlePostRide = async (rideData) => {
+    if (!user?.isDriverVerified && user?.role !== 'driver') {
+      toast.error('Only verified drivers can post rides. Complete verification first.', {
+        duration: 5000,
+        icon: '🔒',
+        style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+      });
+      return;
+    }
+
     setIsPosting(true);
+    const postingToast = toast.loading('Publishing your ride…', {
+      style: { background: '#2563EB', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+    });
+
     try {
       const response = await postRide(rideData);
       const newRide = response?.data || response;
       setRides(prev => [newRide, ...prev]);
-      toast.success('Ride published! Passengers can now find it.', {
+      toast.dismiss(postingToast);
+      toast.success('Ride published! It is now visible to nearby passengers.', {
         icon: '🚗',
         duration: 4000,
         style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
@@ -637,6 +691,7 @@ function RidePost() {
         document.getElementById('my-rides-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 600);
     } catch (err) {
+      toast.dismiss(postingToast);
       const msg = err?.response?.data?.message || err?.message || 'Failed to post ride';
       toast.error(msg, {
         duration: 4000,

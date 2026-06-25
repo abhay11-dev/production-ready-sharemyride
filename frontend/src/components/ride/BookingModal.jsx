@@ -13,8 +13,8 @@ function BookingModal({ ride, onClose, onSuccess }) {
 
   // Calculate fares
   const baseFare = (ride.segmentFare || ride.fare || 0) * seatsToBook;
-  const platformFee = Math.round(baseFare * 0.05);
-  const gst = Math.round(baseFare * 0.18);
+  const platformFee = Math.round(baseFare * 0.03);
+  const gst = Math.round(platformFee * 0.05);
   const totalFare = baseFare + platformFee + gst;
 
   const availableSeats = ride.availableSeats ?? ride.seats;
@@ -200,11 +200,11 @@ function BookingModal({ ride, onClose, onSuccess }) {
                 <span className="font-semibold text-gray-900">₹{baseFare}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Platform Fee (5%)</span>
+                <span className="text-gray-600">Platform Fee (3%)</span>
                 <span className="font-semibold text-gray-900">₹{platformFee}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">GST (18%)</span>
+                <span className="text-gray-600">GST (5% on fee)</span>
                 <span className="font-semibold text-gray-900">₹{gst}</span>
               </div>
               <div className="border-t-2 border-blue-200 pt-2 mt-2">
@@ -228,7 +228,7 @@ function BookingModal({ ride, onClose, onSuccess }) {
   <li>Your payment will be processed securely via Razorpay</li>
   <li>Driver receives payment after successful ride completion</li>
   <li>Your booking will be confirmed once payment is successful</li>
-  <li>Cancellation policy applies based on time remaining</li>
+  <li>Cancel 24+ hours before departure for a full refund. Later cancellations incur a 3% fee.</li>
 </ul>
               </div>
             </div>

@@ -118,12 +118,12 @@ function FarePreview({ fare, seats }) {
           <span className="font-medium">₹{base.toFixed(0)}</span>
         </div>
         <div className="flex justify-between text-red-500">
-          <span>Platform fee (8%)</span>
-          <span>−₹{d.platformFee.toFixed(0)}</span>
+          <span>Passenger-side platform fee (3%)</span>
+          <span>+₹{d.platformFee.toFixed(0)}</span>
         </div>
         <div className="flex justify-between text-red-400">
-          <span>GST on fee (18%)</span>
-          <span>−₹{d.gstOnPlatformFee.toFixed(0)}</span>
+          <span>GST on fee (5%)</span>
+          <span>+₹{d.gstOnPlatformFee.toFixed(0)}</span>
         </div>
         <div className="flex justify-between font-bold text-green-700 border-t border-green-200 pt-1.5 mt-1.5">
           <span>You receive / seat</span>
@@ -277,6 +277,10 @@ function RideForm({ onSubmit, isLoading }) {
   const [fare, setFare]                 = useState('');
   const [tollIncluded, setTollIncluded] = useState(false);
   const [negotiableFare, setNegotiable] = useState(false);
+  const [isRoundTrip, setIsRoundTrip]   = useState(false);
+  const [returnDate, setReturnDate]     = useState('');
+  const [returnTime, setReturnTime]     = useState('');
+  const [reusePreviousTripOptions, setReusePreviousTripOptions] = useState(true);
 
   // ── Step 3: Vehicle + Contact ─────────────────────────────────────────────
   // Auto-fill phone from user profile if available
@@ -303,6 +307,17 @@ function RideForm({ onSubmit, isLoading }) {
     if (user?.phone) setPhoneNumber(user.phone);
   }, [user]);
 
+  const handleRoundTripToggle = (value) => {
+    setIsRoundTrip(value);
+    if (!value) {
+      setReturnDate('');
+      setReturnTime('');
+      setReusePreviousTripOptions(false);
+    } else {
+      setReusePreviousTripOptions(true);
+    }
+  };
+
   // ── Waypoint helpers ──────────────────────────────────────────────────────
   const addWaypoint = () =>
     setWaypoints(p => [...p, { location: '', order: p.length + 1 }]);
@@ -319,6 +334,10 @@ function RideForm({ onSubmit, isLoading }) {
     seats: parseInt(seats) || 1,
     fare: parseFloat(fare) || 0,
     tollIncluded, negotiableFare,
+    isRoundTrip,
+    returnDate,
+    returnTime,
+    reusePreviousTripOptions,
     waypoints: waypoints.filter(w => w.location.trim()),
     allowPartialRoute,
     vehicle: {
@@ -360,6 +379,8 @@ function RideForm({ onSubmit, isLoading }) {
       const f = parseFloat(fare);
       if (!fare || isNaN(f) || f < 1) errs.fare = 'Enter a valid fare (min ₹1)';
       else if (f > 10000) errs.fare = 'Fare seems too high — double-check';
+      if (isRoundTrip && !returnDate) errs.returnDate = 'Select a return date';
+      if (isRoundTrip && !returnTime) errs.returnTime = 'Select a return time';
     }
 
     if (s === 3) {
@@ -380,7 +401,7 @@ function RideForm({ onSubmit, isLoading }) {
     }
 
     return errs;
-  }, [start, end, date, time, seats, fare, vehicleNumber, phoneNumber, address]);
+  }, [start, end, date, time, seats, fare, isRoundTrip, returnDate, returnTime, vehicleNumber, phoneNumber, address]);
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const handleNext = () => {
@@ -427,6 +448,10 @@ function RideForm({ onSubmit, isLoading }) {
       fare:           parseFloat(fare),
       tollIncluded,
       negotiableFare,
+      isRoundTrip,
+      returnDate,
+      returnTime,
+      reusePreviousTripOptions,
 
       // Vehicle — controller reads vehicle.* and vehicleNumber separately
       vehicleNumber:  vehicleNumber.replace(/\s/g, '').toUpperCase(),
@@ -475,6 +500,7 @@ function RideForm({ onSubmit, isLoading }) {
     setStart(''); setEnd(''); setWaypoints([]); setAllowPartial(true);
     setDate(''); setTime(''); setSeats(1);
     setFare(''); setTollIncluded(false); setNegotiable(false);
+    setIsRoundTrip(false); setReturnDate(''); setReturnTime(''); setReusePreviousTripOptions(true);
     setVehicleNumber(''); setVehicleType('Sedan'); setVehicleModel('');
     setVehicleColor(''); setAcAvailable(true); setLuggageSpace('Medium');
     setPhoneNumber(user?.phone || ''); setAddress(''); setPickupInstructions('');
@@ -604,6 +630,33 @@ function RideForm({ onSubmit, isLoading }) {
                 </div>
                 <FarePreview fare={fare} seats={seats} />
               </Field>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm font-semibold text-amber-800">Posting policy</p>
+                <ul className="mt-2 space-y-1 text-xs text-amber-700">
+                  <li>• First offer is free to post. Passengers pay a 3% platform fee plus 5% GST.</li>
+                  <li>• Cancellations made 24+ hours before departure are free. Later cancellations incur a 3% charge.</li>
+                </ul>
+              </div>
+
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                <Toggle checked={isRoundTrip} onChange={handleRoundTripToggle} label="Offer a return trip" hint="Add a return date and time for the same route" />
+                {isRoundTrip && (
+                  <div className="mt-4 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Return date" required error={errors.returnDate}>
+                        <input type="date" value={returnDate} min={date || today} onChange={e => { setReturnDate(e.target.value); setErrors(p => ({ ...p, returnDate: '' })); }} className={inputCls(errors.returnDate)} />
+                      </Field>
+                      <Field label="Return time" required error={errors.returnTime}>
+                        <input type="time" value={returnTime} onChange={e => { setReturnTime(e.target.value); setErrors(p => ({ ...p, returnTime: '' })); }} className={inputCls(errors.returnTime)} />
+                      </Field>
+                    </div>
+                    <div className="rounded-lg border border-blue-200 bg-white p-3">
+                      <Toggle checked={reusePreviousTripOptions} onChange={setReusePreviousTripOptions} label="Reuse previous trip options for the return ride" hint="Same route, seats, fare, vehicle and preferences will be reused" />
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Fare options */}
               <div className="border border-gray-100 rounded-xl divide-y divide-gray-100">
@@ -753,7 +806,8 @@ function RideForm({ onSubmit, isLoading }) {
                     { label: 'Route',    val: start && end ? `${start} → ${end}` : null },
                     { label: 'Date',     val: date ? new Date(date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ` at ${time}` : null },
                     { label: 'Seats',    val: `${seats} seat${seats > 1 ? 's' : ''} available` },
-                    { label: 'Fare',     val: fare ? `₹${fare} per seat (you receive ₹${PaymentCalculator.calculateDriverEarnings(parseFloat(fare)).driverNetAmount.toFixed(0)}/seat)` : null },
+                    { label: 'Fare',     val: fare ? `₹${fare} per seat • passenger pays ₹${PaymentCalculator.calculatePassengerTotal(parseFloat(fare), 1).totalPassengerPays.toFixed(0)} incl. 3% fee + 5% GST` : null },
+                    { label: 'Round trip', val: isRoundTrip ? `Return ${returnDate ? new Date(returnDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'selected'} at ${returnTime || 'time'}` : 'No return trip' },
                     { label: 'Vehicle',  val: vehicleNumber || null },
                     { label: 'Contact',  val: phoneNumber || null },
                   ].map(({ label, val }) => val ? (

@@ -17,12 +17,16 @@ exports.getHomeStatistics = async (req, res) => {
     // Run all queries in parallel for better performance
     const [
       totalUsers,
+      verifiedDrivers,
       totalRides,
       uniqueCities,
       averageRatingData
     ] = await Promise.all([
       // Total registered users (not blocked)
       User.countDocuments({ isBlocked: { $ne: true } }),
+
+      // Verified drivers currently eligible to post rides
+      User.countDocuments({ isBlocked: { $ne: true }, isDriverVerified: true }),
 
       // Total rides (all statuses except cancelled)
       Ride.countDocuments({ 
@@ -99,6 +103,7 @@ exports.getHomeStatistics = async (req, res) => {
 
     const stats = {
       totalUsers,
+      verifiedDrivers,
       totalRides,
       totalCities,
       averageRating
@@ -119,6 +124,7 @@ exports.getHomeStatistics = async (req, res) => {
       success: true,
       data: {
         totalUsers: 0,
+        verifiedDrivers: 0,
         totalRides: 0,
         totalCities: 0,
         averageRating: 0

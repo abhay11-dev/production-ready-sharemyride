@@ -97,12 +97,12 @@ const PaymentBreakdownCard = ({
                     <p className="text-xs text-orange-700 font-medium mb-2">Platform Deductions:</p>
                     <div className="space-y-1 pl-3">
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">• Platform Fee (8%)</span>
-                        <span className="text-red-600">-₹{(driverCalc.platformFee * seatsBooked).toFixed(2)}</span>
+                        <span className="text-gray-500">• Passenger-side platform fee (3%)</span>
+                        <span className="text-gray-600">+₹{(driverCalc.platformFee * seatsBooked).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">• GST on Platform Fee (18%)</span>
-                        <span className="text-red-600">-₹{(driverCalc.gstOnPlatformFee * seatsBooked).toFixed(2)}</span>
+                        <span className="text-gray-500">• GST on platform fee (5%)</span>
+                        <span className="text-gray-600">+₹{(driverCalc.gstOnPlatformFee * seatsBooked).toFixed(2)}</span>
                       </div>
                     </div>
                   </div>
@@ -139,12 +139,12 @@ const PaymentBreakdownCard = ({
                 </div>
                 
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Service Fee (8%)</span>
+                  <span className="text-gray-600">Platform Fee (3%)</span>
                   <span className="font-medium">₹{(passengerCalc.passengerServiceFee * seatsBooked).toFixed(2)}</span>
                 </div>
                 
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">GST on Service Fee (18%)</span>
+                  <span className="text-gray-600">GST on platform fee (5%)</span>
                   <span className="font-medium">₹{(passengerCalc.gstOnServiceFee * seatsBooked).toFixed(2)}</span>
                 </div>
                 

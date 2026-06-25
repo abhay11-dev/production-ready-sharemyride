@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
+import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import AppRoutes from './routes/AppRoutes';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
@@ -10,31 +10,41 @@ function App() {
   return (
     <Router>
       <UserProvider>
-        <div className="min-h-screen flex flex-col bg-gray-50">
-          <Header />
-          <Toaster />
-          <main className="flex-1">
-            <AppRoutes />
-          </main>
-          <Footer />
-          <ScrollToTop />
-        </div>
+        <AppShell />
       </UserProvider>
     </Router>
   );
 }
 
+function AppShell() {
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      <Header />
+      <Toaster />
+      <main className="flex-1">
+        <AppRoutes />
+      </main>
+      <Footer />
+      <ScrollToTop />
+    </div>
+  );
+}
+
 const ScrollToTop = () => {
   const [isVisible, setIsVisible] = useState(false);
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const toggleVisibility = () => {
       setIsVisible(window.pageYOffset > 300);
     };
 
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     window.addEventListener('scroll', toggleVisibility);
+    toggleVisibility();
+
     return () => window.removeEventListener('scroll', toggleVisibility);
-  }, []);
+  }, [pathname]);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });

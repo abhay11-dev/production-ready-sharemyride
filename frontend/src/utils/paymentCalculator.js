@@ -6,27 +6,24 @@
  * REVENUE MODEL:
  * ===============
  * Driver Side:
- *   - Platform Fee: 8% of base fare
- *   - GST on Platform Fee: 18% of platform fee
- *   - Driver Net Earning = Base Fare - Platform Fee - GST on Platform Fee
+ *   - Driver ask is the amount shown as their fare.
+ *   - Platform fee: 3% of the driver-set fare.
+ *   - GST on platform fee: 5% of the platform fee.
+ *   - Driver net earning = driver-set fare.
  * 
  * Passenger Side:
  *   - Base Fare (what driver set)
- *   - Passenger Service Fee: ₹10 fixed per seat
- *   - GST on Service Fee: 18% of ₹10 = ₹1.80
- *   - Total Passenger Pays = Base Fare + ₹10 + ₹1.80 = Base Fare + ₹11.80
- * 
- * Platform Revenue:
- *   - From Driver: Platform Fee + GST = 8% + (18% of 8%) = ~9.44% of base fare
- *   - From Passenger: ₹11.80 per seat
+ *   - Platform Fee: 3% of base fare
+ *   - GST on Platform Fee: 5% of the platform fee
+ *   - Total Passenger Pays = Base Fare + Platform Fee + GST
  */
 
 class PaymentCalculator {
   // Constants
-  static PLATFORM_FEE_PERCENTAGE = 0.08; // 8%
-  static GST_PERCENTAGE = 0.18; // 18%
-  static PASSENGER_SERVICE_FEE = 10; // ₹10 fixed per seat
-  static PASSENGER_SERVICE_FEE_GST = 10 * 0.18; // ₹1.80
+  static PLATFORM_FEE_PERCENTAGE = 0.03; // 3%
+  static GST_PERCENTAGE = 0.05; // 5%
+  static PASSENGER_SERVICE_FEE = 0;
+  static PASSENGER_SERVICE_FEE_GST = 0;
 
   /**
    * Calculate driver earnings (what driver receives after deductions)
@@ -38,17 +35,12 @@ class PaymentCalculator {
     const fare = parseFloat(baseFare) || 0;
     const seats = parseInt(seatsBooked) || 1;
 
-    // Platform fee: 8% of base fare
     const platformFee = fare * this.PLATFORM_FEE_PERCENTAGE;
-    
-    // GST on platform fee: 18% of platform fee
     const gstOnPlatformFee = platformFee * this.GST_PERCENTAGE;
-    
-    // Total deductions
     const totalDeductions = platformFee + gstOnPlatformFee;
-    
-    // Net amount driver receives per seat
-    const driverNetAmountPerSeat = fare - totalDeductions;
+
+    // Driver receives exactly the amount they asked for; platform charges are added on the passenger side.
+    const driverNetAmountPerSeat = fare;
     
     // Total for all seats
     const totalDriverEarnings = driverNetAmountPerSeat * seats;
@@ -82,14 +74,10 @@ class PaymentCalculator {
     const fare = parseFloat(baseFare) || 0;
     const seats = parseInt(seatsBooked) || 1;
 
-    // Fixed service fee per seat
-    const serviceFeePerSeat = this.PASSENGER_SERVICE_FEE;
-    const gstOnServiceFeePerSeat = this.PASSENGER_SERVICE_FEE_GST;
-    
-    // Total service charges per seat
+    const serviceFeePerSeat = fare * this.PLATFORM_FEE_PERCENTAGE;
+    const gstOnServiceFeePerSeat = serviceFeePerSeat * this.GST_PERCENTAGE;
+
     const totalServiceChargesPerSeat = serviceFeePerSeat + gstOnServiceFeePerSeat;
-    
-    // Total passenger pays per seat
     const totalPerSeat = fare + totalServiceChargesPerSeat;
     
     // Total for all seats
@@ -129,21 +117,16 @@ class PaymentCalculator {
     const driverCalc = this.calculateDriverEarnings(baseFare, seatsBooked);
     const passengerCalc = this.calculatePassengerTotal(baseFare, seatsBooked);
 
-    // Platform earns from driver
-    const fromDriver = (driverCalc.platformFee + driverCalc.gstOnPlatformFee) * seatsBooked;
-    
-    // Platform earns from passenger
+    const fromDriver = 0;
     const fromPassenger = passengerCalc.totalServiceChargesForAllSeats;
-    
-    // Total platform revenue
-    const totalPlatformRevenue = fromDriver + fromPassenger;
+    const totalPlatformRevenue = fromPassenger;
 
     return {
       fromDriver: fromDriver,
-      fromDriverBreakdown: `Platform Fee (${driverCalc.platformFeePercentage}%) + GST`,
+      fromDriverBreakdown: 'No direct deduction from driver ask',
       
       fromPassenger: fromPassenger,
-      fromPassengerBreakdown: `Service Fee + GST`,
+      fromPassengerBreakdown: `3% platform fee + 5% GST`,
       
       totalRevenue: totalPlatformRevenue,
       
@@ -219,7 +202,7 @@ class PaymentCalculator {
     return {
       percentage: this.PLATFORM_FEE_PERCENTAGE * 100,
       gstPercentage: this.GST_PERCENTAGE * 100,
-      description: `${this.PLATFORM_FEE_PERCENTAGE * 100}% platform fee + ${this.GST_PERCENTAGE * 100}% GST on platform fee`
+      description: `${this.PLATFORM_FEE_PERCENTAGE * 100}% platform fee + ${this.GST_PERCENTAGE * 100}% GST on that fee`
     };
   }
 }
