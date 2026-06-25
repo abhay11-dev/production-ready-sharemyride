@@ -2,6 +2,7 @@ import React, { StrictMode, Component } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import 'leaflet/dist/leaflet.css';
+import "maplibre-gl/dist/maplibre-gl.css";
 import App from './App';
 
 class ErrorBoundary extends Component {
