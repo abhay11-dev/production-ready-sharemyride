@@ -1,597 +1,600 @@
-import React, { useState, useRef, useEffect } from 'react';
+// src/pages/RideSearch/RideSearch.jsx
+// Complete Search Ride page matching Home.jsx design system exactly.
+// Map: mapcn (MapLibre) via RideMap component — replaces LeafletRideMap.
+// Hero: bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500, pb-14.
+// Content: -mt-8 overlap, bg-gray-50, max-w-7xl.
+// Install mapcn first: npx shadcn@latest add @mapcn/map
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import RideCard from '../../components/ride/RideCard';
+import RideMap from '../../components/map/RideMap';
 import { searchRides } from '../../services/rideService';
-import LeafletRideMap from '../../components/map/LeafletRideMap';
+import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
-import LoginRequiredSpeechToast from '../../components/common/LoginRequiredSpeechToast.jsx';
-import { useAuth } from '../../hooks/useAuth.jsx';
 
+// ─── Skeleton card matching Home.jsx ─────────────────────────────────────────
+function SkeletonCard() {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 animate-pulse">
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex flex-col items-center gap-1 flex-shrink-0 mt-1">
+          <div className="w-2 h-2 rounded-full bg-gray-200" />
+          <div className="w-px h-5 bg-gray-200" />
+          <div className="w-2 h-2 rounded-full bg-gray-200" />
+        </div>
+        <div className="flex-1 space-y-2">
+          <div className="h-3 bg-gray-200 rounded w-3/4" />
+          <div className="h-3 bg-gray-200 rounded w-1/2" />
+        </div>
+        <div className="w-14 h-8 bg-gray-200 rounded ml-3" />
+      </div>
+      <div className="flex items-center gap-2 pt-3 border-t border-gray-50">
+        <div className="w-7 h-7 rounded-full bg-gray-200" />
+        <div className="flex-1 space-y-1.5">
+          <div className="h-3 bg-gray-200 rounded w-24" />
+          <div className="h-2.5 bg-gray-200 rounded w-16" />
+        </div>
+        <div className="w-16 h-5 bg-gray-200 rounded-full" />
+      </div>
+    </div>
+  );
+}
 
+// ─── Filter toggle ────────────────────────────────────────────────────────────
+function FilterToggle({ checked, onChange, label }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer group">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${checked ? 'bg-blue-600' : 'bg-gray-200'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+      </button>
+      <span className="text-sm text-gray-700 group-hover:text-gray-900">{label}</span>
+    </label>
+  );
+}
 
-const defaultCenter = {
-  lat: 23.0225,
-  lng: 72.5714
-};
+// ─── Empty results state ──────────────────────────────────────────────────────
+function EmptyResults({ start, end, onClear }) {
+  return (
+    <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
+      <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg className="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <p className="font-semibold text-gray-800 text-base mb-1">No rides found</p>
+      <p className="text-sm text-gray-500 mb-5">
+        No rides from <span className="font-medium">{start}</span> to <span className="font-medium">{end}</span> at the moment.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-2 justify-center">
+        <button
+          onClick={onClear}
+          className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+        >
+          Try a new search
+        </button>
+        <Link
+          to="/ride/post"
+          className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Post a ride this route
+        </Link>
+      </div>
+    </div>
+  );
+}
 
+// ─── Pre-search placeholder ───────────────────────────────────────────────────
+function SearchPrompt() {
+  return (
+    <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
+      <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
+        <svg className="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </div>
+      <p className="font-semibold text-gray-800 text-base mb-1">Search for available rides</p>
+      <p className="text-sm text-gray-500">Enter your origin and destination above to find rides going your way.</p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PAGE COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
 function RideSearch() {
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
-  const [date, setDate] = useState('');
-  const [rides, setRides] = useState([]);
-  const [connectedRides, setConnectedRides] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
-  // Scroll to top on page mount
-  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
+  // ── Search inputs ─────────────────────────────────────────────────────────
+  const [start, setStart] = useState(searchParams.get('start') || '');
+  const [end,   setEnd]   = useState(searchParams.get('end')   || '');
+  const [date,  setDate]  = useState(searchParams.get('date')  || '');
 
+  // ── Results ───────────────────────────────────────────────────────────────
+  const [rides, setRides]               = useState([]);
+  const [connectedRides, setConnected]  = useState([]);
+  const [isLoading, setIsLoading]       = useState(false);
+  const [hasSearched, setHasSearched]   = useState(false);
 
-  // Map state
-  const [mapCenter, setMapCenter] = useState(defaultCenter);
-  const [mapZoom, setMapZoom] = useState(5);
-  const [startMarker, setStartMarker] = useState(null);
-  const [endMarker, setEndMarker] = useState(null);
-  const [userRoute, setUserRoute] = useState([]);
-  const [rideRoutes, setRideRoutes] = useState([]);
+  // ── Map state ─────────────────────────────────────────────────────────────
+  const [startMarker, setStartMarker]   = useState(null);
+  const [endMarker, setEndMarker]       = useState(null);
+  const [rideRoutes, setRideRoutes]     = useState([]);
+  const [selectedRideId, setSelected]   = useState(null);
 
-  // Advanced filters
-  const [showFilters, setShowFilters] = useState(false);
-  const [minSeats, setMinSeats] = useState('');
-  const [maxFare, setMaxFare] = useState('');
-  const [vehicleType, setVehicleType] = useState('');
-  const [acOnly, setAcOnly] = useState(false);
-  const [womenOnly, setWomenOnly] = useState(false);
-  const [instantBooking, setInstantBooking] = useState(false);
+  // ── Filters ───────────────────────────────────────────────────────────────
+  const [showFilters, setShowFilters]   = useState(false);
+  const [minSeats, setMinSeats]         = useState('');
+  const [maxFare, setMaxFare]           = useState('');
+  const [vehicleType, setVehicleType]   = useState('');
+  const [acOnly, setAcOnly]             = useState(false);
+  const [womenOnly, setWomenOnly]       = useState(false);
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
 
-  const applyAdvancedFilters = (rides) => {
-    return rides.filter(ride => {
-      const availableSeats = ride.availableSeats || ride.seats;
-      if (minSeats && availableSeats < parseInt(minSeats)) return false;
-      if (maxFare && ride.fare) {
-        const passengerFare = ride.fare + 10 + (10 * 0.18);
-        if (passengerFare > parseFloat(maxFare)) return false;
-      }
+  // Auto-search if URL has params
+  useEffect(() => {
+    if (searchParams.get('start') && searchParams.get('end')) {
+      handleSearch();
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []); // eslint-disable-line
+
+  const applyFilters = useCallback((list) => {
+    return list.filter(ride => {
+      const seats = ride.availableSeats ?? ride.seats;
+      if (minSeats && seats < parseInt(minSeats)) return false;
+      if (maxFare  && (ride.segmentFare || ride.fare) > parseFloat(maxFare)) return false;
       if (vehicleType && ride.vehicle?.type !== vehicleType) return false;
       if (acOnly && !ride.vehicle?.acAvailable) return false;
       if (womenOnly && !ride.preferences?.womenOnly) return false;
-      if (instantBooking && !ride.driver?.verified && ride.ratingSummary < 4.0) return false;
+      if (verifiedOnly && !(ride.driverInfo?.verified || ride.driverId?.isDriverVerified)) return false;
       return true;
     });
-  };
+  }, [minSeats, maxFare, vehicleType, acOnly, womenOnly, verifiedOnly]);
 
-  const { user } = useAuth();
-
-
-  const [searchToastRect, setSearchToastRect] = useState(null);
-  const toastTimerRef = useRef(null);
+  const activeFilterCount = [minSeats, maxFare, vehicleType, acOnly, womenOnly, verifiedOnly].filter(Boolean).length;
 
   const handleSearch = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-
-    if (!user) {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      const btnEl = e?.currentTarget || null;
-      const rect = btnEl?.getBoundingClientRect?.() || null;
-      setSearchToastRect(rect);
-      toastTimerRef.current = setTimeout(() => setSearchToastRect(null), 2600);
+    if (e?.preventDefault) e.preventDefault();
+    if (!start.trim() || !end.trim()) {
+      toast.error('Enter both origin and destination');
       return;
     }
-
-    if (!start || !end) {
-
-      toast.error('Please enter both start and end locations');
+    if (!user) {
+      toast.error('Sign in to search rides', {
+        style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+      });
       return;
     }
 
     setIsLoading(true);
     setHasSearched(true);
+    setRides([]);
+    setConnected([]);
+    setRideRoutes([]);
 
-    const searchingToast = toast.loading('Searching for rides...');
+    const loadingId = toast.loading('Searching rides…', {
+      style: { background: '#2563eb', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+    });
 
     try {
-      // Backend does all geocoding via Nominatim
-      console.log('🔍 Calling backend API with:', { start, end, date });
-      const results = await searchRides(start, end, date);
+      const results = await searchRides(start.trim(), end.trim(), date || null);
+      toast.dismiss(loadingId);
 
-      console.log('📦 Backend returned:', results.length, 'rides');
-      if (results.length > 0) {
-        console.log('🔍 Sample ride:', {
-          id: results[0]._id,
-          matchType: results[0].matchType,
-          matchQuality: results[0].matchQuality,
-          userSearchDistance: results[0].userSearchDistance,
-          segmentFare: results[0].segmentFare,
-          hasRouteCoordinates: results[0].routeCoordinates?.length > 0
-        });
+      if (!results?.length) {
+        toast.error(`No rides found from ${start} to ${end}`, { id: 'no-results' });
+        return;
       }
 
-      if (results && results.length > 0) {
-        // Apply filters
-        let filteredResults = applyAdvancedFilters(results);
+      const filtered = applyFilters(results);
+      const connected = filtered.filter(r => r.matchType === 'on_route');
+      const others    = filtered.filter(r => r.matchType !== 'on_route');
 
-        // Separate by matchType from backend
-        const routeMatched = filteredResults.filter(r => r.matchType === 'on_route');
-        const otherRides = filteredResults.filter(r => r.matchType !== 'on_route');
+      setRides(filtered);
+      setConnected(connected);
 
-        console.log('✅ Route-matched rides:', routeMatched.length);
-        console.log('✅ Other rides:', otherRides.length);
+      // Build map routes — green for connected, blue for others
+      const routes = [
+        ...connected.filter(r => r.routeCoordinates?.length).map(r => ({
+          id: r._id,
+          path: r.routeCoordinates,
+          color: '#10B981', // green-500
+        })),
+        ...others.filter(r => r.routeCoordinates?.length).map(r => ({
+          id: r._id,
+          path: r.routeCoordinates,
+          color: '#2563eb', // blue-600
+        })),
+      ];
+      setRideRoutes(routes);
 
-        // Prepare routes for map
-        const routesToDraw = [];
+      // Set map markers from first connected ride
+      if (connected[0]?.pickupCoordinates) {
+        setStartMarker(connected[0].pickupCoordinates);
+        setEndMarker(connected[0].dropCoordinates);
+      } else if (filtered[0]?.routeCoordinates?.length) {
+        const first = filtered[0].routeCoordinates;
+        setStartMarker(first[0]);
+        setEndMarker(first[first.length - 1]);
+      }
 
-        // Green for matched routes
-        routeMatched.forEach(ride => {
-          if (ride.routeCoordinates && ride.routeCoordinates.length > 0) {
-            routesToDraw.push({
-              id: ride._id,
-              path: ride.routeCoordinates,
-              color: '#10B981', // GREEN
-              strokeWeight: 6,
-              zIndex: 100,
-            });
-          }
+      if (connected.length > 0) {
+        toast.success(`${connected.length} ride${connected.length !== 1 ? 's' : ''} cover your route!`, {
+          icon: '🎯',
+          style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
         });
-
-        // Purple for other rides
-        otherRides.forEach(ride => {
-          if (ride.routeCoordinates && ride.routeCoordinates.length > 0) {
-            routesToDraw.push({
-              id: ride._id,
-              path: ride.routeCoordinates,
-              color: '#8B5CF6', // PURPLE
-              strokeWeight: 5,
-              zIndex: 50,
-            });
-          }
-        });
-
-        console.log('🗺️ Drawing', routesToDraw.length, 'routes on map');
-        console.log('  - Green (matched):', routeMatched.filter(r => r.routeCoordinates?.length > 0).length);
-        console.log('  - Purple (other):', otherRides.filter(r => r.routeCoordinates?.length > 0).length);
-
-        setRideRoutes(routesToDraw);
-
-        // Set markers from first route-matched ride's coordinates
-        if (routeMatched.length > 0 && routeMatched[0].pickupCoordinates) {
-          setStartMarker(routeMatched[0].pickupCoordinates);
-          setEndMarker(routeMatched[0].dropCoordinates);
-        }
-
-        setRides(filteredResults);
-        setConnectedRides(routeMatched);
-
-        toast.dismiss(searchingToast);
-
-        if (routeMatched.length > 0) {
-          toast.success(
-            `Found ${routeMatched.length} ride${routeMatched.length === 1 ? '' : 's'} covering your route!`,
-            { duration: 3000, id: 'search-success', icon: '🎯' }
-          );
-        } else if (otherRides.length > 0) {
-          toast.success(
-            `Found ${otherRides.length} ride${otherRides.length === 1 ? '' : 's'}!`,
-            { duration: 3000, id: 'search-success' }
-          );
-        } else {
-          toast.error('No rides match your filters', { id: 'search-error' });
-        }
       } else {
-        setRides([]);
-        setConnectedRides([]);
-        setRideRoutes([]);
-        toast.dismiss(searchingToast);
-        toast.error(`No rides found from ${start} to ${end}`, { id: 'search-error' });
+        toast.success(`${filtered.length} ride${filtered.length !== 1 ? 's' : ''} found`, {
+          style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+        });
       }
+
+      // Scroll results into view on mobile
+      setTimeout(() => {
+        document.getElementById('search-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 400);
+
     } catch (err) {
-      console.error('❌ Search error:', err);
-      toast.dismiss(searchingToast);
-      toast.error(err.response?.data?.message || 'Search failed', { id: 'search-error' });
-      setRides([]);
-      setConnectedRides([]);
-      setRideRoutes([]);
+      toast.dismiss(loadingId);
+      toast.error(err?.response?.data?.message || 'Search failed. Please try again.', {
+        style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleClearSearch = () => {
-    setStart('');
-    setEnd('');
-    setDate('');
-    setRides([]);
-    setConnectedRides([]);
-    setHasSearched(false);
-    setStartMarker(null);
-    setEndMarker(null);
-    setUserRoute([]);
-    setRideRoutes([]);
-    setMinSeats('');
-    setMaxFare('');
-    setVehicleType('');
-    setAcOnly(false);
-    setWomenOnly(false);
-    setInstantBooking(false);
+  const handleClear = () => {
+    setStart(''); setEnd(''); setDate('');
+    setRides([]); setConnected([]); setRideRoutes([]);
+    setStartMarker(null); setEndMarker(null);
+    setHasSearched(false); setSelected(null);
+    setMinSeats(''); setMaxFare(''); setVehicleType('');
+    setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false);
     setShowFilters(false);
-    setMapCenter(defaultCenter);
-    setMapZoom(5);
-    toast.success('Search cleared');
   };
 
-  const handleClearFilters = () => {
-    setMinSeats('');
-    setMaxFare('');
-    setVehicleType('');
-    setAcOnly(false);
-    setWomenOnly(false);
-    setInstantBooking(false);
-    toast.success('Filters cleared');
-  };
+  const today = new Date().toISOString().split('T')[0];
+  const otherRides = rides.filter(r => !connectedRides.find(c => c._id === r._id));
 
-  const getTodayDate = () => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  };
-
-  const activeFiltersCount = [minSeats, maxFare, vehicleType, acOnly, womenOnly, instantBooking].filter(Boolean).length;
-
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-[85vh] bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 py-8 sm:py-12">
-      {searchToastRect !== null && (
-        <LoginRequiredSpeechToast
-          rect={searchToastRect}
-          message="Sign in to access Search Rides"
-          onDismiss={() => {
-            if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-            setSearchToastRect(null);
-          }}
-          redirectTo="/login"
-          durationMs={2400}
-        />
-      )}
+    <div className="min-h-screen bg-gray-50">
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+      {/* ── Hero strip — identical to Home.jsx LoggedInDashboard ── */}
+      <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-5 pb-14 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-
-          <div className="text-center mb-8 sm:mb-10">
-            <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 mb-2 sm:mb-3">🗺️ Smart Ride Search</h2>
-            <p className="text-gray-600 text-base sm:text-lg">Find rides with intelligent route matching</p>
-          </div>
-
-          {/* LEAFLET MAP */}
-          <div className="mb-8">
-            <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-200 p-4 overflow-hidden">
-              <LeafletRideMap
-                startMarker={startMarker}
-                endMarker={endMarker}
-                userRoute={userRoute}
-                rideRoutes={rideRoutes}
-                connectedRides={connectedRides}
-                rides={rides}
-                hasSearched={hasSearched}
-                onRouteClick={(ride) => {
-                  console.log('Route clicked:', ride);
-                }}
-              />
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div>
+              <p className="text-blue-200 text-xs font-medium mb-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block mr-1.5" />
+                Smart route matching · India
+              </p>
+              <h1 className="text-lg sm:text-2xl font-bold text-white leading-tight">Find a Ride</h1>
+              <p className="text-blue-200 text-xs sm:text-sm mt-1">Search rides going your way · smart route overlap matching</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/ride/post"
+                className="inline-flex items-center gap-1.5 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Offer a ride
+              </Link>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* SEARCH FORM */}
-          <div className="bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 border-gray-200 p-6 sm:p-8 mb-8 sm:mb-10">
+      {/* ── Content — -mt-8 overlap ── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 pb-16">
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-4 items-end mb-4">
+        {/* ── Search card ─────────────────────────────────────────────── */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-md overflow-hidden mb-5">
+          <div className="h-1 bg-gradient-to-r from-blue-600 to-blue-400" />
+          <div className="p-5 sm:p-6">
+            <div className="flex items-center gap-2 mb-5">
+              <div className="w-8 h-8 bg-blue-50 rounded-xl flex items-center justify-center">
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest">Search</p>
+                <h2 className="text-base font-bold text-gray-900 leading-tight">Where are you going?</h2>
+              </div>
+            </div>
 
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  From <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 sm:pl-4 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <form onSubmit={handleSearch} noValidate>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                {/* From */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">From</label>
+                  <div className="relative">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
+                    <input
+                      type="text"
+                      value={start}
+                      onChange={e => setStart(e.target.value)}
+                      placeholder="Origin city or area"
+                      disabled={isLoading}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 disabled:opacity-60"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Starting location (e.g., Mumbai)"
-                    value={start}
-                    onChange={(e) => setStart(e.target.value)}
-                    className="w-full border-2 border-gray-300 pl-10 sm:pl-12 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
-                    required
-                    disabled={isLoading}
-                  />
                 </div>
-              </div>
 
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  To <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 sm:pl-4 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {/* To */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">To</label>
+                  <div className="relative">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
+                    <input
+                      type="text"
+                      value={end}
+                      onChange={e => setEnd(e.target.value)}
+                      placeholder="Destination city or area"
+                      disabled={isLoading}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 disabled:opacity-60"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Destination (e.g., Pune)"
-                    value={end}
-                    onChange={(e) => setEnd(e.target.value)}
-                    className="w-full border-2 border-gray-300 pl-10 sm:pl-12 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
-                    required
-                    disabled={isLoading}
-                  />
                 </div>
-              </div>
 
-              <div className="flex-1">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Date (Optional)
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 sm:pl-4 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
+                {/* Date */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Date <span className="text-gray-300 font-normal">(optional)</span></label>
                   <input
                     type="date"
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    min={getTodayDate()}
-                    className="w-full border-2 border-gray-300 pl-10 sm:pl-12 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 outline-none text-sm sm:text-base disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    min={today}
+                    onChange={e => setDate(e.target.value)}
                     disabled={isLoading}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:opacity-60"
                   />
                 </div>
               </div>
-            </div>
 
-            <div className="mb-4">
-              <button
-                type="button"
-                onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
-              >
-                <svg className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-                <span>Advanced Filters</span>
-                {activeFiltersCount > 0 && (
-                  <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold">
-                    {activeFiltersCount}
-                  </span>
-                )}
-              </button>
-            </div>
+              {/* Advanced filters toggle */}
+              <div className="mb-4">
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(f => !f)}
+                  className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-semibold hover:text-blue-700"
+                >
+                  <svg className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  Filters
+                  {activeFilterCount > 0 && (
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                      {activeFilterCount}
+                    </span>
+                  )}
+                </button>
 
-            {showFilters && (
-              <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {showFilters && (
+                  <div className="mt-3 p-4 bg-gray-50 rounded-xl border border-gray-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5">Min seats</label>
+                      <input type="number" min="1" max="8" value={minSeats} onChange={e => setMinSeats(e.target.value)} placeholder="Any"
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5">Max fare (₹)</label>
+                      <input type="number" min="0" value={maxFare} onChange={e => setMaxFare(e.target.value)} placeholder="Any"
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1.5">Vehicle type</label>
+                      <select value={vehicleType} onChange={e => setVehicleType(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">Any</option>
+                        {['Hatchback', 'Sedan', 'SUV', 'MUV', 'Bike'].map(v => <option key={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <FilterToggle checked={acOnly}       onChange={setAcOnly}       label="AC only" />
+                    <FilterToggle checked={womenOnly}    onChange={setWomenOnly}    label="Women only rides" />
+                    <FilterToggle checked={verifiedOnly} onChange={setVerifiedOnly} label="Verified drivers only" />
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">Minimum Seats</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="8"
-                      value={minSeats}
-                      onChange={(e) => setMinSeats(e.target.value)}
-                      placeholder="Any"
-                      className="w-full border border-gray-300 px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">Max Fare (₹)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={maxFare}
-                      onChange={(e) => setMaxFare(e.target.value)}
-                      placeholder="Any"
-                      className="w-full border border-gray-300 px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">Vehicle Type</label>
-                    <select
-                      value={vehicleType}
-                      onChange={(e) => setVehicleType(e.target.value)}
-                      className="w-full border border-gray-300 px-3 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                    >
-                      <option value="">Any</option>
-                      <option value="Hatchback">Hatchback</option>
-                      <option value="Sedan">Sedan</option>
-                      <option value="SUV">SUV</option>
-                      <option value="MUV">MUV</option>
-                      <option value="Bike">Bike</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={acOnly} onChange={(e) => setAcOnly(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                    <span className="text-sm text-gray-700">AC Only</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={womenOnly} onChange={(e) => setWomenOnly(e.target.checked)} className="w-4 h-4 text-pink-600 rounded" />
-                    <span className="text-sm text-gray-700">Women Only</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={instantBooking} onChange={(e) => setInstantBooking(e.target.checked)} className="w-4 h-4 text-green-600 rounded" />
-                    <span className="text-sm text-gray-700">Verified Drivers</span>
-                  </label>
-                </div>
-
-                {activeFiltersCount > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <button type="button" onClick={handleClearFilters} className="text-xs text-red-600 hover:text-red-700 font-semibold">
-                      Clear all filters
-                    </button>
+                    {activeFilterCount > 0 && (
+                      <button type="button" onClick={() => { setMinSeats(''); setMaxFare(''); setVehicleType(''); setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false); }}
+                        className="text-xs text-red-600 font-semibold hover:text-red-700 self-end">
+                        Clear filters
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-            )}
 
-            <div className="mt-4">
+              {/* Submit */}
               <button
-                onClick={handleSearch}
-                type="button"
-                className="w-full cursor-pointer flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-6 py-3.5 rounded-xl font-bold text-sm sm:text-base
-                           hover:from-blue-700 hover:to-blue-600 hover:shadow-xl transform hover:scale-[1.02] transition-all duration-200
-                           disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none"
-                disabled={isLoading || !start || !end}
+                type="submit"
+                disabled={isLoading || !start.trim() || !end.trim()}
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
                   <>
-                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    <span>Searching...</span>
+                    Searching…
                   </>
                 ) : (
                   <>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                    <span>Search Rides</span>
+                    Search Rides
                   </>
                 )}
               </button>
-            </div>
 
-            <div className="mt-3">
-              <p className="text-xs text-gray-500 text-center">
-                🎯 Smart search with OSRM route matching
-              </p>
-            </div>
-
-            {hasSearched && (
-              <div className="flex justify-center mt-6 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={handleClearSearch}
-                  className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 hover:underline font-medium transition-colors duration-200"
-                  disabled={isLoading}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Clear search & filters
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* RESULTS */}
-          {hasSearched && (
-            <>
-              {connectedRides.length > 0 && (
-                <div className="mb-8">
-                  <div className="mb-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg shadow-md border-2 border-green-200">
-                      <div className="flex items-center gap-3">
-                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <div>
-                          <h3 className="text-xl sm:text-2xl font-bold text-green-900">Connected Routes</h3>
-                          <p className="text-sm text-green-700">These rides cover your journey!</p>
-                        </div>
-                      </div>
-                      <span className="bg-gradient-to-r from-green-600 to-green-500 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md w-fit">
-                        {connectedRides.length} {connectedRides.length === 1 ? 'ride' : 'rides'} found
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 sm:space-y-4">
-                    {connectedRides.map((ride, index) => (
-                      <div key={ride._id || ride.id || index} className="relative">
-                        <RideCard ride={ride} onBookingSuccess={() => handleSearch()} />
-                        <div className="absolute top-3 right-3 bg-gradient-to-r from-green-600 to-green-500 text-white text-xs px-3 py-1.5 rounded-full font-bold shadow-lg z-10 flex items-center gap-1">
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          Connected Route
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {rides.length > 0 && rides.some(r => !connectedRides.find(cr => cr._id === r._id)) && (
-                <div className="mb-8">
-                  <div className="mb-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-lg shadow-md border border-gray-200">
-                      <div>
-                        <h3 className="text-xl sm:text-2xl font-bold text-gray-900">Other Available Rides</h3>
-                        {activeFiltersCount > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">{activeFiltersCount} filter{activeFiltersCount > 1 ? 's' : ''} applied</p>
-                        )}
-                      </div>
-                      <span className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md w-fit">
-                        {rides.filter(r => !connectedRides.find(cr => cr._id === r._id)).length} {rides.filter(r => !connectedRides.find(cr => cr._id === r._id)).length === 1 ? 'ride' : 'rides'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 sm:space-y-4">
-                    {rides
-                      .filter(r => !connectedRides.find(cr => cr._id === r._id))
-                      .map((ride, index) => (
-                        <div key={ride._id || ride.id || index} className="relative">
-                          <RideCard ride={ride} onBookingSuccess={() => handleSearch()} />
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {!isLoading && rides.length === 0 && (
-                <div className="bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 border-gray-200 p-8 sm:p-12 text-center">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-red-100 to-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
-                    <svg className="w-8 h-8 sm:w-10 sm:h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              {hasSearched && (
+                <div className="mt-3 text-center">
+                  <button type="button" onClick={handleClear}
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                  </div>
-                  <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 sm:mb-3">😞 No rides found</h3>
-                  <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
-                    We couldn't find any rides matching your search criteria.
-                  </p>
-                  <button
-                    onClick={handleClearSearch}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-semibold transition-colors text-sm"
-                  >
-                    Start New Search
+                    Clear search
                   </button>
                 </div>
               )}
-            </>
+            </form>
+          </div>
+        </div>
+
+        {/* ── Map — always visible, synced with results ───────────────── */}
+        <div className="mb-5">
+          <RideMap
+            rides={rides}
+            connectedRides={connectedRides}
+            rideRoutes={rideRoutes}
+            startMarker={startMarker}
+            endMarker={endMarker}
+            selectedRideId={selectedRideId}
+            onRideClick={(ride) => {
+              setSelected(ride._id);
+              document.getElementById(`ride-card-${ride._id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
+            hasSearched={hasSearched}
+          />
+        </div>
+
+        {/* ── Results ─────────────────────────────────────────────────── */}
+        <div id="search-results">
+
+          {/* Loading skeletons */}
+          {isLoading && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Searching</p>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900">Finding rides…</h2>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
+              </div>
+            </div>
           )}
 
-          {!hasSearched && (
-            <div className="bg-white rounded-xl sm:rounded-2xl shadow-xl border-2 border-gray-200 p-8 sm:p-12 text-center">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
-                <svg className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
+          {/* No results */}
+          {!isLoading && hasSearched && rides.length === 0 && (
+            <EmptyResults start={start} end={end} onClear={handleClear} />
+          )}
+
+          {/* Pre-search */}
+          {!isLoading && !hasSearched && <SearchPrompt />}
+
+          {/* Connected routes section */}
+          {!isLoading && connectedRides.length > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-green-600 text-xs font-semibold uppercase tracking-widest mb-1">Best matches</p>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900">Rides covering your route</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{connectedRides.length} ride{connectedRides.length !== 1 ? 's' : ''} pass through your journey</p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold border border-green-100">
+                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Route match
+                </span>
               </div>
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 sm:mb-3">🗺️ Ready for Smart Search?</h3>
-              <p className="text-gray-600 text-sm sm:text-base mb-6">
-                Enter your locations above and we'll find rides with intelligent OSRM route matching!
-              </p>
+
+              <div className="space-y-3 sm:space-y-4">
+                {connectedRides.map(ride => (
+                  <div
+                    key={ride._id}
+                    id={`ride-card-${ride._id}`}
+                    className={`transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-2xl' : ''}`}
+                  >
+                    <div className="relative">
+                      {/* Connected badge */}
+                      <div className="absolute -top-2 -right-2 z-10 bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        Route match
+                      </div>
+                      <RideCard
+                        ride={ride}
+                        onBookingSuccess={() => handleSearch()}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Other rides section */}
+          {!isLoading && otherRides.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">
+                    {connectedRides.length > 0 ? 'More options' : 'Available rides'}
+                  </p>
+                  <h2 className="text-base sm:text-lg font-bold text-gray-900">
+                    {connectedRides.length > 0 ? 'Other rides on similar routes' : 'Rides available'}
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{otherRides.length} ride{otherRides.length !== 1 ? 's' : ''} found</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {otherRides.map(ride => (
+                  <div
+                    key={ride._id}
+                    id={`ride-card-${ride._id}`}
+                    className={`transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-2xl' : ''}`}
+                  >
+                    <RideCard ride={ride} onBookingSuccess={() => handleSearch()} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
+
+        {/* ── Trust strip at bottom ──────────────────────────────────────── */}
+        {!isLoading && !hasSearched && (
+          <div className="mt-6 flex flex-wrap gap-2 justify-center">
+            {[
+              { icon: '🛡️', text: 'Verified drivers only' },
+              { icon: '⭐', text: 'Rated community' },
+              { icon: '💸', text: 'Split fuel costs' },
+              { icon: '🎯', text: 'Smart route matching' },
+              { icon: '⚡', text: 'Instant booking' },
+            ].map(p => (
+              <span key={p.text} className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 px-3 py-1.5 rounded-full shadow-sm">
+                {p.icon} {p.text}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
