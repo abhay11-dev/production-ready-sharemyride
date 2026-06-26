@@ -7,16 +7,18 @@ const GST_RATE = 0.05;
 
 const calculatePassengerFare = (baseFare, waivePlatformCharges = false) => {
   const platformFee = baseFare * PLATFORM_FEE_RATE;
-  const gst = (baseFare + platformFee) * GST_RATE;
-  const chargeTotal = waivePlatformCharges ? 0 : platformFee + gst;
+  const gst = waivePlatformCharges
+    ? baseFare * GST_RATE
+    : (baseFare + platformFee) * GST_RATE;
+  const chargeTotal = waivePlatformCharges ? gst : platformFee + gst;
 
   return {
     serviceFee: waivePlatformCharges ? 0 : platformFee,
-    gst: waivePlatformCharges ? 0 : gst,
+    gst: gst,
     totalFare: baseFare + chargeTotal,
     originalServiceFee: platformFee,
-    originalGst: gst,
-    waivedAmount: waivePlatformCharges ? platformFee + gst : 0,
+    originalGst: (baseFare + platformFee) * GST_RATE,
+    waivedAmount: waivePlatformCharges ? platformFee : 0,
   };
 };
 

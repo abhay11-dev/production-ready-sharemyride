@@ -67,13 +67,225 @@ function WaivedBadge() {
   );
 }
 
-function FirstRidePassengerCallout() {
+const formatMoneyLocal = (value) => {
+  const amount  = Number(value || 0);
+  const rounded = Math.round(amount * 100) / 100;
+  return `₹${rounded.toLocaleString('en-IN', {
+    maximumFractionDigits: rounded % 1 === 0 ? 0 : 2,
+    minimumFractionDigits: 0,
+  })}`;
+};
+
+function FirstBookingCelebration({ baseFare, seats }) {
+  const base = parseFloat(baseFare) || 0;
+  const seatsNum = Math.max(1, parseInt(seats) || 1);
+
+  // Platform fee (3%) is waived. GST (5%) still applies on base.
+  const platformFee = Math.round(base * 0.03 * 100) / 100;
+  const gstFee      = Math.round(base * 0.05 * 100) / 100;
+  const totalPays   = base + gstFee;
+
+  const confettiRef = React.useRef(null);
+  const styleInjected = React.useRef(false);
+
+  React.useEffect(() => {
+    if (styleInjected.current) return;
+    styleInjected.current = true;
+    if (document.querySelector('style[data-smr-first-ride]')) return;
+    const style = document.createElement('style');
+    style.setAttribute('data-smr-first-ride', '1');
+    style.textContent = `
+      @keyframes smr-float-in {
+        from { opacity: 0; transform: translateY(14px) scale(0.97); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes smr-confetti-fall {
+        0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+        100% { transform: translateY(240px) rotate(720deg); opacity: 0; }
+      }
+      @keyframes smr-shimmer {
+        0%   { background-position: -200% center; }
+        100% { background-position:  200% center; }
+      }
+      @keyframes smr-pulse-ring {
+        0%  { transform: scale(0.9); opacity: 0.7; }
+        70% { transform: scale(1.3); opacity: 0; }
+        100%{ transform: scale(1.3); opacity: 0; }
+      }
+      @keyframes smr-bounce-in {
+        0%  { transform: scale(0.3); opacity: 0; }
+        60% { transform: scale(1.15); opacity: 1; }
+        80% { transform: scale(0.93); }
+        100%{ transform: scale(1); }
+      }
+      @keyframes smr-tick {
+        from { stroke-dashoffset: 60; }
+        to   { stroke-dashoffset: 0; }
+      }
+      @keyframes smr-amount-pop {
+        0%  { transform: scale(0.6); opacity: 0; }
+        70% { transform: scale(1.1); }
+        100%{ transform: scale(1);   opacity: 1; }
+      }
+      .smr-shimmer-text {
+        background: linear-gradient(90deg, #15803d 0%, #22c55e 40%, #86efac 60%, #15803d 100%);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        animation: smr-shimmer 2.8s linear infinite;
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  React.useEffect(() => {
+    if (!confettiRef.current || base <= 0) return;
+    const stage  = confettiRef.current;
+    const colors = ['#22c55e','#16a34a','#86efac','#fbbf24','#60a5fa','#a78bfa','#f472b6','#fb923c'];
+
+    function burst(delay = 0) {
+      setTimeout(() => {
+        Array.from({ length: 32 }).forEach(() => {
+          const el  = document.createElement('div');
+          const dur = 1.1 + Math.random() * 1.3;
+          const del = Math.random() * 0.5;
+          Object.assign(el.style, {
+            position:        'absolute',
+            left:            (8 + Math.random() * 84) + '%',
+            top:             '0px',
+            width:           (5 + Math.random() * 8) + 'px',
+            height:          (5 + Math.random() * 8) + 'px',
+            borderRadius:    Math.random() > 0.5 ? '50%' : '2px',
+            background:      colors[Math.floor(Math.random() * colors.length)],
+            opacity:         '0',
+            pointerEvents:   'none',
+            animation:       `smr-confetti-fall ${dur}s linear ${del}s forwards`,
+          });
+          stage.appendChild(el);
+          setTimeout(() => el.remove(), (dur + del + 0.1) * 1000);
+        });
+      }, delay);
+    }
+
+    burst(0);
+    burst(600);
+  }, [base, seatsNum]);
+
   return (
-    <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-      <p className="text-sm font-bold text-green-800">First ride offer active</p>
-      <p className="mt-1 text-xs leading-relaxed text-green-700">
-        Your first booking has platform fee and GST waived. You pay only the fare the driver set.
-      </p>
+    <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{
+        borderRadius: 16,
+        border: '1.5px solid #bbf7d0',
+        background: 'linear-gradient(145deg, #f0fdf4 0%, #ecfdf5 100%)',
+        padding: '20px 20px 16px',
+        animation: 'smr-float-in 0.5s cubic-bezier(0.22,1,0.36,1) both',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Confetti stage */}
+        <div ref={confettiRef} style={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          height: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 10,
+        }} />
+
+        {/* Pulse ring behind badge */}
+        <div style={{
+          position: 'absolute', top: 16, right: 16,
+          width: 50, height: 50, pointerEvents: 'none',
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: '50%',
+            border: '2px solid #22c55e',
+            animation: 'smr-pulse-ring 1.9s ease-out infinite',
+          }} />
+        </div>
+
+        {/* Tick badge */}
+        <div style={{
+          position: 'absolute', top: 16, right: 16,
+          width: 46, height: 46, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #15803d, #22c55e)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'smr-bounce-in 0.65s cubic-bezier(0.22,1,0.36,1) 0.15s both',
+          boxShadow: '0 4px 14px rgba(34,197,94,0.35)',
+        }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="white" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" style={{
+              strokeDasharray: 60, strokeDashoffset: 60,
+              animation: 'smr-tick 0.4s ease 0.5s forwards',
+            }} />
+          </svg>
+        </div>
+
+        {/* Headline block */}
+        <div style={{ paddingRight: 60, marginBottom: 14 }}>
+          <p style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.09em',
+            color: '#15803d', textTransform: 'uppercase', margin: '0 0 5px',
+          }}>First Booking Offer</p>
+
+          <h3 className="smr-shimmer-text" style={{
+            fontSize: 18, fontWeight: 700, margin: '0 0 3px', lineHeight: 1.25,
+          }}>
+            Your first booking is free
+          </h3>
+
+          <p style={{ fontSize: 11.5, color: '#166534', margin: 0, opacity: 0.85, lineHeight: 1.5 }}>
+            Platform fee is waived. Only base fare and GST apply.
+          </p>
+        </div>
+
+        {/* Divider */}
+        <div style={{ height: 1, background: '#bbf7d0', marginBottom: 12 }} />
+
+        {/* Fare breakdown */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 13 }}>
+          {/* Base Fare */}
+          <div style={{ display: 'flex', color: '#374151', justifyContent: 'space-between' }}>
+            <span>Base Fare ({seatsNum} seat{seatsNum > 1 ? 's' : ''})</span>
+            <span style={{ fontWeight: 600 }}>{formatMoneyLocal(base)}</span>
+          </div>
+
+          {/* Platform fee — waived */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+            <span style={{ color: '#9ca3af' }}>Platform fee (3%)</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ textDecoration: 'line-through', color: '#9ca3af' }}>
+                +{formatMoneyLocal(platformFee)}
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', background: '#d1fae5', padding: '1.5px 5px', borderRadius: 4, textTransform: 'uppercase' }}>
+                waived
+              </span>
+            </span>
+          </div>
+
+          {/* GST — applies */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+            <span style={{ color: '#374151' }}>GST (5% on base fare)</span>
+            <span style={{ fontWeight: 600, color: '#374151' }}>
+              +{formatMoneyLocal(gstFee)}
+            </span>
+          </div>
+
+          {/* Net total */}
+          <div style={{
+            display: 'flex', alignItems: 'baseline',
+            borderTop: '1px solid #bbf7d0', paddingTop: 10, marginTop: 3, justifyContent: 'space-between'
+          }}>
+            <span style={{ fontWeight: 600, color: '#111827', fontSize: 14 }}>
+              Total you pay
+            </span>
+            <span style={{
+              fontSize: 22, fontWeight: 700, color: '#15803d',
+              animation: 'smr-amount-pop 0.5s cubic-bezier(0.22,1,0.36,1) 0.55s both',
+            }}>
+              {formatMoneyLocal(totalPays)}
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -104,7 +316,7 @@ function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
       fee: f.serviceFee,
       gst: f.serviceFeeGST,
       waivedFee: standard.serviceFee,
-      waivedGst: standard.serviceFeeGST,
+      waivedGst: standard.serviceFeeGST - f.serviceFeeGST,
       total: f.total,
     };
   }
@@ -127,7 +339,7 @@ function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
       });
 
       const waived = response?.isFirstRideFree || isFirstRideFree;
-      toast.success(waived ? 'Booking request sent. First ride fees waived!' : 'Booking request sent!', {
+      toast.success(waived ? 'Booking request sent. First booking platform fee waived!' : 'Booking request sent!', {
         style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
       });
       if (onSuccess) onSuccess();
@@ -158,7 +370,6 @@ function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {isFirstRideFree && <FirstRidePassengerCallout />}
 
           {/* Route summary */}
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
@@ -231,34 +442,36 @@ function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
           </div>
 
           {/* Fare breakdown */}
-          <div className="bg-green-50 border border-green-100 rounded-xl p-4">
-            <p className="text-xs font-bold text-green-700 uppercase tracking-widest mb-3">Fare breakdown</p>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Base fare</span>
-                <span className="font-medium text-gray-800">₹{fareDisplay.base.toFixed(2)}</span>
+          {isFirstRideFree ? (
+            <FirstBookingCelebration baseFare={fareDisplay.base} seats={seats} />
+          ) : (
+            <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+              <p className="text-xs font-bold text-green-700 uppercase tracking-widest mb-3">Fare breakdown</p>
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Base fare</span>
+                  <span className="font-medium text-gray-800">₹{fareDisplay.base.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Platform fee ({(PaymentCalculator.PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}%)</span>
+                  <span className="font-medium text-gray-800">
+                    ₹{fareDisplay.fee.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">GST ({(PaymentCalculator.GST_PERCENTAGE * 100).toFixed(0)}% on fare + fee)</span>
+                  <span className="font-medium text-gray-800">
+                    ₹{fareDisplay.gst.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-green-200 font-bold text-green-700">
+                  <span>Total</span>
+                  <span className="text-base">₹{fareDisplay.total.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Platform fee ({(PaymentCalculator.PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}%)</span>
-                <span className={`font-medium ${isFirstRideFree ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                  ₹{(isFirstRideFree ? fareDisplay.waivedFee : fareDisplay.fee).toFixed(2)}
-                  {isFirstRideFree && <WaivedBadge />}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">GST ({(PaymentCalculator.GST_PERCENTAGE * 100).toFixed(0)}% on fare + fee)</span>
-                <span className={`font-medium ${isFirstRideFree ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                  ₹{(isFirstRideFree ? fareDisplay.waivedGst : fareDisplay.gst).toFixed(2)}
-                  {isFirstRideFree && <WaivedBadge />}
-                </span>
-              </div>
-              <div className="flex justify-between pt-2 border-t border-green-200 font-bold text-green-700">
-                <span>Total</span>
-                <span className="text-base">₹{fareDisplay.total.toFixed(2)}</span>
-              </div>
+              <p className="text-xs text-gray-400 mt-2">Payment after driver confirms your request.</p>
             </div>
-            <p className="text-xs text-gray-400 mt-2">Payment after driver confirms your request.</p>
-          </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3">

@@ -772,9 +772,11 @@ bookingSchema.methods.resolveEmergency = function(notes) {
 bookingSchema.methods.calculateFare = function(baseFarePerSeat, seatsBooked, waivePlatformCharges = false) {
   this.baseFare = baseFarePerSeat * seatsBooked;
   const platformFee = this.baseFare * 0.03;
-  const gst = (this.baseFare + platformFee) * 0.05;
+  const gst = waivePlatformCharges
+    ? this.baseFare * 0.05
+    : (this.baseFare + platformFee) * 0.05;
   this.passengerServiceFee = waivePlatformCharges ? 0 : platformFee;
-  this.passengerServiceFeeGST = waivePlatformCharges ? 0 : gst;
+  this.passengerServiceFeeGST = gst;
   this.totalFare = this.baseFare + this.passengerServiceFee + this.passengerServiceFeeGST;
   this.finalAmount = this.totalFare - (this.discountAmount || 0);
   this.isFirstRideFree = waivePlatformCharges;

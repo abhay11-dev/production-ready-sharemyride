@@ -76,9 +76,12 @@ class PaymentCalculator {
     const waivePlatformCharges = options?.waivePlatformCharges === true;
 
     const serviceFeePerSeat = fare * this.PLATFORM_FEE_PERCENTAGE;
-    const gstOnServiceFeePerSeat = (fare + serviceFeePerSeat) * this.GST_PERCENTAGE;
+    const gstOnServiceFeePerSeat = waivePlatformCharges
+      ? fare * this.GST_PERCENTAGE
+      : (fare + serviceFeePerSeat) * this.GST_PERCENTAGE;
 
-    const totalServiceChargesPerSeat = waivePlatformCharges ? 0 : serviceFeePerSeat + gstOnServiceFeePerSeat;
+    const platformFeeCharged = waivePlatformCharges ? 0 : serviceFeePerSeat;
+    const totalServiceChargesPerSeat = waivePlatformCharges ? gstOnServiceFeePerSeat : serviceFeePerSeat + gstOnServiceFeePerSeat;
     const totalPerSeat = fare + totalServiceChargesPerSeat;
     
     // Total for all seats
@@ -88,10 +91,10 @@ class PaymentCalculator {
       baseFare: fare,
       baseFareTotal: fare * seats,
       
-      serviceFee: serviceFeePerSeat,
-      passengerServiceFee: serviceFeePerSeat,
-      serviceFeeTotal: serviceFeePerSeat * seats,
-      passengerServiceFeeTotal: serviceFeePerSeat * seats,
+      serviceFee: platformFeeCharged,
+      passengerServiceFee: platformFeeCharged,
+      serviceFeeTotal: platformFeeCharged * seats,
+      passengerServiceFeeTotal: platformFeeCharged * seats,
       
       gstOnServiceFee: gstOnServiceFeePerSeat,
       passengerServiceFeeGST: gstOnServiceFeePerSeat,
@@ -102,8 +105,8 @@ class PaymentCalculator {
       totalServiceChargesForAllSeats: totalServiceChargesPerSeat * seats,
       waivedPlatformCharges: waivePlatformCharges,
       waivedPlatformFee: waivePlatformCharges ? serviceFeePerSeat : 0,
-      waivedGST: waivePlatformCharges ? gstOnServiceFeePerSeat : 0,
-      waivedTotal: waivePlatformCharges ? serviceFeePerSeat + gstOnServiceFeePerSeat : 0,
+      waivedGST: 0,
+      waivedTotal: waivePlatformCharges ? serviceFeePerSeat : 0,
       
       totalPassengerPays: totalPerSeat, // Per seat
       totalPassengerPaysPerSeat: totalPerSeat,
@@ -111,7 +114,9 @@ class PaymentCalculator {
       totalForAllSeats: totalForAllSeats,
       
       // Breakdown
-      serviceFeeBreakdown: `₹${serviceFeePerSeat.toFixed(2)} platform fee + ₹${gstOnServiceFeePerSeat.toFixed(2)} GST`,
+      serviceFeeBreakdown: waivePlatformCharges
+        ? `₹0.00 platform fee (waived) + ₹${gstOnServiceFeePerSeat.toFixed(2)} GST`
+        : `₹${serviceFeePerSeat.toFixed(2)} platform fee + ₹${gstOnServiceFeePerSeat.toFixed(2)} GST`,
       totalBreakdown: `₹${fare.toFixed(2)} (fare) + ₹${totalServiceChargesPerSeat.toFixed(2)} (service) = ₹${totalPerSeat.toFixed(2)}`
     };
   }

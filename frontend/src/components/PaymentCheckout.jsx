@@ -30,18 +30,26 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
   const calculatePassengerBreakdown = () => {
     if (!booking) return null;
     
-    // Use the base fare from booking or calculate from total
+    const seats = booking.seatsBooked || 1;
     const baseFare = booking.baseFare || (booking.totalFare / (1 + 0.03 + (1.03 * 0.05)));
-    const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare, 1, {
+    const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare, seats, {
       waivePlatformCharges: isFirstRideFree,
+    });
+    
+    const standardCalc = PaymentCalculator.calculatePassengerTotal(baseFare, seats, {
+      waivePlatformCharges: false,
     });
     
     return {
       baseFare: baseFare,
+      baseFareTotal: baseFare * seats,
       passengerServiceFee: passengerCalc.passengerServiceFee,
+      passengerServiceFeeTotal: passengerCalc.serviceFeeTotal,
       passengerServiceFeeGST: passengerCalc.gstOnServiceFee,
-      total: passengerCalc.totalPassengerPays,
-      seatsBooked: booking.seatsBooked || 1
+      passengerServiceFeeGSTTotal: passengerCalc.gstOnServiceFeeTotal,
+      total: passengerCalc.totalForAllSeats,
+      waivedPlatformFeeTotal: standardCalc.serviceFeeTotal,
+      seatsBooked: seats
     };
   };
 
@@ -204,6 +212,20 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
           Complete Your Payment
         </h2>
         
+        {isFirstRideFree && (
+          <div className="mb-6 p-4 rounded-xl border border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 flex items-start gap-3 relative overflow-hidden">
+            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 text-lg">
+              🎉
+            </div>
+            <div>
+              <h4 className="font-bold text-green-800">First Booking Celebration!</h4>
+              <p className="text-xs text-green-700 mt-1 leading-relaxed">
+                As a new user, your platform fee is 100% waived. You only pay the base fare and GST. Enjoy your ride!
+              </p>
+            </div>
+          </div>
+        )}
+        
         {/* Trip Details */}
         <div className="space-y-3 mb-6">
           <div className="flex items-start gap-3">
@@ -253,35 +275,46 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-gray-600">
               <span>Base Fare ({booking.seatsBooked} seat{booking.seatsBooked > 1 ? 's' : ''})</span>
-              <span>₹{(passengerBreakdown?.baseFare * (booking.seatsBooked || 1)).toFixed(2)}</span>
+              <span>₹{(passengerBreakdown?.baseFareTotal || 0).toFixed(2)}</span>
             </div>
             
             <div className="flex justify-between text-gray-600">
               <span>Platform Fee (3%)</span>
-              <span className={isFirstRideFree ? 'text-gray-400 line-through' : ''}>
-                ₹{(passengerBreakdown?.passengerServiceFee * (booking.seatsBooked || 1)).toFixed(2)}
-              </span>
+              {isFirstRideFree ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 line-through">
+                    ₹{(passengerBreakdown?.waivedPlatformFeeTotal || 0).toFixed(2)}
+                  </span>
+                  <span className="inline-flex items-center rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-700">
+                    waived
+                  </span>
+                </div>
+              ) : (
+                <span>
+                  ₹{(passengerBreakdown?.passengerServiceFeeTotal || 0).toFixed(2)}
+                </span>
+              )}
             </div>
             
             <div className="flex justify-between text-gray-600">
-              <span>GST (5% on fare + platform fee)</span>
-              <span className={isFirstRideFree ? 'text-gray-400 line-through' : ''}>
-                ₹{(passengerBreakdown?.passengerServiceFeeGST * (booking.seatsBooked || 1)).toFixed(2)}
+              <span>GST (5% on base fare)</span>
+              <span>
+                ₹{(passengerBreakdown?.passengerServiceFeeGSTTotal || 0).toFixed(2)}
               </span>
             </div>
 
             {isFirstRideFree && (
               <div className="flex justify-between rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
-                <span className="font-semibold">First ride waiver</span>
+                <span className="font-semibold">First booking platform fee waiver</span>
                 <span className="font-bold">
-                  -₹{(((passengerBreakdown?.passengerServiceFee || 0) + (passengerBreakdown?.passengerServiceFeeGST || 0)) * (booking.seatsBooked || 1)).toFixed(2)}
+                  -₹{(passengerBreakdown?.waivedPlatformFeeTotal || 0).toFixed(2)}
                 </span>
               </div>
             )}
             
             <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t">
               <span>Total Amount</span>
-              <span>₹{(booking.finalAmount || booking.totalFare || passengerBreakdown?.total || 0).toFixed(2)}</span>
+              <span>₹{(passengerBreakdown?.total || 0).toFixed(2)}</span>
             </div>
           </div>
         </div>

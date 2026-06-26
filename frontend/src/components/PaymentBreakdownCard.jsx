@@ -180,22 +180,27 @@ const PaymentBreakdownCard = ({
                 
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Platform Fee (3%)</span>
-                  <span className={`font-medium ${waivePlatformCharges ? 'text-gray-400 line-through' : ''}`}>
-                    {formatMoney(totalPlatformFee)}
-                  </span>
+                  {waivePlatformCharges ? (
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <span className="text-gray-400 line-through">{formatMoney(baseFare * 0.03 * seatsBooked)}</span>
+                      <span className="rounded bg-green-100 px-1 py-0.5 text-[10px] font-bold uppercase text-green-700">waived</span>
+                    </span>
+                  ) : (
+                    <span className="font-medium">{formatMoney(totalPlatformFee)}</span>
+                  )}
                 </div>
                 
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">GST (5% on fare + platform fee)</span>
-                  <span className={`font-medium ${waivePlatformCharges ? 'text-gray-400 line-through' : ''}`}>
+                  <span className="text-gray-600">GST (5% on base fare)</span>
+                  <span className="font-medium">
                     {formatMoney(totalGST)}
                   </span>
                 </div>
 
                 {waivePlatformCharges && (
                   <div className="flex justify-between rounded-lg bg-emerald-100 px-3 py-2 text-sm">
-                    <span className="font-semibold text-emerald-800">First ride waiver</span>
-                    <span className="font-bold text-emerald-700">-{formatMoney(totalPlatformFee + totalGST)}</span>
+                    <span className="font-semibold text-emerald-800">First booking waiver</span>
+                    <span className="font-bold text-emerald-700">-{formatMoney(baseFare * 0.03 * seatsBooked)}</span>
                   </div>
                 )}
                 
