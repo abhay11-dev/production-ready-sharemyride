@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../../config/api.js';
-import { fetchRequests, updateRequestStatus } from '../../services/adminService';
-import RequestDetailsModal from './RequestDetailsModal';
-import UserDetailModal from './UserDetailModal';
-import RideDetailModal from './RideDetailModal';
-import BookingDetailModal from './BookingDetailModal';
+import { fetchRequests, updateRequestStatus } from '../../services/adminService.js';
+import RequestDetailsModal from './RequestDetailsModal.jsx';
+import UserDetailModal from './UserDetailModal.jsx';
+import RideDetailModal from './RideDetailModal.jsx';
+import BookingDetailModal from './BookingDetailModal.jsx';
 
 /* ─── Constants ─────────────────────────────────────────── */
 const TABS = [
@@ -454,7 +454,7 @@ function BookingsTab() {
       if (statusF !== 'all') params.status = statusF;
       const res = await api.get('/admin/bookings', { params });
       setBookings(res.data?.data || []);
-      setTotal(res.data?.pagination?.total || 0);
+      setTotal(res.data?.paginridemodalation?.total || 0);
     } catch { toast.error('Failed to load bookings'); }
     finally { setLoading(false); }
   }, [page, statusF]);
@@ -1167,8 +1167,8 @@ function AdminDashboard() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-4 text-sm font-medium border-b-2 whitespace-nowrap transition-all flex items-center gap-1.5 ${activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
                   }`}
               >
                 <span className="text-base">{tab.icon}</span>
