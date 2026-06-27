@@ -516,3 +516,159 @@ exports.updateBlog = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to update blog' });
   }
 };
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ADD THESE ENDPOINTS to your existing adminController.js
+// (paste after the existing getBlogsList / updateBlog functions)
+// ═══════════════════════════════════════════════════════════════════
+
+const Booking = require('../models/Booking');
+const Transaction = require('../models/Transaction');
+
+// @desc    Get bookings list with pagination
+// @route   GET /api/admin/bookings
+// @access  Private (Admin)
+exports.getBookingsList = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const skip = (page - 1) * limit;
+
+    const query = status ? { status } : {};
+    const bookings = await Booking.find(query)
+      .populate('passenger', 'name email phone')
+      .populate('driver', 'name phone')
+      .populate('ride', 'start end date time fare')
+      .limit(parseInt(limit))
+      .skip(skip)
+      .sort({ createdAt: -1 });
+
+    const total = await Booking.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: bookings,
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    console.error('Bookings list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch bookings' });
+  }
+};
+
+// @desc    Get payments list with pagination
+// @route   GET /api/admin/payments
+// @access  Private (Admin)
+exports.getPaymentsList = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const skip = (page - 1) * limit;
+
+    const query = status ? { status } : {};
+    const payments = await Payment.find(query)
+      .populate('user', 'name email')
+      .populate('passenger', 'name email')
+      .limit(parseInt(limit))
+      .skip(skip)
+      .sort({ createdAt: -1 });
+
+    const total = await Payment.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: payments,
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    console.error('Payments list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch payments' });
+  }
+};
+
+// @desc    Get rides posted by a specific user (for UserDetailModal)
+// @route   GET /api/admin/users/:id/rides
+// @access  Private (Admin)
+exports.getUserRides = async (req, res) => {
+  try {
+    const rides = await Ride.find({ driver: req.params.id })
+      .select('start end date time seats availableSeats fare status createdAt')
+      .sort({ date: -1 })
+      .limit(20);
+    res.json({ success: true, data: rides });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch user rides' });
+  }
+};
+
+// @desc    Get bookings made by a specific user (for UserDetailModal)
+// @route   GET /api/admin/users/:id/bookings
+// @access  Private (Admin)
+exports.getUserBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find({ passenger: req.params.id })
+      .select('pickupLocation dropLocation seatsBooked totalFare finalAmount status paymentStatus createdAt')
+      .sort({ createdAt: -1 })
+      .limit(20);
+    res.json({ success: true, data: bookings });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch user bookings' });
+  }
+};
+
+// @desc    Update (suspend / unsuspend) a user
+// @route   PUT /api/admin/users/:id
+// @access  Private (Admin)
+exports.updateUser = async (req, res) => {
+  try {
+    const { isSuspended, role } = req.body;
+    const update = {};
+    if (isSuspended !== undefined) update.isSuspended = isSuspended;
+    if (role) update.role = role;
+
+    const user = await User.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    res.json({ success: true, data: user, message: 'User updated' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to update user' });
+  }
+};
+
+// @desc    Updated analytics summary (adds totalBookings)
+// @route   GET /api/admin/analytics/summary   (REPLACE existing)
+// @access  Private (Admin)
+exports.getAnalyticsSummary = async (req, res) => {
+  try {
+    const [
+      totalUsers,
+      activeUsers,
+      totalRides,
+      totalBookings,
+      totalRevenueAgg,
+      avgRatingAgg,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ lastLogin: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }),
+      Ride.countDocuments(),
+      Booking.countDocuments(),
+      Payment.aggregate([{ $match: { status: 'completed' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+      Ride.aggregate([{ $match: { rating: { $exists: true } } }, { $group: { _id: null, avg: { $avg: '$rating' } } }]),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalUsers,
+        activeUsers,
+        totalRides,
+        totalBookings,
+        totalRevenue: totalRevenueAgg[0]?.total || 0,
+        averageRating: (avgRatingAgg[0]?.avg || 4.5).toFixed(1),
+        totalCities: 50,
+      },
+    });
+  } catch (error) {
+    console.error('Analytics summary error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch analytics' });
+  }
+};

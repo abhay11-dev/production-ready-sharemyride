@@ -1,14 +1,15 @@
 // src/pages/RideSearch/RideSearch.jsx
-// Complete Search Ride page matching Home.jsx design system exactly.
-// Map: mapcn (MapLibre) via RideMap component — replaces LeafletRideMap.
-// Hero: bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500, pb-14.
-// Content: -mt-8 overlap, bg-gray-50, max-w-7xl.
-// Install mapcn first: npx shadcn@latest add @mapcn/map
+// Complete Search Ride page.
+// Search: LocationAutocomplete for India-complete typeahead
+// Map: RideMap (MapLibre / OLA Maps) with route hover, nearby + on-the-way rides
+// Results: exact-route matches (green), on-the-way matches, nearby rides (gray)
+// First-ride free banner + per-ride offer badge
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import RideCard from '../../components/ride/RideCard';
 import RideMap from '../../components/map/RideMap';
+import LocationAutocomplete from '../../components/common/LocationAutocomplete';
 import { searchRides } from '../../services/rideService';
 import { getMyBookings } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
@@ -36,7 +37,7 @@ const normalizeIndiaLocation = (value) => {
   return /\bindia\b/i.test(cleaned) ? cleaned : `${cleaned}, India`;
 };
 
-// ─── Skeleton card matching Home.jsx ─────────────────────────────────────────
+// ─── Skeleton card ────────────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 animate-pulse">
@@ -82,7 +83,33 @@ function FilterToggle({ checked, onChange, label }) {
   );
 }
 
-// ─── Empty results state ──────────────────────────────────────────────────────
+// ─── Section header ───────────────────────────────────────────────────────────
+function SectionHeader({ eyebrow, title, subtitle, badge, badgeColor = 'blue', count }) {
+  const colors = {
+    green: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100', eyebrow: 'text-green-600' },
+    blue: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', eyebrow: 'text-blue-600' },
+    purple: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100', eyebrow: 'text-purple-600' },
+    gray: { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-100', eyebrow: 'text-gray-400' },
+  };
+  const c = colors[badgeColor] || colors.blue;
+
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div>
+        <p className={`text-xs font-semibold uppercase tracking-widest mb-1 ${c.eyebrow}`}>{eyebrow}</p>
+        <h2 className="text-base sm:text-lg font-bold text-gray-900">{title}</h2>
+        {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+      </div>
+      {badge && (
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${c.bg} ${c.text} ${c.border}`}>
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Empty results ────────────────────────────────────────────────────────────
 function EmptyResults({ start, end, onClear }) {
   return (
     <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
@@ -93,23 +120,19 @@ function EmptyResults({ start, end, onClear }) {
       </div>
       <p className="font-semibold text-gray-800 text-base mb-1">No rides found</p>
       <p className="text-sm text-gray-500 mb-5">
-        No rides from <span className="font-medium">{start}</span> to <span className="font-medium">{end}</span> at the moment.
+        No rides from <span className="font-medium">{start}</span> to <span className="font-medium">{end}</span> right now.
       </p>
       <div className="flex flex-col sm:flex-row gap-2 justify-center">
-        <button
-          onClick={onClear}
-          className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-        >
+        <button onClick={onClear}
+          className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
           Try a new search
         </button>
-        <Link
-          to="/ride/post"
-          className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-        >
+        <Link to="/ride/post"
+          className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Post a ride this route
+          Post a ride on this route
         </Link>
       </div>
     </div>
@@ -132,69 +155,65 @@ function SearchPrompt() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PAGE COMPONENT
+// PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
-function RideSearch() {
+export default function RideSearch() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const searchCardRef = useRef(null);
-  const startInputRef = useRef(null);
+  const startRef = useRef(null);
 
-  // ── Search inputs ─────────────────────────────────────────────────────────
+  // Search inputs
   const [start, setStart] = useState(searchParams.get('start') || '');
-  const [end,   setEnd]   = useState(searchParams.get('end')   || '');
-  const [date,  setDate]  = useState(searchParams.get('date')  || '');
+  const [end, setEnd] = useState(searchParams.get('end') || '');
+  const [date, setDate] = useState(searchParams.get('date') || '');
+  const [startPlace, setStartPlace] = useState(null);
+  const [endPlace, setEndPlace] = useState(null);
 
-  // ── Results ───────────────────────────────────────────────────────────────
-  const [rides, setRides]               = useState([]);
-  const [connectedRides, setConnected]  = useState([]);
-  const [isLoading, setIsLoading]       = useState(false);
-  const [hasSearched, setHasSearched]   = useState(false);
+  // Results — three tiers
+  const [exactRides, setExactRides] = useState([]); // matchType === 'exact' or 'on_route'
+  const [onWayRides, setOnWayRides] = useState([]); // partial overlap
+  const [nearbyRides, setNearbyRides] = useState([]); // same city/region but different route
+  const [allRides, setAllRides] = useState([]); // all combined for map
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [isFirstRideFree, setIsFirstRideFree] = useState(false);
 
-  // ── Map state ─────────────────────────────────────────────────────────────
-  const [startMarker, setStartMarker]   = useState(null);
-  const [endMarker, setEndMarker]       = useState(null);
-  const [rideRoutes, setRideRoutes]     = useState([]);
-  const [selectedRideId, setSelected]   = useState(null);
+  // Map state
+  const [startMarker, setStartMarker] = useState(null);
+  const [endMarker, setEndMarker] = useState(null);
+  const [rideRoutes, setRideRoutes] = useState([]);
+  const [selectedRideId, setSelected] = useState(null);
 
-  // ── Filters ───────────────────────────────────────────────────────────────
-  const [showFilters, setShowFilters]   = useState(false);
-  const [minSeats, setMinSeats]         = useState('');
-  const [maxFare, setMaxFare]           = useState('');
-  const [vehicleType, setVehicleType]   = useState('');
-  const [acOnly, setAcOnly]             = useState(false);
-  const [womenOnly, setWomenOnly]       = useState(false);
+  // Filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [minSeats, setMinSeats] = useState('');
+  const [maxFare, setMaxFare] = useState('');
+  const [vehicleType, setVehicleType] = useState('');
+  const [acOnly, setAcOnly] = useState(false);
+  const [womenOnly, setWomenOnly] = useState(false);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
 
-  // Auto-search if URL has params
+  const today = new Date().toISOString().split('T')[0];
+
+  // Auto-search from URL params
   useEffect(() => {
     if (searchParams.get('start') && searchParams.get('end')) {
       handleSearch();
     }
     window.setTimeout(() => {
-      if (window.location.hash === '#search' || searchParams.toString()) {
-        searchCardRef.current?.scrollIntoView({ behavior: 'instant', block: 'start' });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'instant' });
-      }
+      searchCardRef.current?.scrollIntoView({ behavior: 'instant', block: 'start' });
     }, 0);
-  }, []); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Check first-ride-free eligibility
   useEffect(() => {
     let active = true;
-    async function loadPassengerOffer() {
-      if (!user) {
-        setIsFirstRideFree(false);
-        return;
-      }
-
-      if (Number(user.totalRidesAsPassenger) > 0) {
-        setIsFirstRideFree(false);
-        return;
-      }
-
+    async function checkEligibility() {
+      if (!user) { setIsFirstRideFree(false); return; }
+      if (Number(user.totalRidesAsPassenger) > 0) { setIsFirstRideFree(false); return; }
       try {
         const bookings = await getMyBookings({ limit: 1 });
         if (active) setIsFirstRideFree(bookings.length === 0);
@@ -202,16 +221,16 @@ function RideSearch() {
         if (active) setIsFirstRideFree(false);
       }
     }
-
-    loadPassengerOffer();
+    checkEligibility();
     return () => { active = false; };
   }, [user]);
 
+  // ── Filters ───────────────────────────────────────────────────────────────
   const applyFilters = useCallback((list) => {
     return list.filter(ride => {
       const seats = ride.availableSeats ?? ride.seats;
       if (minSeats && seats < parseInt(minSeats)) return false;
-      if (maxFare  && (ride.segmentFare || ride.fare) > parseFloat(maxFare)) return false;
+      if (maxFare && (ride.segmentFare || ride.fare) > parseFloat(maxFare)) return false;
       if (vehicleType && ride.vehicle?.type !== vehicleType) return false;
       if (acOnly && !ride.vehicle?.acAvailable) return false;
       if (womenOnly && !ride.preferences?.womenOnly) return false;
@@ -222,8 +241,40 @@ function RideSearch() {
 
   const activeFilterCount = [minSeats, maxFare, vehicleType, acOnly, womenOnly, verifiedOnly].filter(Boolean).length;
 
-  const today = new Date().toISOString().split('T')[0];
+  // ── Categorize results into three tiers ───────────────────────────────────
+  function categorizeResults(results) {
+    const exact = [];
+    const onWay = [];
+    const nearby = [];
 
+    results.forEach(ride => {
+      const mt = ride.matchType;
+      if (mt === 'exact' || mt === 'on_route') {
+        exact.push(ride);
+      } else if (mt === 'partial' || mt === 'waypoint' || mt === 'nearby_route') {
+        onWay.push(ride);
+      } else {
+        // Fallback: if ride has routeCoordinates that overlap our region → onWay, else nearby
+        nearby.push(ride);
+      }
+    });
+
+    return { exact, onWay, nearby };
+  }
+
+  // ── Build map data from rides ─────────────────────────────────────────────
+  function buildMapData(all, connectedIds) {
+    const routes = all
+      .filter(r => r.routeCoordinates?.length >= 2)
+      .map(r => ({
+        id: r._id,
+        path: r.routeCoordinates,
+        color: connectedIds.has(r._id) ? '#16a34a' : '#2563eb',
+      }));
+    return routes;
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────────
   const handleSearch = async (e, options = {}) => {
     if (e?.preventDefault) e.preventDefault();
     const silent = options.silent === true;
@@ -233,7 +284,7 @@ function RideSearch() {
       return;
     }
     if (!isValidRideDate(date, today)) {
-      toast.error('Enter a valid 4-digit ride date');
+      toast.error('Enter a valid ride date');
       return;
     }
     if (!user) {
@@ -245,8 +296,7 @@ function RideSearch() {
 
     setIsLoading(true);
     setHasSearched(true);
-    setRides([]);
-    setConnected([]);
+    setExactRides([]); setOnWayRides([]); setNearbyRides([]); setAllRides([]);
     setRideRoutes([]);
 
     const loadingId = silent ? null : toast.loading('Searching rides…', {
@@ -254,61 +304,61 @@ function RideSearch() {
     });
 
     try {
-      const searchStart = normalizeIndiaLocation(start);
-      const searchEnd = normalizeIndiaLocation(end);
-      const results = await searchRides(searchStart, searchEnd, date || null);
+      const results = await searchRides(
+        normalizeIndiaLocation(start),
+        normalizeIndiaLocation(end),
+        date || null,
+      );
+
       if (loadingId) toast.dismiss(loadingId);
 
       if (!results?.length) {
         if (!silent) toast.error(`No rides found from ${start} to ${end}`, { id: 'no-results' });
+        setIsLoading(false);
         return;
       }
 
       const filtered = applyFilters(results);
-      const connected = filtered.filter(r => r.matchType === 'on_route');
-      const others    = filtered.filter(r => r.matchType !== 'on_route');
+      const { exact, onWay, nearby } = categorizeResults(filtered);
 
-      setRides(filtered);
-      setConnected(connected);
+      setExactRides(exact);
+      setOnWayRides(onWay);
+      setNearbyRides(nearby);
+      setAllRides(filtered);
 
-      // Build map routes — green for connected, blue for others
-      const routes = [
-        ...connected.filter(r => r.routeCoordinates?.length).map(r => ({
-          id: r._id,
-          path: r.routeCoordinates,
-          color: '#10B981', // green-500
-        })),
-        ...others.filter(r => r.routeCoordinates?.length).map(r => ({
-          id: r._id,
-          path: r.routeCoordinates,
-          color: '#2563eb', // blue-600
-        })),
-      ];
-      setRideRoutes(routes);
+      const connectedIds = new Set(exact.map(r => r._id));
+      setRideRoutes(buildMapData(filtered, connectedIds));
 
-      // Set map markers from first connected ride
-      if (connected[0]?.pickupCoordinates) {
-        setStartMarker(connected[0].pickupCoordinates);
-        setEndMarker(connected[0].dropCoordinates);
+      // Set map markers
+      if (startPlace?.lat) {
+        setStartMarker({ lat: startPlace.lat, lng: startPlace.lng });
+      } else if (exact[0]?.pickupCoordinates) {
+        setStartMarker(exact[0].pickupCoordinates);
       } else if (filtered[0]?.routeCoordinates?.length) {
-        const first = filtered[0].routeCoordinates;
-        setStartMarker(first[0]);
-        setEndMarker(first[first.length - 1]);
+        setStartMarker(filtered[0].routeCoordinates[0]);
       }
 
-      if (connected.length > 0) {
-        if (!silent) toast.success(`${connected.length} ride${connected.length !== 1 ? 's' : ''} cover your route!`, {
-          icon: '🎯',
-          style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
-        });
-      } else {
-        if (!silent) toast.success(`${filtered.length} ride${filtered.length !== 1 ? 's' : ''} found for this route`, {
-          style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
-        });
+      if (endPlace?.lat) {
+        setEndMarker({ lat: endPlace.lat, lng: endPlace.lng });
+      } else if (exact[0]?.dropCoordinates) {
+        setEndMarker(exact[0].dropCoordinates);
+      } else if (filtered[0]?.routeCoordinates?.length) {
+        const rc = filtered[0].routeCoordinates;
+        setEndMarker(rc[rc.length - 1]);
       }
 
-      // Scroll results into view on mobile
       if (!silent) {
+        const total = filtered.length;
+        if (exact.length > 0) {
+          toast.success(`${exact.length} ride${exact.length !== 1 ? 's' : ''} cover your exact route!`, {
+            icon: '🎯',
+            style: { background: '#16a34a', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+          });
+        } else {
+          toast.success(`${total} ride${total !== 1 ? 's' : ''} found`, {
+            style: { background: '#16a34a', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+          });
+        }
         setTimeout(() => {
           document.getElementById('search-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 400);
@@ -326,25 +376,24 @@ function RideSearch() {
 
   const handleClear = () => {
     setStart(''); setEnd(''); setDate('');
-    setRides([]); setConnected([]); setRideRoutes([]);
-    setStartMarker(null); setEndMarker(null);
+    setStartPlace(null); setEndPlace(null);
+    setExactRides([]); setOnWayRides([]); setNearbyRides([]); setAllRides([]);
+    setRideRoutes([]); setStartMarker(null); setEndMarker(null);
     setHasSearched(false); setSelected(null);
     setMinSeats(''); setMaxFare(''); setVehicleType('');
     setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false);
     setShowFilters(false);
     window.setTimeout(() => {
       searchCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      startInputRef.current?.focus({ preventScroll: true });
     }, 0);
   };
 
-  const otherRides = rides.filter(r => !connectedRides.find(c => c._id === r._id));
+  const connectedRides = exactRides; // for map highlighting
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gray-50">
 
-      {/* ── Hero strip — identical to Home.jsx LoggedInDashboard ── */}
+      {/* Hero */}
       <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 pt-6 pb-8 sm:pt-8 sm:pb-10 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
@@ -354,17 +403,22 @@ function RideSearch() {
                 Smart route matching · India
               </p>
               <h1 className="text-lg sm:text-2xl font-bold text-white leading-tight">Find a Ride</h1>
-              <p className="text-blue-200 text-xs sm:text-sm mt-1">Search rides going your way · smart route overlap matching</p>
+              <p className="text-blue-200 text-xs sm:text-sm mt-1">
+                City to city · village to town · street to office — search any Indian location
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Content — spaced below hero instead of overlapping ── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-8 pb-16">
 
-        {/* ── Search card ─────────────────────────────────────────────── */}
-        <div id="search" ref={searchCardRef} className="bg-white rounded-2xl border border-gray-100 shadow-md overflow-hidden mb-5 scroll-mt-4">
+        {/* Search card */}
+        <div
+          id="search"
+          ref={searchCardRef}
+          className="bg-white rounded-2xl border border-gray-100 shadow-md overflow-hidden mb-5 scroll-mt-4"
+        >
           <div className="h-1 bg-gradient-to-r from-blue-600 to-blue-400" />
           <div className="p-5 sm:p-6">
             <div className="flex items-center gap-2 mb-5">
@@ -380,56 +434,54 @@ function RideSearch() {
             </div>
 
             <form onSubmit={handleSearch} noValidate>
+              {/* First-ride-free banner */}
               {isFirstRideFree && (
                 <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
-                  <p className="text-sm font-bold text-green-800">Your first booking is fee-free</p>
-                  <p className="mt-0.5 text-xs text-green-700">Search and book your first ride with platform fee and GST waived.</p>
+                  <p className="text-sm font-bold text-green-800">🎁 Your first booking is fee-free</p>
+                  <p className="mt-0.5 text-xs text-green-700">Platform fee waived on your first ride. You pay fare + GST only.</p>
                 </div>
               )}
 
+              {/* Location inputs with autocomplete */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                 {/* From */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">From</label>
-                  <div className="relative">
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <input
-                      ref={startInputRef}
-                      type="text"
-                      value={start}
-                      onChange={e => setStart(e.target.value)}
-                      placeholder="Origin city or area"
-                      disabled={isLoading}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 disabled:opacity-60"
-                    />
-                  </div>
+                  <LocationAutocomplete
+                    icon="origin"
+                    value={start}
+                    onChange={(val) => setStart(val)}
+                    onPlaceSelect={(place) => {
+                      setStart(place.address || start);
+                      setStartPlace(place);
+                    }}
+                    placeholder="Origin city, area, village…"
+                    disabled={isLoading}
+                    inputRef={startRef}
+                  />
                 </div>
 
                 {/* To */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">To</label>
-                  <div className="relative">
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <input
-                      type="text"
-                      value={end}
-                      onChange={e => setEnd(e.target.value)}
-                      placeholder="Destination city or area"
-                      disabled={isLoading}
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder-gray-400 disabled:opacity-60"
-                    />
-                  </div>
+                  <LocationAutocomplete
+                    icon="destination"
+                    value={end}
+                    onChange={(val) => setEnd(val)}
+                    onPlaceSelect={(place) => {
+                      setEnd(place.address || end);
+                      setEndPlace(place);
+                    }}
+                    placeholder="Destination city, area, village…"
+                    disabled={isLoading}
+                  />
                 </div>
 
                 {/* Date */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Date <span className="text-gray-300 font-normal">(optional)</span></label>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                    Date <span className="text-gray-300 font-normal">(optional)</span>
+                  </label>
                   <input
                     type="date"
                     value={date}
@@ -442,7 +494,7 @@ function RideSearch() {
                 </div>
               </div>
 
-              {/* Advanced filters toggle */}
+              {/* Filters */}
               <div className="mb-4">
                 <button
                   type="button"
@@ -480,13 +532,14 @@ function RideSearch() {
                         {['Hatchback', 'Sedan', 'SUV', 'MUV', 'Bike'].map(v => <option key={v}>{v}</option>)}
                       </select>
                     </div>
-                    <FilterToggle checked={acOnly}       onChange={setAcOnly}       label="AC only" />
-                    <FilterToggle checked={womenOnly}    onChange={setWomenOnly}    label="Women only rides" />
+                    <FilterToggle checked={acOnly} onChange={setAcOnly} label="AC only" />
+                    <FilterToggle checked={womenOnly} onChange={setWomenOnly} label="Women only rides" />
                     <FilterToggle checked={verifiedOnly} onChange={setVerifiedOnly} label="Verified drivers only" />
 
                     {activeFilterCount > 0 && (
-                      <button type="button" onClick={() => { setMinSeats(''); setMaxFare(''); setVehicleType(''); setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false); }}
-                        className="text-xs text-red-600 font-semibold hover:text-red-700 self-end">
+                      <button type="button"
+                        onClick={() => { setMinSeats(''); setMaxFare(''); setVehicleType(''); setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false); }}
+                        className="text-xs text-red-600 font-semibold hover:text-red-700 self-end col-span-full sm:col-auto">
                         Clear filters
                       </button>
                     )}
@@ -533,10 +586,10 @@ function RideSearch() {
           </div>
         </div>
 
-        {/* ── Map — always visible, synced with results ───────────────── */}
+        {/* Map */}
         <div className="mb-5">
           <RideMap
-            rides={rides}
+            rides={allRides}
             connectedRides={connectedRides}
             rideRoutes={rideRoutes}
             startMarker={startMarker}
@@ -550,100 +603,132 @@ function RideSearch() {
           />
         </div>
 
-        {/* ── Results ─────────────────────────────────────────────────── */}
+        {/* Results */}
         <div id="search-results">
 
-          {/* Loading skeletons */}
+          {/* Skeletons */}
           {isLoading && (
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Searching</p>
-                  <h2 className="text-base sm:text-lg font-bold text-gray-900">Finding rides…</h2>
-                </div>
-              </div>
+              <SectionHeader eyebrow="Searching" title="Finding rides…" badgeColor="blue" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
               </div>
             </div>
           )}
 
-          {/* No results */}
-          {!isLoading && hasSearched && rides.length === 0 && (
+          {/* Empty */}
+          {!isLoading && hasSearched && allRides.length === 0 && (
             <EmptyResults start={start} end={end} onClear={handleClear} />
           )}
 
           {/* Pre-search */}
           {!isLoading && !hasSearched && <SearchPrompt />}
 
-          {/* Connected routes section */}
-          {!isLoading && connectedRides.length > 0 && (
+          {/* ── TIER 1: Exact / on-route matches ── */}
+          {!isLoading && exactRides.length > 0 && (
             <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-green-600 text-xs font-semibold uppercase tracking-widest mb-1">Best matches</p>
-                  <h2 className="text-base sm:text-lg font-bold text-gray-900">Rides covering your route</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{connectedRides.length} ride{connectedRides.length !== 1 ? 's' : ''} pass through your journey</p>
-                </div>
-                <span className="inline-flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold border border-green-100">
-                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Route match
-                </span>
-              </div>
+              <SectionHeader
+                eyebrow="Best matches"
+                title="Rides covering your route"
+                subtitle={`${exactRides.length} ride${exactRides.length !== 1 ? 's' : ''} pass through your entire journey`}
+                badge={
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    Route match
+                  </span>
+                }
+                badgeColor="green"
+              />
 
               <div className="space-y-3 sm:space-y-4">
-                {connectedRides.map(ride => (
+                {exactRides.map((ride, idx) => (
                   <div
                     key={ride._id}
                     id={`ride-card-${ride._id}`}
-                    className={`transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-2xl' : ''}`}
+                    className={`relative transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-green-500 ring-offset-2 rounded-2xl' : ''}`}
                   >
-                    <div className="relative">
-                      {/* Connected badge */}
-                      <div className="absolute -top-2 -right-2 z-10 bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1">
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        Route match
-                      </div>
-                      <RideCard
-                        ride={ride}
-                        isFirstRideFree={isFirstRideFree}
-                        onBookingSuccess={() => {
-                          setIsFirstRideFree(false);
-                          handleSearch(null, { silent: true });
-                        }}
-                      />
+                    {/* Match badge */}
+                    <div className="absolute -top-2.5 -right-1 z-10 bg-green-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      #{idx + 1} Route match
                     </div>
+                    <RideCard
+                      ride={ride}
+                      isFirstRideFree={isFirstRideFree}
+                      onBookingSuccess={() => {
+                        setIsFirstRideFree(false);
+                        handleSearch(null, { silent: true });
+                      }}
+                    />
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Other rides section */}
-          {!isLoading && otherRides.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">
-                    {connectedRides.length > 0 ? 'More options' : 'Available rides'}
-                  </p>
-                  <h2 className="text-base sm:text-lg font-bold text-gray-900">
-                    {connectedRides.length > 0 ? 'Other rides on similar routes' : 'Rides available'}
-                  </h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{otherRides.length} ride{otherRides.length !== 1 ? 's' : ''} found</p>
-                </div>
-              </div>
+          {/* ── TIER 2: On-the-way / partial overlap rides ── */}
+          {!isLoading && onWayRides.length > 0 && (
+            <div className="mb-8">
+              <SectionHeader
+                eyebrow="On your way"
+                title="Rides passing through your region"
+                subtitle={`${onWayRides.length} ride${onWayRides.length !== 1 ? 's' : ''} with partial route overlap — you may be able to join`}
+                badge="On the way"
+                badgeColor="purple"
+              />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {otherRides.map(ride => (
+                {onWayRides.map(ride => (
                   <div
                     key={ride._id}
                     id={`ride-card-${ride._id}`}
-                    className={`transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-2xl' : ''}`}
+                    className={`relative transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-purple-400 ring-offset-2 rounded-2xl' : ''}`}
+                  >
+                    {/* On-the-way badge */}
+                    <div className="absolute -top-2.5 -right-1 z-10 bg-purple-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+                      On the way
+                    </div>
+                    <RideCard
+                      ride={ride}
+                      isFirstRideFree={isFirstRideFree}
+                      onBookingSuccess={() => {
+                        setIsFirstRideFree(false);
+                        handleSearch(null, { silent: true });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {onWayRides.length > 0 && (
+                <p className="text-xs text-gray-400 text-center mt-4">
+                  💡 Contact the driver to confirm they can accommodate your specific pickup and drop-off points.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── TIER 3: Nearby rides ── */}
+          {!isLoading && nearbyRides.length > 0 && (
+            <div className="mb-8">
+              <SectionHeader
+                eyebrow="Nearby"
+                title="Other rides in this area"
+                subtitle={`${nearbyRides.length} ride${nearbyRides.length !== 1 ? 's' : ''} in the same region — routes may differ`}
+                badge="Nearby"
+                badgeColor="gray"
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {nearbyRides.map(ride => (
+                  <div
+                    key={ride._id}
+                    id={`ride-card-${ride._id}`}
+                    className={`relative transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-gray-400 ring-offset-2 rounded-2xl' : ''}`}
                   >
                     <RideCard
                       ride={ride}
@@ -660,14 +745,16 @@ function RideSearch() {
           )}
         </div>
 
-        {/* ── Trust strip at bottom ──────────────────────────────────────── */}
+        {/* Trust strip */}
         {!isLoading && !hasSearched && (
           <div className="mt-6 flex flex-wrap gap-2 justify-center">
             {[
-              { icon: '🛡️', text: 'Verified drivers only' },
+              { icon: '🛡️', text: 'Verified drivers' },
+              { icon: '📍', text: 'City to village coverage' },
               { icon: '⭐', text: 'Rated community' },
               { icon: '💸', text: 'Split fuel costs' },
               { icon: '🎯', text: 'Smart route matching' },
+              { icon: '🏘️', text: 'Locality-level search' },
               { icon: '⚡', text: 'Instant booking' },
             ].map(p => (
               <span key={p.text} className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 px-3 py-1.5 rounded-full shadow-sm">
@@ -680,5 +767,3 @@ function RideSearch() {
     </div>
   );
 }
-
-export default RideSearch;

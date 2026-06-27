@@ -8,7 +8,12 @@ const {
   streamVerificationDocument,
   getAnalyticsSummary,
   getUsersList,
+  updateUser,
+  getUserRides,
+  getUserBookings,
   getRidesList,
+  getBookingsList,
+  getPaymentsList,
   getEnquiriesList,
   updateEnquiry,
   getReportsList,
@@ -17,60 +22,42 @@ const {
   updateBlog,
 } = require('../controllers/adminController');
 
-// @route   POST /api/admin/login
-// @desc    Admin login
+// ── Auth ────────────────────────────────────────────────────────────────────
 router.post('/login', adminLogin);
 
-// @route   GET /api/admin/verifications
-// @desc    Get all driver verifications
-router.get('/verifications', protectAdmin, getVerifications);
-
-// @route   GET /api/admin/verifications/:id/document/:documentType
-// @desc    Stream a private verification document for admin preview
-router.get('/verifications/:id/document/:documentType', protectAdmin, streamVerificationDocument);
-
-// @route   PUT /api/admin/verifications/:id
-// @desc    Update a verification request status
-router.put('/verifications/:id', protectAdmin, updateVerification);
-
-/* ════════════════════════════════════════════════════════════════════
-   DASHBOARD ANALYTICS ROUTES
-   ════════════════════════════════════════════════════════════════════ */
-
-// @route   GET /api/admin/analytics/summary
-// @desc    Get dashboard analytics summary
+// ── Analytics ───────────────────────────────────────────────────────────────
 router.get('/analytics/summary', protectAdmin, getAnalyticsSummary);
 
-// @route   GET /api/admin/users
-// @desc    Get users list
+// ── Users ────────────────────────────────────────────────────────────────────
 router.get('/users', protectAdmin, getUsersList);
+router.put('/users/:id', protectAdmin, updateUser);
+router.get('/users/:id/rides', protectAdmin, getUserRides);
+router.get('/users/:id/bookings', protectAdmin, getUserBookings);
 
-// @route   GET /api/admin/rides
-// @desc    Get rides list
+// ── Rides ────────────────────────────────────────────────────────────────────
 router.get('/rides', protectAdmin, getRidesList);
 
-// @route   GET /api/admin/enquiries
-// @desc    Get enquiries list
-router.get('/enquiries', protectAdmin, getEnquiriesList);
+// ── Bookings ─────────────────────────────────────────────────────────────────
+router.get('/bookings', protectAdmin, getBookingsList);
 
-// @route   PUT /api/admin/enquiries/:id
-// @desc    Update enquiry status
+// ── Payments ─────────────────────────────────────────────────────────────────
+router.get('/payments', protectAdmin, getPaymentsList);
+
+// ── Driver Verification ───────────────────────────────────────────────────────
+router.get('/verifications', protectAdmin, getVerifications);
+router.put('/verifications/:id', protectAdmin, updateVerification);
+router.get('/verifications/:id/document/:documentType', protectAdmin, streamVerificationDocument);
+
+// ── Enquiries ─────────────────────────────────────────────────────────────────
+router.get('/enquiries', protectAdmin, getEnquiriesList);
 router.put('/enquiries/:id', protectAdmin, updateEnquiry);
 
-// @route   GET /api/admin/reports
-// @desc    Get reports list
+// ── Reports ───────────────────────────────────────────────────────────────────
 router.get('/reports', protectAdmin, getReportsList);
-
-// @route   PUT /api/admin/reports/:id
-// @desc    Update report status
 router.put('/reports/:id', protectAdmin, updateReport);
 
-// @route   GET /api/admin/blogs
-// @desc    Get blogs list
+// ── Blogs ─────────────────────────────────────────────────────────────────────
 router.get('/blogs', protectAdmin, getBlogsList);
-
-// @route   PUT /api/admin/blogs/:id
-// @desc    Update blog status
 router.put('/blogs/:id', protectAdmin, updateBlog);
 
 module.exports = router;
