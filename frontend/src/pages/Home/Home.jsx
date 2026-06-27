@@ -34,351 +34,637 @@ function greet() {
   return 'Good evening';
 }
 
-// ─── 3D Car Component (desktop hero only) ─────────────────────────────────────
+// ─── CSS injection helper (idempotent) ────────────────────────────────────────
+function injectStyles(id, css) {
+  if (document.getElementById(id)) return;
+  const s = document.createElement('style');
+  s.id = id;
+  s.textContent = css;
+  document.head.appendChild(s);
+}
+
+// ─── 3D Car Component ──────────────────────────────────────────────────────────
+// Full Three.js sedan with:
+//   • Smooth drag-to-rotate (mousedown lock, lerp easing, auto-resume)
+//   • Clickable hood + doors via raycaster hit-testing on actual meshes
+//   • Interior (seats, dashboard, steering wheel) revealed on door open
+//   • 7-color metallic paint picker (body + dark variant update reactively)
+//   • Headlights / DRL / taillights all togglable (SpotLight + emissive)
+//   • Exhaust particles (dual tips, colour shifts in boost mode)
+//   • Turbo boost: faster spin, teal exhaust, ambient pulsing, speed badge
+//   • Floating dust particles + tyre-roll animation
+//   • Red brake calipers visible inside each wheel
+//   • Auto-spin resumes 2.5s after user stops dragging
 function Car3D() {
-  const mountRef = useRef(null);
-  const sceneRef = useRef(null);
-  const animFrameRef = useRef(null);
-  const isDraggingRef = useRef(false);
-  const lastMouseRef = useRef({ x: 0, y: 0 });
-  const rotationRef = useRef({ y: -0.4, x: 0.12 });
-  const targetRotRef = useRef({ y: -0.4, x: 0.12 });
-  const autoSpinRef = useRef(true);
-  const autoSpinTimerRef = useRef(null);
-  const wheelRotRef = useRef(0);
+  const rootRef = useRef(null);
+  const canvasRef = useRef(null);
+  const sceneRef = useRef(null); // holds all Three.js references
+  const animRef = useRef(null);
+
+  // UI state (minimal — most animation state lives in refs)
   const [loaded, setLoaded] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [ratingSubmitted, setRatingSubmitted] = useState(false);
-  const [headlightsOn, setHeadlightsOn] = useState(true);
   const [autoSpin, setAutoSpin] = useState(true);
+  const [headlights, setHeadlights] = useState(true);
+  const [doorsOpen, setDoorsOpen] = useState(false);
+  const [hoodOpen, setHoodOpen] = useState(false);
+  const [boostMode, setBoostMode] = useState(false);
+  const [paintIdx, setPaintIdx] = useState(0);
+
+  const COLORS = [
+    { hex: 0x1a56db, css: '#1a56db', name: 'Ocean Blue' },
+    { hex: 0x16a34a, css: '#16a34a', name: 'Forest Green' },
+    { hex: 0xdc2626, css: '#dc2626', name: 'Racing Red' },
+    { hex: 0x7c3aed, css: '#7c3aed', name: 'Cosmic Purple' },
+    { hex: 0xf59e0b, css: '#f59e0b', name: 'Amber Gold' },
+    { hex: 0x1a1a2e, css: '#1a1a2e', name: 'Midnight' },
+    { hex: 0xe2e8f0, css: '#e2e8f0', name: 'Pearl White' },
+  ];
+
+  // Internal animation state kept in a plain object (no re-renders)
+  const S = useRef({
+    isDragging: false,
+    lastX: 0, lastY: 0,
+    rotY: -0.4, rotX: 0.12,
+    targetY: -0.4, targetX: 0.12,
+    autoSpin: true,
+    autoSpinTimer: null,
+    wheelRot: 0,
+    boostMode: false,
+    headlights: true,
+    doorLAngle: 0, doorRAngle: 0, hoodAngle: 0,
+    doorLTarget: 0, doorRTarget: 0, hoodTarget: 0,
+    frame: 0,
+  }).current;
 
   useEffect(() => {
-    let THREE;
-    let renderer, scene, camera;
-    let carGroup, wheelFL, wheelFR, wheelRL, wheelRR;
-    let particles;
-    let w = mountRef.current.clientWidth;
-    let h = mountRef.current.clientHeight;
+    injectStyles('car3d-css', `
+      .car3d-btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 5px 11px; border-radius: 20px; font-size: 12px; font-weight: 500;
+        border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08);
+        color: rgba(255,255,255,0.8); cursor: pointer; transition: all 0.15s;
+        user-select: none; outline: none;
+      }
+      .car3d-btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.4); color: #fff; }
+      .car3d-btn.active-yellow { background: rgba(255,220,60,0.22); border-color: rgba(255,220,60,0.55); color: #ffe87a; }
+      .car3d-btn.active-blue   { background: rgba(96,165,250,0.18); border-color: rgba(96,165,250,0.45); color: #93c5fd; }
+      .car3d-btn.active-green  { background: rgba(52,211,153,0.20); border-color: rgba(52,211,153,0.50); color: #6ee7b7; }
+      .car3d-swatch {
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.25); cursor: pointer;
+        transition: transform 0.15s, border-color 0.15s;
+      }
+      .car3d-swatch:hover, .car3d-swatch.active { transform: scale(1.35); border-color: #fff; }
+      @keyframes car3d-pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+      @keyframes car3d-spin-ring { to { transform: rotate(360deg); } }
+    `);
 
-    const init = async () => {
+    let THREE;
+    let renderer, scene, camera, carGroup;
+    let wheelFL, wheelFR, wheelRL, wheelRR;
+    let doorL, doorR, hoodPivot;
+    let hoodMesh, doorLMesh, doorRMesh;
+    let hlSpotL, hlSpotR;
+    let hlMatL, hlMatR, drlMatL, drlMatR, tlMatL, tlMatR;
+    let bodyMeshes = [];
+    let ambLight;
+    let particles, pPos, pCount = 80;
+    let exhaustParticles = [], exhaustGroup;
+    let raycaster, mouse2d;
+    let bodyMat, bodyDarkMat;
+
+    const canvas = canvasRef.current;
+    const rootEl = rootRef.current;
+    if (!canvas || !rootEl) return;
+
+    const W = () => rootEl.clientWidth;
+    const H = () => rootEl.clientHeight;
+
+    async function init() {
       try {
         const mod = await import('https://esm.sh/three@0.160.0');
         THREE = mod;
-
-        scene = new THREE.Scene();
-        scene.background = null;
-
-        camera = new THREE.PerspectiveCamera(38, w / h, 0.1, 200);
-        camera.position.set(0, 2.8, 9);
-        camera.lookAt(0, 0.5, 0);
-
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(w, h);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.2;
-        if (mountRef.current) {
-          mountRef.current.innerHTML = ''; // Prevent duplication in strict mode
-          mountRef.current.appendChild(renderer.domElement);
-        }
-
-        // Lights
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const sun = new THREE.DirectionalLight(0xfff5e0, 2.4);
-        sun.position.set(5, 10, 5);
-        sun.castShadow = true;
-        sun.shadow.mapSize.width = 1024;
-        sun.shadow.mapSize.height = 1024;
-        scene.add(sun);
-        const fill = new THREE.DirectionalLight(0xc0d8ff, 0.9);
-        fill.position.set(-5, 3, -5);
-        scene.add(fill);
-        const rim = new THREE.DirectionalLight(0x2060ff, 0.6);
-        rim.position.set(0, 2, -8);
-        scene.add(rim);
-
-        // Ground shadow
-        const ground = new THREE.Mesh(
-          new THREE.CircleGeometry(3.5, 64),
-          new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.18, roughness: 1 })
-        );
-        ground.rotation.x = -Math.PI / 2;
-        ground.position.y = -1.01;
-        ground.receiveShadow = true;
-        scene.add(ground);
-
-        // Materials
-        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a56db, metalness: 0.85, roughness: 0.18 });
-        const bodyDarkMat = new THREE.MeshStandardMaterial({ color: 0x0d3a8a, metalness: 0.9, roughness: 0.15 });
-        const glassMat = new THREE.MeshStandardMaterial({ color: 0x88bbff, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.45 });
-        const chromeMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 1.0, roughness: 0.05 });
-        const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.3, roughness: 0.8 });
-        const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.0, roughness: 0.95 });
-        const rimMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, metalness: 1.0, roughness: 0.1 });
-        const hlMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffee88, emissiveIntensity: 3, metalness: 0.2, roughness: 0.1 });
-        const drlMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2 });
-        const tlMat = new THREE.MeshStandardMaterial({ color: 0xff2200, emissive: 0xff2200, emissiveIntensity: 1.5, metalness: 0.2, roughness: 0.1 });
-        const tlStripMat = new THREE.MeshStandardMaterial({ color: 0xff3300, emissive: 0xff2200, emissiveIntensity: 1.2 });
-        const underbodyMat = new THREE.MeshStandardMaterial({ color: 0x0a2a6e, metalness: 0.7, roughness: 0.3 });
-
-        carGroup = new THREE.Group();
-        scene.add(carGroup);
-
-        const addMesh = (geo, mat, px, py, pz, rx = 0, ry = 0, rz = 0) => {
-          const m = new THREE.Mesh(geo, mat);
-          m.position.set(px, py, pz);
-          m.rotation.set(rx, ry, rz);
-          m.castShadow = true;
-          carGroup.add(m);
-          return m;
-        };
-
-        // Lower body
-        addMesh(new THREE.BoxGeometry(2.0, 0.55, 4.2), bodyMat, 0, 0.08, 0);
-        // Side skirts
-        [-1.02, 1.02].forEach(x => addMesh(new THREE.BoxGeometry(0.06, 0.18, 3.8), bodyDarkMat, x, -0.1, 0));
-        // Hood
-        addMesh(new THREE.BoxGeometry(1.98, 0.08, 1.2), bodyMat, 0, 0.39, -1.9, -0.06);
-        // Trunk
-        addMesh(new THREE.BoxGeometry(1.98, 0.09, 0.8), bodyMat, 0, 0.39, 1.85, 0.06);
-        // Front bumper
-        addMesh(new THREE.BoxGeometry(2.0, 0.28, 0.22), bodyMat, 0, -0.08, -2.15);
-        // Rear bumper
-        addMesh(new THREE.BoxGeometry(2.0, 0.28, 0.22), bodyMat, 0, -0.08, 2.15);
-        // Grille
-        addMesh(new THREE.BoxGeometry(1.1, 0.18, 0.06), blackMat, 0, -0.08, -2.27);
-        addMesh(new THREE.BoxGeometry(1.1, 0.04, 0.04), chromeMat, 0, -0.02, -2.28);
-        // Diffuser
-        addMesh(new THREE.BoxGeometry(1.3, 0.12, 0.1), blackMat, 0, -0.2, 2.26);
-        // Underbody
-        addMesh(new THREE.BoxGeometry(1.85, 0.06, 3.8), underbodyMat, 0, -0.2, 0);
-
-        // Cabin (extruded shape)
-        const cabinShape = new THREE.Shape();
-        cabinShape.moveTo(-1.85, 0);
-        cabinShape.lineTo(-0.9, 0.72);
-        cabinShape.lineTo(0.65, 0.72);
-        cabinShape.lineTo(1.55, 0);
-        cabinShape.lineTo(-1.85, 0);
-        const cabin = new THREE.Mesh(
-          new THREE.ExtrudeGeometry(cabinShape, { steps: 1, depth: 1.78, bevelEnabled: false }),
-          bodyMat
-        );
-        cabin.rotation.y = -Math.PI / 2;
-        cabin.position.set(0.89, 0.35, -0.89);
-        cabin.castShadow = true;
-        carGroup.add(cabin);
-
-        // Windshields
-        addMesh(new THREE.PlaneGeometry(1.56, 0.62), glassMat, 0, 0.75, -1.0, Math.PI * 0.18);
-        addMesh(new THREE.PlaneGeometry(1.56, 0.55), glassMat, 0, 0.75, 1.08, -Math.PI * 0.22);
-        [-0.92, 0.92].forEach((x, i) => {
-          const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.42), glassMat);
-          sw.position.set(x, 0.76, 0.1);
-          sw.rotation.y = i === 0 ? -Math.PI / 2 : Math.PI / 2;
-          carGroup.add(sw);
-        });
-
-        // Headlights
-        [[-0.62, -2.26], [0.62, -2.26]].forEach(([x, z]) => {
-          addMesh(new THREE.BoxGeometry(0.45, 0.14, 0.08), hlMat, x, 0.08, z);
-          addMesh(new THREE.BoxGeometry(0.42, 0.035, 0.04), drlMat, x, 0.17, z);
-        });
-
-        // Taillights
-        [[-0.65, 2.26], [0.65, 2.26]].forEach(([x, z]) => {
-          addMesh(new THREE.BoxGeometry(0.42, 0.14, 0.08), tlMat, x, 0.08, z);
-          addMesh(new THREE.BoxGeometry(0.8, 0.025, 0.04), tlStripMat, 0, 0.17, z);
-        });
-
-        // Roof rails
-        [-0.78, 0.78].forEach(x => addMesh(new THREE.BoxGeometry(0.04, 0.04, 1.6), chromeMat, x, 1.09, 0.1));
-
-        // Door handles
-        [-0.98, 0.98].forEach(x => {
-          [-0.3, 0.55].forEach(z => addMesh(new THREE.BoxGeometry(0.04, 0.04, 0.2), chromeMat, x, 0.4, z));
-        });
-
-        // Headlight spotlights
-        const hlSpotL = new THREE.SpotLight(0xfff5cc, 3, 8, Math.PI / 8, 0.3);
-        hlSpotL.position.set(-0.62, 0.08, -2.3);
-        hlSpotL.target.position.set(-0.8, -0.5, -5);
-        scene.add(hlSpotL, hlSpotL.target);
-        const hlSpotR = new THREE.SpotLight(0xfff5cc, 3, 8, Math.PI / 8, 0.3);
-        hlSpotR.position.set(0.62, 0.08, -2.3);
-        hlSpotR.target.position.set(0.8, -0.5, -5);
-        scene.add(hlSpotR, hlSpotR.target);
-
-        // Wheels
-        const makeWheel = (px, py, pz) => {
-          const wg = new THREE.Group();
-          wg.position.set(px, py, pz);
-          const tire = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.18, 16, 40), tireMat);
-          tire.rotation.y = Math.PI / 2;
-          tire.castShadow = true;
-          wg.add(tire);
-          const rimOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.06, 32), rimMat);
-          rimOuter.rotation.z = Math.PI / 2;
-          wg.add(rimOuter);
-          const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.09, 16), chromeMat);
-          hub.rotation.z = Math.PI / 2;
-          wg.add(hub);
-          for (let i = 0; i < 5; i++) {
-            const angle = (i / 5) * Math.PI * 2;
-            const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.19, 0.035), rimMat);
-            spoke.position.set(0, Math.sin(angle) * 0.14, Math.cos(angle) * 0.14);
-            spoke.rotation.x = angle;
-            wg.add(spoke);
-          }
-          const disc = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.22, 0.22, 0.03, 24),
-            new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8, roughness: 0.4 })
-          );
-          disc.rotation.z = Math.PI / 2;
-          wg.add(disc);
-          return wg;
-        };
-
-        wheelFL = makeWheel(-1.0, -0.6, -1.3);
-        wheelFR = makeWheel(1.0, -0.6, -1.3);
-        wheelRL = makeWheel(-1.0, -0.6, 1.3);
-        wheelRR = makeWheel(1.0, -0.6, 1.3);
-        carGroup.add(wheelFL, wheelFR, wheelRL, wheelRR);
-
-        // Floating particles
-        const pCount = 60;
-        const pGeo = new THREE.BufferGeometry();
-        const pPos = new Float32Array(pCount * 3);
-        for (let i = 0; i < pCount; i++) {
-          pPos[i * 3] = (Math.random() - 0.5) * 10;
-          pPos[i * 3 + 1] = Math.random() * 5;
-          pPos[i * 3 + 2] = (Math.random() - 0.5) * 10;
-        }
-        pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-        particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0x88aaff, size: 0.04, transparent: true, opacity: 0.5 }));
-        scene.add(particles);
-
-        carGroup.position.y = 0.3;
-        sceneRef.current = { THREE, renderer, scene, camera, carGroup, particles, wheelFL, wheelFR, wheelRL, wheelRR };
-        setLoaded(true);
-
-        const animate = () => {
-          animFrameRef.current = requestAnimationFrame(animate);
-          const t = Date.now() * 0.001;
-
-          if (autoSpinRef.current) targetRotRef.current.y += 0.005;
-          rotationRef.current.y += (targetRotRef.current.y - rotationRef.current.y) * 0.08;
-          rotationRef.current.x += (targetRotRef.current.x - rotationRef.current.x) * 0.08;
-          carGroup.rotation.y = rotationRef.current.y;
-          carGroup.rotation.x = rotationRef.current.x;
-          carGroup.position.y = 0.3 + Math.sin(t * 0.9) * 0.06;
-
-          wheelRotRef.current += 0.04;
-          [wheelFL, wheelFR, wheelRL, wheelRR].forEach(w => { w.rotation.x = wheelRotRef.current; });
-
-          const pos = particles.geometry.attributes.position.array;
-          for (let i = 1; i < pCount * 3; i += 3) {
-            pos[i] += 0.003;
-            if (pos[i] > 5) pos[i] = 0;
-          }
-          particles.geometry.attributes.position.needsUpdate = true;
-          particles.rotation.y = t * 0.02;
-
-          renderer.render(scene, camera);
-        };
-        animate();
-      } catch (err) {
-        console.error('Car3D init error:', err);
+      } catch {
+        return;
       }
-    };
+
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      renderer.setSize(W(), H());
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.3;
+      renderer.setClearColor(0x000000, 0);
+
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(38, W() / H(), 0.1, 200);
+      camera.position.set(0, 2.8, 9);
+      camera.lookAt(0, 0.5, 0);
+
+      raycaster = new THREE.Raycaster();
+      mouse2d = new THREE.Vector2();
+
+      // ── Lighting ──────────────────────────────────────────────────────────
+      ambLight = new THREE.AmbientLight(0xffffff, 0.65);
+      scene.add(ambLight);
+      const sun = new THREE.DirectionalLight(0xfff5e0, 2.2);
+      sun.position.set(5, 10, 5);
+      sun.castShadow = true;
+      sun.shadow.mapSize.width = 2048;
+      sun.shadow.mapSize.height = 2048;
+      scene.add(sun);
+      const fill = new THREE.DirectionalLight(0xc0d8ff, 0.8);
+      fill.position.set(-5, 3, -5);
+      scene.add(fill);
+      const rim = new THREE.DirectionalLight(0x2060ff, 0.55);
+      rim.position.set(0, 2, -8);
+      scene.add(rim);
+
+      // ── Ground shadow disc ────────────────────────────────────────────────
+      const ground = new THREE.Mesh(
+        new THREE.CircleGeometry(4, 64),
+        new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.15 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -1.01;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // ── Materials ─────────────────────────────────────────────────────────
+      bodyMat = new THREE.MeshStandardMaterial({ color: 0x1a56db, metalness: 0.88, roughness: 0.14 });
+      bodyDarkMat = new THREE.MeshStandardMaterial({ color: 0x0d3a8a, metalness: 0.9, roughness: 0.15 });
+      const glassMat = new THREE.MeshStandardMaterial({ color: 0x88bbff, metalness: 0.1, roughness: 0.04, transparent: true, opacity: 0.42 });
+      const chromeMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 1.0, roughness: 0.04 });
+      const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.3, roughness: 0.8 });
+      const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.0, roughness: 0.95 });
+      const rimMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, metalness: 1.0, roughness: 0.08 });
+      const interMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, metalness: 0.1, roughness: 0.9 });
+      const seatMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.0, roughness: 0.9 });
+      const underbody = new THREE.MeshStandardMaterial({ color: 0x0a2a6e, metalness: 0.7, roughness: 0.3 });
+      const calipMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, metalness: 0.6, roughness: 0.4 });
+      const discMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8, roughness: 0.4 });
+      hlMatL = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffee88, emissiveIntensity: 3.5 });
+      hlMatR = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffee88, emissiveIntensity: 3.5 });
+      drlMatL = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.2 });
+      drlMatR = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.2 });
+      tlMatL = new THREE.MeshStandardMaterial({ color: 0xff2200, emissive: 0xff2200, emissiveIntensity: 1.6 });
+      tlMatR = new THREE.MeshStandardMaterial({ color: 0xff2200, emissive: 0xff2200, emissiveIntensity: 1.6 });
+      const tlStrip = new THREE.MeshStandardMaterial({ color: 0xff3300, emissive: 0xff2200, emissiveIntensity: 1.2 });
+
+      // ── Helper ────────────────────────────────────────────────────────────
+      function mk(geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, y, z);
+        m.rotation.set(rx, ry, rz);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        return m;
+      }
+
+      // ── Car group ─────────────────────────────────────────────────────────
+      carGroup = new THREE.Group();
+      scene.add(carGroup);
+
+      function addBody(geo, x, y, z, rx = 0, ry = 0, rz = 0) {
+        const m = mk(geo, bodyMat, x, y, z, rx, ry, rz);
+        bodyMeshes.push(m);
+        carGroup.add(m);
+        return m;
+      }
+      function add(m) { carGroup.add(m); return m; }
+
+      // Lower body
+      addBody(new THREE.BoxGeometry(2.0, 0.55, 4.2), 0, 0.08, 0);
+      // Side skirts
+      [-1.02, 1.02].forEach(x => {
+        const s = mk(new THREE.BoxGeometry(0.06, 0.18, 3.8), bodyDarkMat, x, -0.1, 0);
+        bodyMeshes.push(s); carGroup.add(s);
+      });
+      // Front + rear bumpers
+      addBody(new THREE.BoxGeometry(2.0, 0.28, 0.22), 0, -0.08, -2.15);
+      addBody(new THREE.BoxGeometry(2.0, 0.28, 0.22), 0, -0.08, 2.15);
+      // Grille
+      add(mk(new THREE.BoxGeometry(1.1, 0.18, 0.06), blackMat, 0, -0.08, -2.27));
+      add(mk(new THREE.BoxGeometry(1.1, 0.04, 0.04), chromeMat, 0, -0.02, -2.28));
+      // Diffuser
+      add(mk(new THREE.BoxGeometry(1.3, 0.12, 0.1), blackMat, 0, -0.2, 2.26));
+      // Underbody
+      add(mk(new THREE.BoxGeometry(1.85, 0.06, 3.8), underbody, 0, -0.2, 0));
+
+      // Cabin (extruded)
+      const cabinShape = new THREE.Shape();
+      cabinShape.moveTo(-1.85, 0);
+      cabinShape.lineTo(-0.9, 0.73);
+      cabinShape.lineTo(0.65, 0.73);
+      cabinShape.lineTo(1.55, 0);
+      cabinShape.lineTo(-1.85, 0);
+      const cabinMesh = mk(
+        new THREE.ExtrudeGeometry(cabinShape, { steps: 1, depth: 1.82, bevelEnabled: false }),
+        bodyMat, 0, 0, 0
+      );
+      cabinMesh.rotation.y = -Math.PI / 2;
+      cabinMesh.position.set(0.91, 0.35, -0.91);
+      bodyMeshes.push(cabinMesh);
+      carGroup.add(cabinMesh);
+
+      // Windshields + side windows
+      add(mk(new THREE.PlaneGeometry(1.56, 0.65), glassMat, 0, 0.76, -1.0, Math.PI * 0.18));
+      add(mk(new THREE.PlaneGeometry(1.56, 0.55), glassMat, 0, 0.76, 1.08, -Math.PI * 0.22));
+      [-0.92, 0.92].forEach((x, i) => {
+        const sw = mk(new THREE.PlaneGeometry(1.5, 0.42), glassMat, x, 0.76, 0.1);
+        sw.rotation.y = i === 0 ? -Math.PI / 2 : Math.PI / 2;
+        add(sw);
+      });
+
+      // Headlights
+      add(mk(new THREE.BoxGeometry(0.45, 0.14, 0.08), hlMatL, -0.62, 0.08, -2.26));
+      add(mk(new THREE.BoxGeometry(0.45, 0.14, 0.08), hlMatR, 0.62, 0.08, -2.26));
+      add(mk(new THREE.BoxGeometry(0.42, 0.035, 0.04), drlMatL, -0.62, 0.17, -2.26));
+      add(mk(new THREE.BoxGeometry(0.42, 0.035, 0.04), drlMatR, 0.62, 0.17, -2.26));
+      // Taillights
+      add(mk(new THREE.BoxGeometry(0.42, 0.14, 0.08), tlMatL, -0.65, 0.08, 2.26));
+      add(mk(new THREE.BoxGeometry(0.42, 0.14, 0.08), tlMatR, 0.65, 0.08, 2.26));
+      add(mk(new THREE.BoxGeometry(0.8, 0.025, 0.04), tlStrip, 0, 0.17, 2.26));
+
+      // Roof rails + door handles
+      [-0.78, 0.78].forEach(x => add(mk(new THREE.BoxGeometry(0.04, 0.04, 1.6), chromeMat, x, 1.09, 0.1)));
+      [-0.98, 0.98].forEach(x => {
+        [-0.3, 0.55].forEach(z => add(mk(new THREE.BoxGeometry(0.04, 0.04, 0.2), chromeMat, x, 0.4, z)));
+      });
+
+      // Exhaust tips
+      [-0.3, 0.3].forEach(x => {
+        const tip = mk(new THREE.CylinderGeometry(0.055, 0.05, 0.15, 12), chromeMat, x, -0.24, 2.32);
+        tip.rotation.x = Math.PI / 2;
+        add(tip);
+      });
+
+      // ── Headlight spotlights ──────────────────────────────────────────────
+      hlSpotL = new THREE.SpotLight(0xfff5cc, 3.5, 9, Math.PI / 7.5, 0.28);
+      hlSpotL.position.set(-0.62, 0.08, -2.3);
+      hlSpotL.target.position.set(-0.9, -0.6, -6);
+      scene.add(hlSpotL, hlSpotL.target);
+      hlSpotR = new THREE.SpotLight(0xfff5cc, 3.5, 9, Math.PI / 7.5, 0.28);
+      hlSpotR.position.set(0.62, 0.08, -2.3);
+      hlSpotR.target.position.set(0.9, -0.6, -6);
+      scene.add(hlSpotR, hlSpotR.target);
+
+      // ── Interior ──────────────────────────────────────────────────────────
+      add(mk(new THREE.BoxGeometry(1.7, 0.04, 3.6), interMat, 0, -0.16, 0));
+      [[0.45, 0.18, -0.4], [-0.45, 0.18, -0.4], [0.4, 0.18, 0.7], [-0.4, 0.18, 0.7]].forEach(([x, y, z]) => {
+        add(mk(new THREE.BoxGeometry(0.35, 0.08, 0.38), seatMat, x, y, z));
+        add(mk(new THREE.BoxGeometry(0.35, 0.38, 0.06), seatMat, x, y + 0.22, z - 0.16));
+      });
+      add(mk(new THREE.BoxGeometry(1.82, 0.25, 0.22), blackMat, 0, 0.2, -1.8));
+      const steeringWheel = mk(new THREE.TorusGeometry(0.12, 0.025, 8, 24), chromeMat, 0.45, 0.38, -1.55);
+      steeringWheel.rotation.x = Math.PI * 0.35;
+      add(steeringWheel);
+
+      // ── Hood pivot ────────────────────────────────────────────────────────
+      hoodPivot = new THREE.Group();
+      hoodPivot.position.set(0, 0.38, -1.0);
+      carGroup.add(hoodPivot);
+      hoodMesh = mk(new THREE.BoxGeometry(1.97, 0.07, 1.35), bodyMat, 0, 0, -0.68);
+      bodyMeshes.push(hoodMesh);
+      hoodPivot.add(hoodMesh);
+      hoodPivot.add(mk(new THREE.BoxGeometry(1.4, 0.3, 0.9), blackMat, 0, -0.02, -0.62));
+
+      // ── Door pivots ───────────────────────────────────────────────────────
+      doorL = new THREE.Group();
+      doorL.position.set(-1.01, 0.08, 0.1);
+      carGroup.add(doorL);
+      doorLMesh = mk(new THREE.BoxGeometry(0.06, 0.52, 1.5), bodyMat, 0, 0, 0);
+      bodyMeshes.push(doorLMesh);
+      doorL.add(doorLMesh);
+      doorL.add(mk(new THREE.BoxGeometry(0.04, 0.35, 1.4), bodyDarkMat, 0, 0.42, 0));
+
+      doorR = new THREE.Group();
+      doorR.position.set(1.01, 0.08, 0.1);
+      carGroup.add(doorR);
+      doorRMesh = mk(new THREE.BoxGeometry(0.06, 0.52, 1.5), bodyMat, 0, 0, 0);
+      bodyMeshes.push(doorRMesh);
+      doorR.add(doorRMesh);
+      doorR.add(mk(new THREE.BoxGeometry(0.04, 0.35, 1.4), bodyDarkMat, 0, 0.42, 0));
+
+      // ── Wheels ────────────────────────────────────────────────────────────
+      function makeWheel(x, y, z) {
+        const wg = new THREE.Group();
+        wg.position.set(x, y, z);
+        const tire = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.18, 16, 40), tireMat);
+        tire.rotation.y = Math.PI / 2;
+        tire.castShadow = true;
+        wg.add(tire);
+        const rimOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.065, 32), rimMat);
+        rimOuter.rotation.z = Math.PI / 2;
+        wg.add(rimOuter);
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.1, 16), chromeMat);
+        hub.rotation.z = Math.PI / 2;
+        wg.add(hub);
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.2, 0.036), rimMat);
+          spoke.position.set(0, Math.sin(a) * 0.14, Math.cos(a) * 0.14);
+          spoke.rotation.x = a;
+          wg.add(spoke);
+        }
+        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.03, 24), discMat);
+        disc.rotation.z = Math.PI / 2;
+        wg.add(disc);
+        const caliper = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.06), calipMat);
+        caliper.position.set(0, -0.22, 0);
+        wg.add(caliper);
+        return wg;
+      }
+      wheelFL = makeWheel(-1.02, -0.6, -1.3); carGroup.add(wheelFL);
+      wheelFR = makeWheel(1.02, -0.6, -1.3); carGroup.add(wheelFR);
+      wheelRL = makeWheel(-1.02, -0.6, 1.3); carGroup.add(wheelRL);
+      wheelRR = makeWheel(1.02, -0.6, 1.3); carGroup.add(wheelRR);
+
+      // ── Ambient dust particles ────────────────────────────────────────────
+      const pGeo = new THREE.BufferGeometry();
+      pPos = new Float32Array(pCount * 3);
+      for (let i = 0; i < pCount; i++) {
+        pPos[i * 3] = (Math.random() - 0.5) * 12;
+        pPos[i * 3 + 1] = Math.random() * 6;
+        pPos[i * 3 + 2] = (Math.random() - 0.5) * 12;
+      }
+      pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+      particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0x88aaff, size: 0.045, transparent: true, opacity: 0.4 }));
+      scene.add(particles);
+
+      // ── Exhaust particles ─────────────────────────────────────────────────
+      exhaustGroup = new THREE.Group();
+      exhaustGroup.position.set(0, -0.24, 2.32);
+      carGroup.add(exhaustGroup);
+      for (let i = 0; i < 30; i++) {
+        const ep = new THREE.Mesh(
+          new THREE.SphereGeometry(0.04 + Math.random() * 0.06, 4, 4),
+          new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0 })
+        );
+        ep.userData = {
+          life: 0,
+          maxLife: 0.6 + Math.random() * 0.8,
+          vx: (Math.random() - 0.5) * 0.04,
+          vy: 0.02 + Math.random() * 0.04,
+          vz: 0.03 + Math.random() * 0.06,
+        };
+        exhaustParticles.push(ep);
+        exhaustGroup.add(ep);
+      }
+
+      carGroup.position.y = 0.3;
+
+      // Store refs for external access
+      sceneRef.current = {
+        THREE, renderer, scene, camera, carGroup,
+        wheelFL, wheelFR, wheelRL, wheelRR,
+        doorL, doorR, hoodPivot,
+        hoodMesh, doorLMesh, doorRMesh,
+        hlSpotL, hlSpotR,
+        hlMatL, hlMatR, drlMatL, drlMatR, tlMatL, tlMatR,
+        bodyMeshes, bodyMat, bodyDarkMat,
+        ambLight, particles, pPos, pCount,
+        exhaustParticles, exhaustGroup,
+        raycaster, mouse2d,
+      };
+
+      // ── Resize observer ───────────────────────────────────────────────────
+      const ro = new ResizeObserver(() => {
+        if (!renderer) return;
+        renderer.setSize(W(), H());
+        camera.aspect = W() / H();
+        camera.updateProjectionMatrix();
+      });
+      ro.observe(rootEl);
+
+      // ── Animation loop ────────────────────────────────────────────────────
+      function animate() {
+        animRef.current = requestAnimationFrame(animate);
+        S.frame++;
+        const t = Date.now() * 0.001;
+        const boost = S.boostMode;
+
+        // Auto-spin
+        if (S.autoSpin) S.targetY += boost ? 0.035 : 0.005;
+
+        // Lerp rotation
+        S.rotY += (S.targetY - S.rotY) * 0.07;
+        S.rotX += (S.targetX - S.rotX) * 0.07;
+        carGroup.rotation.y = S.rotY;
+        carGroup.rotation.x = S.rotX;
+        carGroup.position.y = 0.3 + Math.sin(t * 0.85) * (boost ? 0.03 : 0.06);
+
+        // Wheel spin
+        S.wheelRot += boost ? 0.18 : 0.04;
+        wheelFL.rotation.x = wheelFR.rotation.x = wheelRL.rotation.x = wheelRR.rotation.x = S.wheelRot;
+
+        // Door / hood smooth open
+        S.doorLAngle += (S.doorLTarget - S.doorLAngle) * 0.1;
+        S.doorRAngle += (S.doorRTarget - S.doorRAngle) * 0.1;
+        S.hoodAngle += (S.hoodTarget - S.hoodAngle) * 0.1;
+        doorL.rotation.z = S.doorLAngle;
+        doorR.rotation.z = S.doorRAngle;
+        hoodPivot.rotation.x = S.hoodAngle;
+
+        // Ambient particles
+        for (let i = 1; i < pCount * 3; i += 3) {
+          pPos[i] += boost ? 0.012 : 0.003;
+          if (pPos[i] > 6) pPos[i] = 0;
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+        particles.rotation.y = t * (boost ? 0.06 : 0.018);
+
+        // Exhaust
+        if (S.frame % 2 === 0) {
+          const idle = exhaustParticles.find(ep => ep.userData.life <= 0);
+          if (idle) {
+            idle.position.set((Math.random() - 0.5) * 0.25, 0, 0);
+            idle.userData.life = idle.userData.maxLife;
+            idle.material.opacity = boost ? 0.5 : 0.2;
+            idle.material.color.setHex(boost ? 0x99ffdd : 0x888888);
+          }
+        }
+        exhaustParticles.forEach(ep => {
+          if (ep.userData.life > 0) {
+            ep.userData.life -= 0.025;
+            ep.position.x += ep.userData.vx;
+            ep.position.y += ep.userData.vy;
+            ep.position.z += ep.userData.vz * (boost ? 3 : 1);
+            ep.scale.setScalar(1 + (1 - ep.userData.life / ep.userData.maxLife) * 2);
+            ep.material.opacity = (ep.userData.life / ep.userData.maxLife) * (boost ? 0.5 : 0.18);
+            ep.material.needsUpdate = true;
+          } else {
+            ep.material.opacity = 0;
+          }
+        });
+
+        // Boost ambient pulse
+        ambLight.intensity = boost ? 0.65 + Math.sin(t * 8) * 0.08 : 0.65;
+
+        renderer.render(scene, camera);
+      }
+      animate();
+      setLoaded(true);
+    }
 
     init();
 
-    const onResize = () => {
-      if (!mountRef.current || !sceneRef.current) return;
-      w = mountRef.current.clientWidth;
-      h = mountRef.current.clientHeight;
-      sceneRef.current.camera.aspect = w / h;
-      sceneRef.current.camera.updateProjectionMatrix();
-      sceneRef.current.renderer.setSize(w, h);
-    };
-    window.addEventListener('resize', onResize);
-
     return () => {
-      window.removeEventListener('resize', onResize);
-      cancelAnimationFrame(animFrameRef.current);
-      if (sceneRef.current?.renderer && mountRef.current) {
-        try { mountRef.current.removeChild(sceneRef.current.renderer.domElement); } catch { }
-        sceneRef.current.renderer.dispose();
+      cancelAnimationFrame(animRef.current);
+      const sc = sceneRef.current;
+      if (sc?.renderer) {
+        sc.renderer.dispose();
       }
+      sceneRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Toggle headlights live
-  useEffect(() => {
-    if (!sceneRef.current) return;
-    sceneRef.current.scene.traverse(obj => {
-      if (!obj.isMesh || !obj.material?.emissive) return;
-      const hex = '#' + obj.material.emissive.getHexString();
-      if (hex === '#ffee88' || hex === '#ffffff') {
-        obj.material.emissiveIntensity = headlightsOn ? (hex === '#ffffff' ? 2 : 3) : 0;
-        obj.material.needsUpdate = true;
-      }
-    });
-    if (sceneRef.current.scene) {
-      sceneRef.current.scene.traverse(obj => {
-        if (obj.isSpotLight) obj.intensity = headlightsOn ? 3 : 0;
-      });
-    }
-  }, [headlightsOn]);
-
-  const onPointerDown = (e) => {
-    isDraggingRef.current = true;
-    autoSpinRef.current = false;
+  // ── Pointer events ──────────────────────────────────────────────────────────
+  const onPointerDown = useCallback((e) => {
+    S.isDragging = true;
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    S.lastX = cx; S.lastY = cy;
+    clearTimeout(S.autoSpinTimer);
+    S.autoSpin = false;
     setAutoSpin(false);
-    clearTimeout(autoSpinTimerRef.current);
+  }, [S]);
+
+  const onPointerMove = useCallback((e) => {
+    if (!S.isDragging) return;
     const cx = e.touches ? e.touches[0].clientX : e.clientX;
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
-    lastMouseRef.current = { x: cx, y: cy };
-  };
-  const onPointerMove = (e) => {
-    if (!isDraggingRef.current) return;
-    const cx = e.touches ? e.touches[0].clientX : e.clientX;
-    const cy = e.touches ? e.touches[0].clientY : e.clientY;
-    const dx = cx - lastMouseRef.current.x;
-    const dy = cy - lastMouseRef.current.y;
-    targetRotRef.current.y += dx * 0.012;
-    targetRotRef.current.x = Math.max(-0.35, Math.min(0.35, targetRotRef.current.x + dy * 0.008));
-    lastMouseRef.current = { x: cx, y: cy };
-  };
-  const onPointerUp = () => {
-    isDraggingRef.current = false;
-    autoSpinTimerRef.current = setTimeout(() => {
-      autoSpinRef.current = true;
+    S.targetY += (cx - S.lastX) * 0.012;
+    S.targetX = Math.max(-0.4, Math.min(0.4, S.targetX + (cy - S.lastY) * 0.008));
+    S.lastX = cx; S.lastY = cy;
+  }, [S]);
+
+  const onPointerUp = useCallback((e) => {
+    if (!S.isDragging) return;
+    S.isDragging = false;
+    // Click detection (minimal movement = click)
+    const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const cy = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+    const dx = Math.abs(cx - S.lastX);
+    const dy = Math.abs(cy - S.lastY);
+    if (dx < 4 && dy < 4) handleCarClick(e);
+    // Resume auto-spin after idle
+    S.autoSpinTimer = setTimeout(() => {
+      S.autoSpin = true;
       setAutoSpin(true);
-    }, 3000);
-  };
+    }, 2500);
+  }, [S]); // eslint-disable-line
 
-  const toggleAutoSpin = () => {
-    autoSpinRef.current = !autoSpinRef.current;
-    setAutoSpin(autoSpinRef.current);
-  };
+  function handleCarClick(e) {
+    const sc = sceneRef.current;
+    if (!sc) return;
+    const { THREE: T, camera: cam, raycaster: rc, mouse2d: m2, hoodMesh: hm, doorLMesh: dl, doorRMesh: dr } = sc;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const cy = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+    m2.x = ((cx - rect.left) / rect.width) * 2 - 1;
+    m2.y = -((cy - rect.top) / rect.height) * 2 + 1;
+    rc.setFromCamera(m2, cam);
+    const hoodHit = rc.intersectObjects([hm], false);
+    const doorHit = rc.intersectObjects([dl, dr], false);
+    if (hoodHit.length) {
+      toggleHood();
+    } else if (doorHit.length) {
+      toggleDoors();
+    }
+  }
 
+  // ── Control actions ─────────────────────────────────────────────────────────
+  function toggleSpin() {
+    const next = !S.autoSpin;
+    S.autoSpin = next;
+    setAutoSpin(next);
+    clearTimeout(S.autoSpinTimer);
+  }
+
+  function toggleLights() {
+    const sc = sceneRef.current;
+    if (!sc) return;
+    const next = !S.headlights;
+    S.headlights = next;
+    setHeadlights(next);
+    const ei_hl = next ? 3.5 : 0;
+    const ei_drl = next ? 2.2 : 0;
+    const ei_tl = next ? 1.6 : 0;
+    [sc.hlMatL, sc.hlMatR].forEach(m => { m.emissiveIntensity = ei_hl; m.needsUpdate = true; });
+    [sc.drlMatL, sc.drlMatR].forEach(m => { m.emissiveIntensity = ei_drl; m.needsUpdate = true; });
+    [sc.tlMatL, sc.tlMatR].forEach(m => { m.emissiveIntensity = ei_tl; m.needsUpdate = true; });
+    sc.hlSpotL.intensity = next ? 3.5 : 0;
+    sc.hlSpotR.intensity = next ? 3.5 : 0;
+  }
+
+  function toggleDoors() {
+    const next = !S.doorLTarget;
+    S.doorLTarget = next ? -Math.PI * 0.45 : 0;
+    S.doorRTarget = next ? Math.PI * 0.45 : 0;
+    setDoorsOpen(!!next);
+  }
+
+  function toggleHood() {
+    const next = !S.hoodTarget;
+    S.hoodTarget = next ? -Math.PI * 0.55 : 0;
+    setHoodOpen(!!next);
+  }
+
+  function toggleBoost() {
+    const next = !S.boostMode;
+    S.boostMode = next;
+    setBoostMode(next);
+    if (next) { S.autoSpin = true; setAutoSpin(true); }
+  }
+
+  function setPaint(idx) {
+    const sc = sceneRef.current;
+    if (!sc) return;
+    const { hex } = COLORS[idx];
+    const { THREE: T } = sc;
+    sc.bodyMat.color.setHex(hex);
+    const dark = new T.Color(hex).multiplyScalar(0.55);
+    sc.bodyDarkMat.color.copy(dark);
+    setPaintIdx(idx);
+  }
+
+  function resetAll() {
+    const sc = sceneRef.current;
+    if (!sc) return;
+    S.targetY = -0.4; S.targetX = 0.12;
+    S.autoSpin = true; setAutoSpin(true);
+    S.boostMode = false; setBoostMode(false);
+    S.doorLTarget = 0; S.doorRTarget = 0; setDoorsOpen(false);
+    S.hoodTarget = 0; setHoodOpen(false);
+    S.headlights = true; setHeadlights(true);
+    [sc.hlMatL, sc.hlMatR].forEach(m => { m.emissiveIntensity = 3.5; m.needsUpdate = true; });
+    [sc.drlMatL, sc.drlMatR].forEach(m => { m.emissiveIntensity = 2.2; m.needsUpdate = true; });
+    [sc.tlMatL, sc.tlMatR].forEach(m => { m.emissiveIntensity = 1.6; m.needsUpdate = true; });
+    sc.hlSpotL.intensity = 3.5; sc.hlSpotR.intensity = 3.5;
+    setPaint(0);
+    clearTimeout(S.autoSpinTimer);
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="relative w-full h-full select-none" style={{ minHeight: 340 }}>
-      <div
-        ref={mountRef}
+    <div
+      ref={rootRef}
+      className="relative w-full select-none overflow-hidden rounded-2xl"
+      style={{ minHeight: 380, height: '100%' }}
+    >
+      <canvas
+        ref={canvasRef}
         className="w-full h-full"
-        style={{ cursor: isDraggingRef.current ? 'grabbing' : 'grab' }}
+        style={{ cursor: 'grab', display: 'block' }}
         onMouseDown={onPointerDown}
         onMouseMove={onPointerMove}
         onMouseUp={onPointerUp}
-        onMouseLeave={() => { onPointerUp(); setHovered(false); }}
-        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={onPointerUp}
         onTouchStart={onPointerDown}
         onTouchMove={onPointerMove}
         onTouchEnd={onPointerUp}
@@ -386,90 +672,145 @@ function Car3D() {
 
       {/* Loading */}
       {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-            <span className="text-white/50 text-xs tracking-wider">Loading 3D model…</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+          <div
+            style={{
+              width: 32, height: 32,
+              border: '2px solid rgba(255,255,255,0.15)',
+              borderTopColor: 'rgba(255,255,255,0.7)',
+              borderRadius: '50%',
+              animation: 'car3d-spin-ring 0.8s linear infinite',
+            }}
+          />
+          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: 500 }}>
+            Loading 3D engine…
+          </span>
+        </div>
+      )}
+
+      {loaded && (
+        <>
+          {/* ShareMyRide badge */}
+          <div
+            className="absolute top-3 left-3 flex items-center gap-1.5"
+            style={{
+              background: 'rgba(0,0,0,0.32)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 20, padding: '4px 10px',
+            }}
+          >
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#34d399', animation: 'car3d-pulse-dot 1.8s ease-out infinite' }} />
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>ShareMyRide</span>
           </div>
-        </div>
-      )}
 
-      {/* Drag hint */}
-      {loaded && (
-        <div
-          className="absolute bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-1.5 pointer-events-none transition-opacity duration-500"
-          style={{ opacity: hovered ? 0 : 0.5 }}
-        >
-          <svg className="w-3.5 h-3.5 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3" />
-          </svg>
-          <span className="text-white/60 text-xs">Drag to rotate</span>
-        </div>
-      )}
+          {/* Status info */}
+          <div className="absolute" style={{ top: 36, left: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', lineHeight: 1.8 }}>
+            <div>{autoSpin ? 'auto-spinning' : 'paused'} · doors {doorsOpen ? 'open' : 'closed'} · hood {hoodOpen ? 'open' : 'closed'}</div>
+            <div style={{ color: 'rgba(255,255,255,0.25)' }}>click hood or doors to interact</div>
+          </div>
 
-      {/* Controls row */}
-      {loaded && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2">
-          <button
-            onClick={() => setHeadlightsOn(v => !v)}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200"
-            style={{
-              background: headlightsOn ? 'rgba(255,240,120,0.18)' : 'rgba(255,255,255,0.08)',
-              border: headlightsOn ? '1px solid rgba(255,240,120,0.45)' : '1px solid rgba(255,255,255,0.18)',
-              color: headlightsOn ? '#ffe87a' : 'rgba(255,255,255,0.45)',
-            }}
-          >
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.995.68-1.52 1.23-2.05.74-.71 1.27-1.57 1.27-2.95a4.5 4.5 0 10-9 0c0 1.38.53 2.24 1.27 2.95.55.53 1.215 1.055 1.23 2.05h4z" />
-            </svg>
-            {headlightsOn ? 'Lights on' : 'Lights off'}
-          </button>
-          <button
-            onClick={toggleAutoSpin}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-all duration-200"
-            style={{
-              background: autoSpin ? 'rgba(96,165,250,0.18)' : 'rgba(255,255,255,0.08)',
-              border: autoSpin ? '1px solid rgba(96,165,250,0.4)' : '1px solid rgba(255,255,255,0.18)',
-              color: autoSpin ? '#93c5fd' : 'rgba(255,255,255,0.45)',
-            }}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {autoSpin ? 'Spinning' : 'Paused'}
-          </button>
-        </div>
-      )}
+          {/* Boost badge */}
+          {boostMode && (
+            <div
+              className="absolute"
+              style={{
+                top: 12, left: '50%', transform: 'translateX(-50%)',
+                background: 'rgba(52,211,153,0.18)',
+                border: '1px solid rgba(52,211,153,0.5)',
+                borderRadius: 20, padding: '3px 12px',
+                fontSize: 11, fontWeight: 700, color: '#6ee7b7',
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+              }}
+            >
+              ⚡ Turbo Mode
+            </div>
+          )}
 
-      {/* Star rating */}
-      {/* {loaded && (
-        <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
-          <span className="text-white/40 text-xs">Rate this car</span>
-          <div className="flex gap-0.5">
-            {[1, 2, 3, 4, 5].map(s => (
-              <button
-                key={s}
-                onClick={() => { setRating(s); setRatingSubmitted(true); }}
-                className="transition-all duration-150 hover:scale-125 focus:outline-none"
-                style={{ color: s <= rating ? '#fbbf24' : 'rgba(255,255,255,0.22)', fontSize: 22, lineHeight: 1 }}
-              >
-                ★
-              </button>
+          {/* Paint swatches */}
+          <div className="absolute top-3 right-3 flex flex-col gap-1.5">
+            {COLORS.map((c, i) => (
+              <div
+                key={i}
+                className={`car3d-swatch${i === paintIdx ? ' active' : ''}`}
+                style={{ background: c.css }}
+                title={c.name}
+                onClick={() => setPaint(i)}
+              />
             ))}
           </div>
-          {ratingSubmitted && (
-            <span className="text-green-300 text-xs font-medium">{rating}/5 ⭐ Thanks!</span>
-          )}
-        </div>
-      )} */}
 
-      {/* ShareMyRide badge */}
-      {loaded && (
-        <div className="absolute top-3 left-3 flex items-center gap-1.5"
-          style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 20, padding: '4px 10px' }}>
-          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-white/60 text-xs font-medium">ShareMyRide</span>
-        </div>
+          {/* Drag hint */}
+          <div style={{
+            position: 'absolute',
+            bottom: 52, left: '50%', transform: 'translateX(-50%)',
+            fontSize: 11, color: 'rgba(255,255,255,0.35)',
+            pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>
+            drag to rotate · click to interact
+          </div>
+
+          {/* Boost glow border */}
+          {boostMode && (
+            <div
+              className="absolute inset-0 rounded-2xl pointer-events-none"
+              style={{ boxShadow: 'inset 0 0 40px 4px rgba(52,211,153,0.22), inset 0 0 0 2px rgba(52,211,153,0.45)' }}
+            />
+          )}
+
+          {/* HUD controls */}
+          <div
+            className="absolute bottom-0 left-0 right-0 flex items-center gap-1.5 flex-wrap"
+            style={{
+              padding: '10px 12px',
+              background: 'linear-gradient(0deg, rgba(0,0,0,0.55) 0%, transparent 100%)',
+            }}
+          >
+            <button
+              className={`car3d-btn${autoSpin ? ' active-blue' : ''}`}
+              onClick={toggleSpin}
+            >
+              <span>↺</span>
+              <span>{autoSpin ? 'Spinning' : 'Paused'}</span>
+            </button>
+
+            <button
+              className={`car3d-btn${headlights ? ' active-yellow' : ''}`}
+              onClick={toggleLights}
+            >
+              <span>💡</span>
+              <span>{headlights ? 'Lights on' : 'Lights off'}</span>
+            </button>
+
+            <button
+              className={`car3d-btn${doorsOpen ? ' active-yellow' : ''}`}
+              onClick={toggleDoors}
+            >
+              <span>🚪</span>
+              <span>{doorsOpen ? 'Close doors' : 'Open doors'}</span>
+            </button>
+
+            <button
+              className={`car3d-btn${hoodOpen ? ' active-yellow' : ''}`}
+              onClick={toggleHood}
+            >
+              <span>🔧</span>
+              <span>{hoodOpen ? 'Close hood' : 'Pop hood'}</span>
+            </button>
+
+            <button
+              className={`car3d-btn${boostMode ? ' active-green' : ''}`}
+              onClick={toggleBoost}
+            >
+              <span>⚡</span>
+              <span>{boostMode ? 'Normal' : 'Turbo'}</span>
+            </button>
+
+            <button className="car3d-btn" onClick={resetAll}>
+              <span>⟲</span>
+              <span>Reset</span>
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -529,8 +870,10 @@ function RideCard({ ride, onAuthRequired }) {
       ref={cardRef}
       onClick={handleClick}
       className={`group relative bg-white rounded-2xl border overflow-hidden transition-all duration-200 cursor-pointer
-        ${user ? 'border-gray-100 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-50/60'
-          : 'border-gray-100 hover:border-blue-300 hover:shadow-lg hover:shadow-blue-100/60'}`}
+        ${user
+          ? 'border-gray-100 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-50/60'
+          : 'border-gray-100 hover:border-blue-300 hover:shadow-lg hover:shadow-blue-100/60'
+        }`}
     >
       <div className="p-4 sm:p-5">
         {/* Route + price */}
@@ -554,7 +897,11 @@ function RideCard({ ride, onAuthRequired }) {
               </>
             ) : (
               <div className="relative flex flex-col items-center">
-                <div className="text-lg font-bold text-blue-600 pointer-events-none" style={{ filter: 'blur(5px)', userSelect: 'none' }} aria-hidden="true">
+                <div
+                  className="text-lg font-bold text-blue-600 pointer-events-none"
+                  style={{ filter: 'blur(5px)', userSelect: 'none' }}
+                  aria-hidden="true"
+                >
                   ₹{price || '000'}
                 </div>
                 <div className="absolute top-0.5 left-1/2 -translate-x-1/2">
@@ -569,7 +916,9 @@ function RideCard({ ride, onAuthRequired }) {
         </div>
 
         {vehicleLabel && (
-          <div className="text-xs text-gray-400 mb-3 ml-4 truncate">{vehicleLabel}{vehicle.acAvailable ? ' · AC' : ''}</div>
+          <div className="text-xs text-gray-400 mb-3 ml-4 truncate">
+            {vehicleLabel}{vehicle.acAvailable ? ' · AC' : ''}
+          </div>
         )}
 
         {/* Meta row */}
@@ -587,7 +936,11 @@ function RideCard({ ride, onAuthRequired }) {
                 {user ? (
                   <span className="text-xs font-medium text-gray-800 truncate">{driverName.split(' ')[0]}</span>
                 ) : (
-                  <span className="text-xs font-medium text-gray-600 pointer-events-none" style={{ filter: 'blur(4px)', userSelect: 'none' }} aria-hidden="true">
+                  <span
+                    className="text-xs font-medium text-gray-600 pointer-events-none"
+                    style={{ filter: 'blur(4px)', userSelect: 'none' }}
+                    aria-hidden="true"
+                  >
                     {blurredName}
                   </span>
                 )}
@@ -623,7 +976,10 @@ function RideCard({ ride, onAuthRequired }) {
           style={{ background: 'rgba(239,246,255,0.9)', backdropFilter: 'blur(1px)' }}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); onAuthRequired && onAuthRequired(cardRef.current?.getBoundingClientRect()); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAuthRequired && onAuthRequired(cardRef.current?.getBoundingClientRect());
+            }}
             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-full transition-colors shadow-sm"
           >
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -632,7 +988,10 @@ function RideCard({ ride, onAuthRequired }) {
             Unlock this ride
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onAuthRequired && onAuthRequired(cardRef.current?.getBoundingClientRect()); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAuthRequired && onAuthRequired(cardRef.current?.getBoundingClientRect());
+            }}
             className="text-xs text-blue-600 font-medium hover:underline"
           >
             or create a free account
@@ -643,7 +1002,11 @@ function RideCard({ ride, onAuthRequired }) {
   );
 
   if (user) {
-    return <Link to={`/ride/${ride._id}`} onClick={handleClick} className="block">{cardContent}</Link>;
+    return (
+      <Link to={`/ride/${ride._id}`} onClick={handleClick} className="block">
+        {cardContent}
+      </Link>
+    );
   }
   return cardContent;
 }
@@ -659,7 +1022,11 @@ function EmptyRideFeed() {
       </div>
       <p className="font-semibold text-gray-800 mb-1">No rides currently available</p>
       <p className="text-sm text-gray-500 mb-4">Be the first to offer a ride and help fellow travelers.</p>
-      <Link to="/ride/post" onClick={() => window.scrollTo({ top: 0, behavior: 'instant' })} className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">
+      <Link
+        to="/ride/post"
+        onClick={() => window.scrollTo({ top: 0, behavior: 'instant' })}
+        className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+      >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
@@ -710,7 +1077,12 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
             { label: 'Ride Requests', to: '/driver/bookings', icon: '🔔', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
             { label: 'Profile', to: '/profile', icon: '👤', bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },
           ].map(card => (
-            <Link key={card.label} to={card.to} onClick={handleNavClick} className={`${card.bg} border rounded-2xl p-4 sm:p-5 flex flex-col items-start gap-2 hover:shadow-md transition-all duration-150`}>
+            <Link
+              key={card.label}
+              to={card.to}
+              onClick={handleNavClick}
+              className={`${card.bg} border rounded-2xl p-4 sm:p-5 flex flex-col items-start gap-2 hover:shadow-md transition-all duration-150`}
+            >
               <span className="text-2xl">{card.icon}</span>
               <span className={`text-xs sm:text-sm font-semibold ${card.text}`}>{card.label}</span>
             </Link>
@@ -723,7 +1095,11 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
               <p className="font-semibold text-gray-900 text-sm">Want to offer rides and earn back fuel costs?</p>
               <p className="text-xs text-gray-500 mt-0.5">Complete driver verification to start posting rides.</p>
             </div>
-            <Link to="/profile?tab=verification" onClick={handleNavClick} className="flex-shrink-0 inline-flex items-center gap-1.5 bg-green-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700 transition-colors">
+            <Link
+              to="/profile?tab=verification"
+              onClick={handleNavClick}
+              className="flex-shrink-0 inline-flex items-center gap-1.5 bg-green-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700 transition-colors"
+            >
               Become a driver →
             </Link>
           </div>
@@ -731,27 +1107,24 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
 
         {(stats.totalUsers > 0 || stats.totalRides > 0) && (
           <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 mb-6 grid grid-cols-2 sm:grid-cols-4 gap-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-            <div className="text-center pb-4 sm:pb-0 sm:pr-4">
-              <div className="text-xl sm:text-2xl font-bold text-blue-600">{formatNumber(stats.totalUsers)}</div>
-              <div className="text-xs text-gray-500 mt-0.5">Community members</div>
-            </div>
-            <div className="text-center pt-4 sm:pt-0 sm:px-4">
-              <div className="text-xl sm:text-2xl font-bold text-green-600">{formatNumber(stats.totalRides)}</div>
-              <div className="text-xs text-gray-500 mt-0.5">Rides completed</div>
-            </div>
-            <div className="text-center pb-4 sm:pb-0 sm:px-4">
-              <div className="text-xl sm:text-2xl font-bold text-purple-600">{formatNumber(stats.totalCities)}</div>
-              <div className="text-xs text-gray-500 mt-0.5">Cities active</div>
-            </div>
-            <div className="text-center pt-4 sm:pt-0 sm:pl-4">
-              <div className="text-xl sm:text-2xl font-bold text-amber-500 flex items-center justify-center gap-1">
-                {formatRating(stats.averageRating)}
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
+            {[
+              { label: 'Community members', val: formatNumber(stats.totalUsers), color: 'text-blue-600' },
+              { label: 'Rides completed', val: formatNumber(stats.totalRides), color: 'text-green-600' },
+              { label: 'Cities active', val: formatNumber(stats.totalCities), color: 'text-purple-600' },
+              { label: 'Avg. rating', val: formatRating(stats.averageRating), color: 'text-amber-500', star: true },
+            ].map(({ label, val, color, star }) => (
+              <div key={label} className="text-center py-2 sm:py-0 sm:px-4 first:pt-0 last:pb-0">
+                <div className={`text-xl sm:text-2xl font-bold ${color} flex items-center justify-center gap-1`}>
+                  {val}
+                  {star && (
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
+                  )}
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">{label}</div>
               </div>
-              <div className="text-xs text-gray-500 mt-0.5">Avg. rating</div>
-            </div>
+            ))}
           </div>
         )}
 
@@ -763,7 +1136,11 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
                 <p className="text-xs text-gray-500 mt-0.5">{rides.length} available · updated just now</p>
               )}
             </div>
-            <Link to="/ride/search" onClick={() => { handleNavClick(); window.scrollTo({ top: 0, behavior: 'instant' }); }} className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1">
+            <Link
+              to="/ride/search"
+              onClick={() => { handleNavClick(); window.scrollTo({ top: 0, behavior: 'instant' }); }}
+              className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
+            >
               View all
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -822,18 +1199,25 @@ function PublicLanding({ stats, rides, ridesLoading }) {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    if (!user) { showToastThenNavigate(e.currentTarget, '/login', 'Sign in to search rides'); return; }
+    if (!user) {
+      showToastThenNavigate(e.currentTarget, '/login', 'Sign in to search rides');
+      return;
+    }
     handleNavClick();
     const params = new URLSearchParams();
     if (searchFrom) params.set('start', searchFrom);
     if (searchTo) params.set('end', searchTo);
-    const query = params.toString();
-    navigate(`/ride/search${query ? `?${query}` : ''}#search`);
+    navigate(`/ride/search${params.toString() ? `?${params}` : ''}#search`);
   };
 
   const handleOfferRideClick = (e) => {
-    if (!user) { e.preventDefault(); showToastThenNavigate(offerRideRef.current, '/login', 'Sign in to offer a ride'); }
-    else { handleNavClick(); window.scrollTo({ top: 0, behavior: 'instant' }); }
+    if (!user) {
+      e.preventDefault();
+      showToastThenNavigate(offerRideRef.current, '/login', 'Sign in to offer a ride');
+    } else {
+      handleNavClick();
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
   };
 
   const handleBrowseRidesScroll = (e) => {
@@ -843,30 +1227,31 @@ function PublicLanding({ stats, rides, ridesLoading }) {
 
   const handleBrowseAll = (e, btnEl) => {
     e.preventDefault();
-    if (!user) { showToastThenNavigate(btnEl || e.currentTarget, '/login', 'Sign in to browse all rides'); }
-    else { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); navigate('/ride/search'); }
+    if (!user) {
+      showToastThenNavigate(btnEl || e.currentTarget, '/login', 'Sign in to browse all rides');
+    } else {
+      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+      navigate('/ride/search');
+    }
   };
-
-  const handleCreateAccount = useCallback(() => {
-    sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
-  }, []);
 
   return (
     <div className="min-h-screen bg-white">
 
-      {/* ── HERO — fills viewport height exactly minus navbar ── */}
+      {/* ── HERO ── */}
       <section
         ref={heroRef}
         className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-500 overflow-hidden flex flex-col"
         style={{ height: 'calc(100svh - 64px)', minHeight: '550px' }}
       >
+        {/* Decorative blobs */}
         <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 pointer-events-none" aria-hidden="true" />
         <div className="absolute -bottom-16 -left-16 w-80 h-80 rounded-full bg-green-500/10 pointer-events-none" aria-hidden="true" />
 
-        {/* Main hero content — grows to fill available space above marquee */}
-        <div className="flex-1 flex items-center pt-16 sm:pt-0 pb-4 sm:pb-0 overflow-y-auto custom-scrollbar">
+        {/* Main content */}
+        <div className="flex-1 flex items-center pt-16 sm:pt-0 pb-4 sm:pb-0 overflow-y-auto">
           <div className="relative w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:gap-0 w-full">
+            <div className="flex flex-col lg:flex-row lg:items-center w-full">
 
               {/* Left: text + search */}
               <div className="lg:w-1/2 xl:w-[52%] flex flex-col justify-center min-h-[min(500px,65vh)]">
@@ -883,7 +1268,10 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                   Connect with verified drivers going your way. Share the cost, halve the traffic.
                 </p>
 
-                <form onSubmit={handleSearch} className="bg-white rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-2xl shadow-blue-900/30 flex flex-col gap-1.5 sm:gap-2 max-w-xl shrink-0">
+                <form
+                  onSubmit={handleSearch}
+                  className="bg-white rounded-xl sm:rounded-2xl p-1.5 sm:p-2 shadow-2xl shadow-blue-900/30 flex flex-col gap-1.5 sm:gap-2 max-w-xl"
+                >
                   <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 px-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-gray-50 border border-gray-100">
@@ -891,7 +1279,13 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        <input type="text" placeholder="From…" value={searchFrom} onChange={e => setSearchFrom(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-xs sm:text-sm placeholder-gray-400 outline-none min-w-0" />
+                        <input
+                          type="text"
+                          placeholder="From…"
+                          value={searchFrom}
+                          onChange={e => setSearchFrom(e.target.value)}
+                          className="flex-1 bg-transparent text-gray-900 text-xs sm:text-sm placeholder-gray-400 outline-none min-w-0"
+                        />
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -899,11 +1293,20 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                         <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m0 0l-7-7m7 7l-7 7" />
                         </svg>
-                        <input type="text" placeholder="To…" value={searchTo} onChange={e => setSearchTo(e.target.value)} className="flex-1 bg-transparent text-gray-900 text-xs sm:text-sm placeholder-gray-400 outline-none min-w-0" />
+                        <input
+                          type="text"
+                          placeholder="To…"
+                          value={searchTo}
+                          onChange={e => setSearchTo(e.target.value)}
+                          className="flex-1 bg-transparent text-gray-900 text-xs sm:text-sm placeholder-gray-400 outline-none min-w-0"
+                        />
                       </div>
                     </div>
                   </div>
-                  <button type="submit" className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-colors">
+                  <button
+                    type="submit"
+                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-colors"
+                  >
                     <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
@@ -913,14 +1316,22 @@ function PublicLanding({ stats, rides, ridesLoading }) {
 
                 <p className="mt-2 sm:mt-4 text-blue-200 text-[10px] sm:text-sm">
                   Driving somewhere?{' '}
-                  <Link ref={offerRideRef} to={user ? '/ride/post' : '#'} onClick={handleOfferRideClick} className="text-white font-semibold underline underline-offset-2 hover:text-green-300 transition-colors">
+                  <Link
+                    ref={offerRideRef}
+                    to={user ? '/ride/post' : '#'}
+                    onClick={handleOfferRideClick}
+                    className="text-white font-semibold underline underline-offset-2 hover:text-green-300 transition-colors"
+                  >
                     Offer seats and recover fuel costs →
                   </Link>
                 </p>
               </div>
 
               {/* Right: 3D car — desktop only */}
-              <div className="hidden lg:flex lg:w-1/2 xl:w-[48%] items-center justify-center h-[280px] xl:h-[420px] pointer-events-none">
+              <div
+                className="hidden lg:flex lg:w-1/2 xl:w-[48%] items-center justify-center"
+                style={{ height: 'min(420px, 55vh)' }}
+              >
                 <Car3D />
               </div>
 
@@ -928,7 +1339,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
           </div>
         </div>
 
-        {/* Marquee pinned to bottom of hero */}
+        {/* Marquee */}
         <div className="flex-shrink-0">
           <PlatformMarquee stats={stats} />
         </div>
@@ -976,14 +1387,14 @@ function PublicLanding({ stats, rides, ridesLoading }) {
             }
           </div>
 
-          {/* Trust perks — logged-out only */}
+          {/* Trust perks (logged-out) */}
           {!user && !ridesLoading && rides.length > 0 && (
             <div className="mt-6 flex flex-wrap items-center gap-2 justify-center">
               {[
                 { icon: '🛡️', text: 'Verified drivers only' },
                 { icon: '⭐', text: 'Rated community' },
                 { icon: '💸', text: 'Split fuel costs' },
-                { icon: '🌍', text: `${stats?.totalCities !== undefined && stats?.totalCities !== null ? `${stats.totalCities} cities active` : '... cities active'}` },
+                { icon: '🌍', text: stats?.totalCities ? `${stats.totalCities} cities active` : 'Cities active' },
                 { icon: '⚡', text: 'Instant booking' },
               ].map(p => (
                 <span key={p.text} className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 px-3 py-1.5 rounded-full">
@@ -993,7 +1404,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
             </div>
           )}
 
-          {/* Unlock CTA — logged-out only */}
+          {/* Unlock CTA (logged-out) */}
           {!user && !ridesLoading && rides.length > 0 && (
             <div className="mt-5 bg-white border border-blue-100 rounded-2xl p-4 sm:p-5">
               <div className="flex items-start gap-3 mb-4">
@@ -1011,14 +1422,14 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                 <Link to="/login" onClick={handleNavClick} className="flex-1 text-center border border-blue-200 text-blue-600 hover:bg-blue-50 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors">
                   Sign in
                 </Link>
-                <Link to="/signup" onClick={handleCreateAccount} className="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors">
+                <Link to="/signup" onClick={() => sessionStorage.setItem(SCROLL_KEY, String(window.scrollY))} className="flex-1 text-center bg-blue-600 hover:bg-blue-700 text-white px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors">
                   Join free →
                 </Link>
               </div>
             </div>
           )}
 
-          {/* See all — logged-in only */}
+          {/* See all (logged-in) */}
           {user && rides.length > 0 && (
             <div className="mt-8 text-center">
               <button
@@ -1044,9 +1455,24 @@ function PublicLanding({ stats, rides, ridesLoading }) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
             {[
-              { iconBg: 'bg-blue-50', icon: <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>, title: 'Verified drivers only', desc: 'Every driver submits Aadhaar, driving licence, and vehicle docs. You see their rating history before you request.' },
-              { iconBg: 'bg-green-50', icon: <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Fair cost-sharing', desc: "Drivers set a per-seat price to cover fuel — not to profit. Passengers pay a fraction of what a solo trip would cost." },
-              { iconBg: 'bg-purple-50', icon: <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>, title: 'Less traffic, less carbon', desc: 'Every filled seat is one fewer car on the road. This community has already saved thousands of solo trips.' },
+              {
+                iconBg: 'bg-blue-50',
+                icon: <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>,
+                title: 'Verified drivers only',
+                desc: 'Every driver submits Aadhaar, driving licence, and vehicle docs. You see their rating history before you request.',
+              },
+              {
+                iconBg: 'bg-green-50',
+                icon: <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                title: 'Fair cost-sharing',
+                desc: "Drivers set a per-seat price to cover fuel — not to profit. Passengers pay a fraction of what a solo trip would cost.",
+              },
+              {
+                iconBg: 'bg-purple-50',
+                icon: <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                title: 'Less traffic, less carbon',
+                desc: 'Every filled seat is one fewer car on the road. This community has already saved thousands of solo trips.',
+              },
             ].map(v => (
               <div key={v.title} className="flex gap-4 p-5 sm:p-6 rounded-2xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all duration-150">
                 <div className={`${v.iconBg} w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0`}>{v.icon}</div>
@@ -1099,13 +1525,21 @@ function PublicLanding({ stats, rides, ridesLoading }) {
             Join {stats.totalUsers > 0 ? `${formatNumber(stats.totalUsers)} members` : 'a growing community'} already saving money and reducing traffic together.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center max-w-sm sm:max-w-none mx-auto">
-            <Link ref={createAccountRef} to="/signup" onClick={handleCreateAccount} className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white text-blue-700 px-6 py-3.5 rounded-xl text-sm font-bold hover:bg-blue-50 hover:shadow-lg transition-all duration-150">
+            <Link
+              ref={createAccountRef}
+              to="/signup"
+              onClick={() => sessionStorage.setItem(SCROLL_KEY, String(window.scrollY))}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white text-blue-700 px-6 py-3.5 rounded-xl text-sm font-bold hover:bg-blue-50 hover:shadow-lg transition-all duration-150"
+            >
               Create free account
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </Link>
-            <button onClick={handleBrowseRidesScroll} className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-white/40 text-white hover:bg-white/10 px-6 py-3.5 rounded-xl text-sm font-semibold transition-colors">
+            <button
+              onClick={handleBrowseRidesScroll}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-white/40 text-white hover:bg-white/10 px-6 py-3.5 rounded-xl text-sm font-semibold transition-colors"
+            >
               Browse rides — no sign up
             </button>
           </div>
@@ -1153,12 +1587,15 @@ function Home() {
         const res = await api.get('/stats/home');
         const d = res.data?.data || res.data;
         setStats({ totalUsers: d.totalUsers || 0, totalRides: d.totalRides || 0, totalCities: d.totalCities || 0, averageRating: d.averageRating || 0, loading: false });
-      } catch { setStats(s => ({ ...s, loading: false })); }
+      } catch {
+        setStats(s => ({ ...s, loading: false }));
+      }
     };
     fetchStats();
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
     const fetchRides = async () => {
       setRidesLoading(true);
       try {
@@ -1169,10 +1606,13 @@ function Home() {
           data = res.data?.data || [];
         }
         setRides(data);
-      } catch { setRides([]); }
-      finally { setRidesLoading(false); }
+      } catch {
+        setRides([]);
+      } finally {
+        setRidesLoading(false);
+      }
     };
-    if (!authLoading) fetchRides();
+    fetchRides();
   }, [authLoading]);
 
   if (authLoading) {
@@ -1186,7 +1626,9 @@ function Home() {
     );
   }
 
-  if (user) return <LoggedInDashboard user={user} stats={stats} rides={rides} ridesLoading={ridesLoading} />;
+  if (user) {
+    return <LoggedInDashboard user={user} stats={stats} rides={rides} ridesLoading={ridesLoading} />;
+  }
   return <PublicLanding stats={stats} rides={rides} ridesLoading={ridesLoading} />;
 }
 
