@@ -699,15 +699,11 @@ function Car3D() {
               borderRadius: 20, padding: '4px 10px',
             }}
           >
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#34d399', animation: 'car3d-pulse-dot 1.8s ease-out infinite' }} />
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>ShareMyRide</span>
+            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#00fe5dff', animation: 'car3d-pulse-dot 1.8s ease-out infinite' }} />
+            <span style={{ fontSize: 11, color: '#00fe5dff', fontWeight: 500 }}>ShareMyRide</span>
           </div>
 
-          {/* Status info */}
-          <div className="absolute" style={{ top: 36, left: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', lineHeight: 1.8 }}>
-            <div>{autoSpin ? 'auto-spinning' : 'paused'} · doors {doorsOpen ? 'open' : 'closed'} · hood {hoodOpen ? 'open' : 'closed'}</div>
-            <div style={{ color: 'rgba(255,255,255,0.25)' }}>click hood or doors to interact</div>
-          </div>
+
 
           {/* Boost badge */}
           {boostMode && (
@@ -770,7 +766,7 @@ function Car3D() {
               onClick={toggleSpin}
             >
               <span>↺</span>
-              <span>{autoSpin ? 'Spinning' : 'Paused'}</span>
+              <span>{autoSpin ? 'Spinning mode on' : 'Spinning mode off'}</span>
             </button>
 
             <button
@@ -778,7 +774,7 @@ function Car3D() {
               onClick={toggleLights}
             >
               <span>💡</span>
-              <span>{headlights ? 'Lights on' : 'Lights off'}</span>
+              <span>{headlights ? 'Head lights on' : 'Head lights off'}</span>
             </button>
 
             <button
@@ -787,14 +783,6 @@ function Car3D() {
             >
               <span>🚪</span>
               <span>{doorsOpen ? 'Close doors' : 'Open doors'}</span>
-            </button>
-
-            <button
-              className={`car3d-btn${hoodOpen ? ' active-yellow' : ''}`}
-              onClick={toggleHood}
-            >
-              <span>🔧</span>
-              <span>{hoodOpen ? 'Close hood' : 'Pop hood'}</span>
             </button>
 
             <button
