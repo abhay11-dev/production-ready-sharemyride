@@ -118,7 +118,7 @@ export default function TermsAndConditions() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden pt-24 pb-16 sm:pb-20">
+      <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-screen flex flex-col justify-center">
         <div className="absolute inset-0 opacity-20">
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-white/20 rounded-full blur-3xl" />
           <div className="absolute -bottom-16 -left-16 w-80 h-80 bg-green-500/10 rounded-full blur-3xl" />

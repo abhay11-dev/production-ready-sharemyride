@@ -182,14 +182,7 @@ function Signup() {
           <div className="w-full">
 
             {/* Mobile-only brand pill */}
-            <div className="flex items-center justify-center gap-2 mb-5 lg:hidden">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center">
-                <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
-                </svg>
-              </div>
-              <span className="text-sm font-bold text-gray-900">ShareMyRide</span>
-            </div>
+        
 
             <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/60 border border-gray-100 overflow-hidden">
 

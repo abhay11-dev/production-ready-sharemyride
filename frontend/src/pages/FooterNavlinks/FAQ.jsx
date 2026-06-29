@@ -148,12 +148,12 @@ export default function FAQ() {
         <div className="min-h-screen bg-gray-50">
 
             {/* ── Hero ── */}
-            <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-[90vh] flex flex-col justify-center">
+            <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-screen flex flex-col justify-center">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute -top-20 -right-20 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl" />
                     <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-400/10 rounded-full blur-3xl" />
                 </div>
-                <div className="relative max-w-3xl mx-auto px-4 text-center mt-12 sm:mt-0">
+                <div className="relative max-w-3xl mx-auto px-4 text-center">
                     <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-3">FAQ</div>
                     <h1 className="text-3xl sm:text-5xl font-extrabold text-white mb-5 tracking-tight">
                         Frequently asked questions

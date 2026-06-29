@@ -43,3 +43,5 @@ export const fetchVerificationDocument = async (id, documentType) => {
     contentType: response.headers['content-type'] || response.data.type || 'application/octet-stream',
   };
 };
+
+export { adminAxios };  // add at the bottom of adminService.jsc

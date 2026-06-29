@@ -215,7 +215,6 @@ function Footer() {
 
   const handleFooterLink = useCallback((e, to, requiresAuth, btnEl) => {
     e.preventDefault();
-    window.scrollTo(0, 0);
     if (!requiresAuth || user) {
       navigate(to);
       return;

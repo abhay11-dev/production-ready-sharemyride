@@ -39,7 +39,7 @@ const ScrollToTop = () => {
       setIsVisible(window.pageYOffset > 300);
     };
 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
     window.addEventListener('scroll', toggleVisibility);
     toggleVisibility();
 

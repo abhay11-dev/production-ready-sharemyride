@@ -4,6 +4,16 @@ import toast from 'react-hot-toast';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+// Maps UI selection → Inquiry model's valid `type` enum values
+const INQUIRY_TYPE_MAP = {
+    general: 'contact_general',
+    partnership: 'contact_partnership',
+    corporate: 'contact_corporate',
+    community: 'contact_community',
+    media: 'contact_media',
+    feedback: 'contact_feedback',
+};
+
 const INQUIRY_TYPES = [
     { id: 'general', label: 'General Inquiry', icon: '💬', desc: 'Questions about the platform or your account.' },
     { id: 'partnership', label: 'Partnerships', icon: '🤝', desc: 'Strategic collaborations and integrations.' },
@@ -26,22 +36,27 @@ export default function ContactUs() {
         e.preventDefault();
         setSubmitting(true);
         try {
+            // Use the schema-valid type (e.g. 'contact_general')
             const res = await axios.post(`${API_URL}/inquiries`, {
                 name: form.name,
                 email: form.email,
                 subject: form.subject,
                 message: form.message,
-                inquiryType: selected
+                type: INQUIRY_TYPE_MAP[selected] || 'contact_general',
+                // Keep inquiryType as well for backward-compat with old controller reads
+                inquiryType: INQUIRY_TYPE_MAP[selected] || 'contact_general',
             });
-            setTicketId(res.data.data?.ticketId || '');
+
+            const data = res.data?.data || {};
+            setTicketId(data.ticketId || data.ticketNumber || '');
             setSent(true);
             toast.success('Your inquiry has been submitted!', {
-                style: { borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '14px' }
+                style: { borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '14px' },
             });
         } catch (err) {
             console.error('Inquiry submission error:', err);
             toast.error(err.response?.data?.message || 'Failed to submit. Please try again.', {
-                style: { borderRadius: '8px', background: '#dc2626', color: '#fff', fontSize: '14px' }
+                style: { borderRadius: '8px', background: '#dc2626', color: '#fff', fontSize: '14px' },
             });
         } finally {
             setSubmitting(false);
@@ -52,11 +67,11 @@ export default function ContactUs() {
         <div className="min-h-screen bg-gray-50">
 
             {/* ── Hero ── */}
-            <section className="bg-gradient-to-br from-blue-700 to-blue-900 py-16 sm:py-24 relative overflow-hidden">
-                <div className="absolute inset-0 opacity-10">
+            <section className="bg-gradient-to-br from-blue-700 to-blue-900 min-h-screen relative overflow-hidden flex flex-col justify-center">
+                <div className="absolute inset-0 opacity-10 pointer-events-none">
                     <div className="absolute top-0 right-0 w-96 h-96 bg-green-400 rounded-full blur-3xl" />
                 </div>
-                <div className="relative max-w-3xl mx-auto px-4 text-center">
+                <div className="relative max-w-3xl mx-auto px-4 text-center py-20">
                     <div className="text-xs font-semibold uppercase tracking-widest text-blue-200 mb-3">Contact Us</div>
                     <h1 className="text-3xl sm:text-5xl font-extrabold text-white mb-5 tracking-tight">
                         Let's build something together
@@ -79,8 +94,8 @@ export default function ContactUs() {
                             key={type.id}
                             onClick={() => setSelected(type.id)}
                             className={`text-left p-4 rounded-2xl border-2 transition-all ${selected === type.id
-                                ? 'border-blue-500 bg-blue-50 shadow-sm'
-                                : 'border-gray-100 bg-white hover:border-blue-200'
+                                    ? 'border-blue-500 bg-blue-50 shadow-sm'
+                                    : 'border-gray-100 bg-white hover:border-blue-200'
                                 }`}
                         >
                             <div className="text-2xl mb-2">{type.icon}</div>
@@ -145,8 +160,13 @@ export default function ContactUs() {
                                         Reference: {ticketId}
                                     </div>
                                 )}
-                                <p className="text-gray-500 text-sm">We've received your message and will get back to you within 24–48 hours. A confirmation has been sent to your email.</p>
-                                <button onClick={() => { setSent(false); setForm({ name: '', email: '', subject: '', message: '' }); setTicketId(''); }} className="mt-6 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
+                                <p className="text-gray-500 text-sm">
+                                    We've received your message and will get back to you within 24–48 hours. A confirmation has been sent to your email.
+                                </p>
+                                <button
+                                    onClick={() => { setSent(false); setForm({ name: '', email: '', subject: '', message: '' }); setTicketId(''); }}
+                                    className="mt-6 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
+                                >
                                     Send another inquiry
                                 </button>
                             </div>
@@ -206,17 +226,20 @@ export default function ContactUs() {
                                     className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors text-sm flex items-center justify-center gap-2"
                                 >
                                     {submitting ? (
-                                        <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting...</>
+                                        <>
+                                            <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Submitting...
+                                        </>
                                     ) : 'Submit Inquiry →'}
                                 </button>
-                                <p className="text-xs text-gray-400 text-center">Your inquiry will be stored securely and our team will respond via email.</p>
+                                <p className="text-xs text-gray-400 text-center">
+                                    Your inquiry is saved securely and our team will respond via email within 24–48 hours.
+                                </p>
                             </form>
                         )}
                     </div>
-
                 </div>
             </section>
-
         </div>
     );
 }

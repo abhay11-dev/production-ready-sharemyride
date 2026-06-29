@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../config/api.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 
-/* ─── Scroll-to-top on mount (Point 10) ── */
+/* ─── Scroll-to-top on mount ── */
 function useScrollTop() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
 }
@@ -70,11 +70,176 @@ const VALUES = [
   { icon: '🚀', title: 'Accessibility', desc: 'From tier-1 metros to tier-3 towns, shared mobility should work everywhere — not just where Uber does.' },
 ];
 
+/* ─── keyframe CSS injected once ── */
+const HERO_CSS = `
+  @keyframes blobPulse {
+    0%, 100% { transform: scale(1);   opacity: 0.07; }
+    50%       { transform: scale(1.18); opacity: 0.13; }
+  }
+  @keyframes laneDrift {
+    0%   { transform: translateY(100vh); opacity: 0;   }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translateY(-120px); opacity: 0; }
+  }
+  @keyframes carDrift {
+    0%   { transform: translateX(-60px); opacity: 0;   }
+    8%   { opacity: 0.18; }
+    92%  { opacity: 0.18; }
+    100% { transform: translateX(calc(100vw + 60px)); opacity: 0; }
+  }
+  @keyframes gridScroll {
+    0%   { transform: translateY(0);   }
+    100% { transform: translateY(60px); }
+  }
+  @keyframes glowBreath {
+    0%, 100% { opacity: 0.10; transform: scale(1);    }
+    50%       { opacity: 0.18; transform: scale(1.12); }
+  }
+  @keyframes ringExpand {
+    0%   { transform: scale(0.6); opacity: 0.18; }
+    100% { transform: scale(2.2); opacity: 0;   }
+  }
+  @keyframes dotFloat {
+    0%, 100% { transform: translateY(0px);   opacity: 0.12; }
+    50%       { transform: translateY(-18px); opacity: 0.22; }
+  }
+
+  .hero-blob {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 70%);
+    animation: blobPulse linear infinite;
+  }
+  .hero-lane {
+    position: absolute;
+    bottom: -120px;
+    width: 3px;
+    border-radius: 2px;
+    background: linear-gradient(to top, rgba(255,255,255,0), rgba(255,255,255,0.22), rgba(255,255,255,0));
+    animation: laneDrift linear infinite;
+  }
+  .hero-car {
+    position: absolute;
+    left: -60px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.15);
+    animation: carDrift linear infinite;
+  }
+  .hero-grid {
+    position: absolute;
+    inset: -60px;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+    background-size: 52px 52px;
+    animation: gridScroll 6s linear infinite;
+  }
+  .hero-glow {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 68%);
+    animation: glowBreath ease-in-out infinite;
+  }
+  .hero-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.10);
+    animation: ringExpand ease-out infinite;
+  }
+  .hero-dot {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.22);
+    animation: dotFloat ease-in-out infinite;
+  }
+`;
+
+function HeroBackground() {
+  return (
+    <>
+      <style>{HERO_CSS}</style>
+
+      {/* Scrolling grid — fills the whole section quietly */}
+      <div className="hero-grid" aria-hidden="true" />
+
+      {/* Breathing glows anchored to corners / midpoints */}
+      <div className="hero-glow" aria-hidden="true" style={{ width: 500, height: 500, top: -160, right: -120, animationDuration: '8s', animationDelay: '0s' }} />
+      <div className="hero-glow" aria-hidden="true" style={{ width: 380, height: 380, bottom: -100, left: -80, animationDuration: '10s', animationDelay: '3s' }} />
+      <div className="hero-glow" aria-hidden="true" style={{ width: 260, height: 260, top: '42%', left: '48%', animationDuration: '12s', animationDelay: '1.5s' }} />
+      <div className="hero-glow" aria-hidden="true" style={{ width: 180, height: 180, top: '18%', left: '22%', animationDuration: '9s', animationDelay: '5s' }} />
+
+      {/* Expanding rings — very faint, one every few seconds */}
+      <div className="hero-ring" aria-hidden="true" style={{ width: 320, height: 320, top: '30%', left: '60%', animationDuration: '7s', animationDelay: '0s' }} />
+      <div className="hero-ring" aria-hidden="true" style={{ width: 240, height: 240, top: '60%', left: '20%', animationDuration: '9s', animationDelay: '3.5s' }} />
+      <div className="hero-ring" aria-hidden="true" style={{ width: 200, height: 200, top: '10%', left: '75%', animationDuration: '11s', animationDelay: '6s' }} />
+
+      {/* Floating dots scattered across full width */}
+      {[
+        { top: '12%', left: '5%',  d: '0s',   dur: '5s'  },
+        { top: '28%', left: '15%', d: '1.2s', dur: '6s'  },
+        { top: '55%', left: '8%',  d: '2.5s', dur: '7s'  },
+        { top: '78%', left: '18%', d: '0.8s', dur: '5.5s'},
+        { top: '90%', left: '35%', d: '3.2s', dur: '6.5s'},
+        { top: '65%', left: '45%', d: '1.8s', dur: '8s'  },
+        { top: '20%', left: '55%', d: '4s',   dur: '5s'  },
+        { top: '42%', left: '65%', d: '0.4s', dur: '7s'  },
+        { top: '75%', left: '72%', d: '2s',   dur: '6s'  },
+        { top: '10%', left: '82%', d: '3.5s', dur: '9s'  },
+        { top: '50%', left: '88%', d: '1s',   dur: '5.5s'},
+        { top: '85%', left: '94%', d: '2.8s', dur: '7s'  },
+      ].map((dot, i) => (
+        <div key={i} className="hero-dot" aria-hidden="true"
+          style={{ top: dot.top, left: dot.left, animationDelay: dot.d, animationDuration: dot.dur }} />
+      ))}
+
+      {/* Lane dashes — spread across full width */}
+      {[
+        { left: '4%',  h: 80,  dur: '7s',   d: '0s'   },
+        { left: '4%',  h: 45,  dur: '7s',   d: '3.5s' },
+        { left: '12%', h: 65,  dur: '9s',   d: '1.2s' },
+        { left: '12%', h: 38,  dur: '9s',   d: '5.5s' },
+        { left: '20%', h: 90,  dur: '8s',   d: '2.8s' },
+        { left: '28%', h: 55,  dur: '10s',  d: '0.6s' },
+        { left: '36%', h: 70,  dur: '7.5s', d: '4s'   },
+        { left: '44%', h: 50,  dur: '11s',  d: '2s'   },
+        { left: '44%', h: 88,  dur: '11s',  d: '6s'   },
+        { left: '52%', h: 62,  dur: '8.5s', d: '1s'   },
+        { left: '60%', h: 75,  dur: '9.5s', d: '3s'   },
+        { left: '68%', h: 42,  dur: '7s',   d: '5s'   },
+        { left: '68%', h: 95,  dur: '7s',   d: '1.8s' },
+        { left: '76%', h: 58,  dur: '8s',   d: '4.5s' },
+        { left: '84%', h: 80,  dur: '10s',  d: '0.3s' },
+        { left: '92%', h: 48,  dur: '6.5s', d: '2.2s' },
+        { left: '97%', h: 70,  dur: '9s',   d: '3.8s' },
+      ].map((lane, i) => (
+        <div key={i} className="hero-lane" aria-hidden="true"
+          style={{ left: lane.left, height: lane.h, animationDuration: lane.dur, animationDelay: lane.d }} />
+      ))}
+
+      {/* Drifting car silhouettes */}
+      {[
+        { w: 30, h: 13, top: '15%', dur: '9s',  d: '0s'  },
+        { w: 24, h: 11, top: '32%', dur: '12s', d: '2s'  },
+        { w: 34, h: 14, top: '52%', dur: '10s', d: '5s'  },
+        { w: 22, h: 10, top: '70%', dur: '8s',  d: '1s'  },
+        { w: 28, h: 12, top: '85%', dur: '11s', d: '7s'  },
+        { w: 20, h: 9,  top: '25%', dur: '14s', d: '3.5s'},
+        { w: 26, h: 11, top: '60%', dur: '13s', d: '6.5s'},
+      ].map((car, i) => (
+        <div key={i} className="hero-car" aria-hidden="true"
+          style={{ width: car.w, height: car.h, top: car.top, animationDuration: car.dur, animationDelay: car.d }} />
+      ))}
+    </>
+  );
+}
+
 export default function About() {
   useScrollTop();
   const { user } = useAuth();
 
-  /* Point 6: real dynamic stats */
   const [stats, setStats] = useState({ totalRides: 0, totalCities: 0, totalUsers: 0, averageRating: 0, loading: true });
 
   useEffect(() => {
@@ -95,12 +260,12 @@ export default function About() {
   return (
     <div className="min-h-screen bg-gray-50">
 
-      {/* ── Hero — consistent blue (Point 9) ── */}
+      {/* ── Hero ── */}
       <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-screen flex flex-col justify-center">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl translate-x-1/2 -translate-y-1/2" />
-          <div className="absolute bottom-0 left-0 w-80 h-80 bg-green-500/10 rounded-full blur-3xl -translate-x-1/2 translate-y-1/2" />
+        <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+          <HeroBackground />
         </div>
+
         <div className="relative w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
             Our Story
@@ -115,7 +280,7 @@ export default function About() {
         </div>
       </section>
 
-      {/* ── Point 6: Real dynamic stats bar ── */}
+      {/* ── Stats bar ── */}
       <section className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
@@ -180,7 +345,7 @@ export default function About() {
             {[
               { stat: '70%', label: 'of cars on Indian roads carry only the driver', color: 'text-red-500' },
               { stat: '40%', label: 'cheaper than solo travel when seats are shared', color: 'text-green-600' },
-              { stat: '3x', label: 'lower carbon footprint per passenger vs solo car', color: 'text-blue-600' },
+              { stat: '3x',  label: 'lower carbon footprint per passenger vs solo car', color: 'text-blue-600' },
             ].map((item, i) => (
               <Reveal key={item.stat} delay={i * 0.1}>
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
@@ -233,7 +398,7 @@ export default function About() {
           <div className="grid sm:grid-cols-2 gap-6">
             {[
               { label: 'Mission', text: 'Make shared mobility the default choice for every intercity and intracity journey in India — by building a platform rooted in trust, affordability, and community.' },
-              { label: 'Vision', text: 'A future where every car seat is a social asset, not wasted space. Where travel is an opportunity to connect, not just commute.Not just carpooling - building communities.' },
+              { label: 'Vision',  text: 'A future where every car seat is a social asset, not wasted space. Where travel is an opportunity to connect, not just commute. Not just carpooling - building communities.' },
             ].map((item, i) => (
               <Reveal key={item.label} delay={i * 0.1}>
                 <div className="bg-white/10 rounded-2xl p-7 text-left border border-white/10">
@@ -276,8 +441,14 @@ export default function About() {
             <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 mb-4">Ready to ride with the community?</h2>
             <p className="text-gray-500 mb-8">Find a ride or offer yours — every seat filled is a small win for everyone.</p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center mt-8">
-              <Link to={user ? "/ride/search" : "/login"} onClick={() => window.scrollTo(0, 0)} className="px-8 py-4 bg-blue-600 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">Find a Ride</Link>
-              <Link to={user ? "/ride/post" : "/login"} onClick={() => window.scrollTo(0, 0)} className="px-8 py-4 bg-green-500 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-green-600 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">Offer a Ride</Link>
+              <Link to={user ? "/ride/search" : "/login"} onClick={() => window.scrollTo(0, 0)}
+                className="px-8 py-4 bg-blue-600 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">
+                Find a Ride
+              </Link>
+              <Link to={user ? "/ride/post" : "/login"} onClick={() => window.scrollTo(0, 0)}
+                className="px-8 py-4 bg-green-500 text-white text-sm sm:text-base font-bold rounded-xl hover:bg-green-600 transition-colors shadow-sm w-full sm:w-auto flex items-center justify-center">
+                Offer a Ride
+              </Link>
             </div>
           </Reveal>
         </div>
