@@ -10,6 +10,7 @@
     "start": "vite"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@fontsource-variable/geist": "^5.2.9",
     "@react-google-maps/api": "^2.20.7",
     "@tailwindcss/vite": "^4.1.16",

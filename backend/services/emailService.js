@@ -1,14 +1,15 @@
-const resend = require('../config/resend'); // Import the Resend client
 const ical = require('ical-generator').default;
 const moment = require('moment');
 const crypto = require('crypto');
 
 /**
  * STARTUP VALIDATION
- * Ensure all required environment variables are set before the app starts.
+ * Resend-specific vars removed. EmailJS is frontend-only, so the backend
+ * no longer needs an email API key — it only needs to know where the
+ * frontend lives (for links) and how to label outgoing "from" names.
  */
-const requiredEnvVars = ['RESEND_API_KEY', 'EMAIL_USER', 'FRONTEND_URL', 'NODE_ENV'];
-console.log('📧 [EmailService] Initializing Production Audit...');
+const requiredEnvVars = ['FRONTEND_URL', 'NODE_ENV'];
+console.log('📧 [EmailService] Initializing Production Audit (EmailJS payload mode)...');
 
 requiredEnvVars.forEach(varName => {
   const isSet = !!process.env[varName];
@@ -23,42 +24,33 @@ requiredEnvVars.forEach(varName => {
  */
 const getCorrelationId = () => crypto.randomBytes(4).toString('hex').toUpperCase();
 
-const logEmailStart = (cid, type, details) => {
+const logEmailActionBuilt = (cid, template, to) => {
   console.log(`
-===== [${cid}] EMAIL SEND START =====
-Type:        ${type}
-Recipient:   ${details.to}
-Sender:      ${details.from}
-Subject:     ${details.subject}
+===== [${cid}] EMAIL ACTION BUILT =====
+Template:    ${template}
+Recipient:   ${to}
 Environment: ${process.env.NODE_ENV}
 Correlation: ${cid}
-======================================`);
-};
-
-const logEmailEnd = (cid, result) => {
-  const res = result || {};
-  console.log(`
-===== [${cid}] EMAIL SEND END =====
-Success:     ${!!(res.data && !res.error)}
-Data:        ${JSON.stringify(res.data || null, null, 2)}
-Error:       ${JSON.stringify(res.error || null, null, 2)}
-Raw Type:    ${typeof result}
-====================================`);
+========================================`);
 };
 
 /**
- * Generate calendar event for the ride
+ * Generate calendar event (.ics) for a ride.
+ * Kept as-is — EmailJS can't send binary attachments, so we return the
+ * ICS content as a base64 string inside the payload. The frontend can
+ * either attach it via a custom EmailJS variable, or offer it as a
+ * "Add to calendar" download link/button next to the email send call.
  */
 const generateCalendarEvent = (booking, ride, driver) => {
   console.log(`[EmailService] Generating ICS calendar event for Booking: ${booking._id}`);
 
   const calendar = ical({ name: 'ShareMyRide Trip' });
-  
+
   const rideDateTime = moment(`${ride.date} ${ride.time}`, 'YYYY-MM-DD HH:mm');
-  
+
   calendar.createEvent({
     start: rideDateTime.toDate(),
-    end: moment(rideDateTime).add(2, 'hours').toDate(), // Estimated 2hr trip
+    end: moment(rideDateTime).add(2, 'hours').toDate(),
     summary: `Ride: ${booking.pickupLocation} → ${booking.dropLocation}`,
     description: `
 ShareMyRide Trip Details
@@ -80,11 +72,11 @@ Safe travels!
     url: `${process.env.FRONTEND_URL}/my-bookings`,
     organizer: {
       name: process.env.EMAIL_FROM_NAME || 'ShareMyRide',
-      email: process.env.EMAIL_USER,
+      email: process.env.EMAIL_USER || 'no-reply@sharemyride.app',
     },
     alarms: [
-      { type: 'display', trigger: 24 * 60 }, // 1 day before
-      { type: 'display', trigger: 60 }, // 1 hour before
+      { type: 'display', trigger: 24 * 60 },
+      { type: 'display', trigger: 60 },
     ],
   });
 
@@ -92,1216 +84,348 @@ Safe travels!
 };
 
 /**
- * Generate professional email template
+ * Helper: standard envelope every emailAction returns.
  */
-const generateEmailTemplate = (booking, ride, driver, passenger, isDriver = false) => {
-  console.log(`[EmailService] Building ${isDriver ? 'Driver' : 'Passenger'} HTML template for Booking: ${booking._id}`);
-
-  const baseFare = booking.baseFare || 0;
-  const platformFee = baseFare * 0.08;
-  const gst = platformFee * 0.18;
-  const totalAmount = baseFare + platformFee + gst;
-  const driverReceives = baseFare - platformFee - gst;
-
-  const rideDate = moment(ride.date).format('dddd, MMMM D, YYYY');
-  const rideTime = ride.time;
-  const paymentDate = moment(booking.paymentCompletedAt || new Date()).format('MMMM D, YYYY [at] h:mm A');
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Payment Successful – Ride Confirmed</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
-    .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
-    .logo { font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 10px; }
-    .header-text { color: #ffffff; font-size: 16px; opacity: 0.95; }
-    .success-badge { background: #10b981; color: white; display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 50px; font-weight: 600; font-size: 15px; margin: 20px 0; }
-    .content { padding: 30px; }
-    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
-    .message { color: #4a5568; font-size: 15px; margin-bottom: 25px; }
-    .info-card { background: #f7fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-    .info-title { font-size: 14px; font-weight: 700; color: #2d3748; margin-bottom: 15px; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .info-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { color: #718096; font-size: 14px; }
-    .info-value { color: #1a202c; font-weight: 600; font-size: 14px; text-align: right; }
-    .route-card { background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border: 2px solid #667eea; border-radius: 12px; padding: 20px; margin: 20px 0; }
-    .location { display: flex; align-items: flex-start; gap: 12px; margin: 12px 0; }
-    .location-icon { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
-    .pickup-icon { background: #10b981; color: white; }
-    .drop-icon { background: #3b82f6; color: white; }
-    .location-text { flex: 1; font-size: 15px; font-weight: 600; color: #1a202c; }
-    .divider { text-align: center; color: #cbd5e0; margin: 8px 0; }
-    .payment-summary { background: #f0fdf4; border: 2px solid #10b981; border-radius: 12px; padding: 20px; margin: 20px 0; }
-    .payment-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; }
-    .payment-label { color: #065f46; }
-    .payment-value { color: #047857; font-weight: 600; }
-    .payment-indent { padding-left: 20px; font-size: 13px; color: #059669; }
-    .payment-total { border-top: 2px solid #10b981; margin-top: 10px; padding-top: 12px; font-size: 18px; font-weight: 700; }
-    .payment-total .payment-value { color: #10b981; font-size: 20px; }
-    .id-badge { background: #edf2f7; border: 1px dashed #a0aec0; border-radius: 8px; padding: 12px; margin: 15px 0; text-align: center; }
-    .id-label { font-size: 11px; text-transform: uppercase; color: #718096; margin-bottom: 4px; }
-    .id-value { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 600; color: #2d3748; word-break: break-all; }
-    .cta-button { display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 15px; margin: 10px 5px; text-align: center; }
-    .cta-button:hover { background: #5568d3; }
-    .cta-secondary { background: #48bb78; }
-    .cta-secondary:hover { background: #38a169; }
-    .footer { background: #2d3748; color: #e2e8f0; padding: 30px; text-align: center; font-size: 13px; }
-    .footer-links { margin: 15px 0; }
-    .footer-link { color: #a0aec0; text-decoration: none; margin: 0 10px; }
-    .footer-link:hover { color: #e2e8f0; }
-    .highlight { background: #fef3c7; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
-    @media only screen and (max-width: 600px) {
-      .content { padding: 20px; }
-      .info-row { flex-direction: column; gap: 5px; }
-      .info-value { text-align: left; }
-      .cta-button { display: block; margin: 10px 0; }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">🚗 ShareMyRide</div>
-      <div class="header-text">Your trusted carpooling partner</div>
-      <div class="success-badge">
-        ✓ Payment Successful
-      </div>
-    </div>
-
-    <div class="content">
-      <h1 class="greeting">Hello ${isDriver ? driver.name : passenger.name}! 👋</h1>
-      
-      <p class="message">
-        ${isDriver 
-          ? `Great news! Your ride has been booked and paid for. You'll receive <span class="highlight">₹${driverReceives.toFixed(2)}</span> for this trip.`
-          : `Your payment of <span class="highlight">₹${totalAmount.toFixed(2)}</span> has been successfully processed. Your ride is confirmed!`
-        }
-      </p>
-
-      <div class="route-card">
-        <div class="info-title">🗓️ RIDE SCHEDULE</div>
-        <div class="location">
-          <div class="location-icon pickup-icon">📍</div>
-          <div>
-            <div style="font-size: 12px; color: #059669; font-weight: 600; margin-bottom: 2px;">PICKUP</div>
-            <div class="location-text">${booking.pickupLocation}</div>
-          </div>
-        </div>
-        <div class="divider">⬇ ⬇ ⬇</div>
-        <div class="location">
-          <div class="location-icon drop-icon">🎯</div>
-          <div>
-            <div style="font-size: 12px; color: #2563eb; font-weight: 600; margin-bottom: 2px;">DROP-OFF</div>
-            <div class="location-text">${booking.dropLocation}</div>
-          </div>
-        </div>
-        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #cbd5e0;">
-          <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-            <div style="flex: 1; min-width: 120px;">
-              <div style="font-size: 12px; color: #718096;">DATE</div>
-              <div style="font-weight: 600; color: #1a202c;">${rideDate}</div>
-            </div>
-            <div style="flex: 1; min-width: 120px;">
-              <div style="font-size: 12px; color: #718096;">TIME</div>
-              <div style="font-weight: 600; color: #1a202c;">${rideTime}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="info-card">
-        <div class="info-title">
-          ${isDriver ? '👤 PASSENGER DETAILS' : '🚗 DRIVER DETAILS'}
-        </div>
-        <div class="info-row">
-          <span class="info-label">Name</span>
-          <span class="info-value">${isDriver ? passenger.name : driver.name}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">Phone</span>
-          <span class="info-value">${isDriver ? passenger.phone : driver.phone}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">Email</span>
-          <span class="info-value">${isDriver ? passenger.email : driver.email}</span>
-        </div>
-        ${!isDriver ? `
-        <div class="info-row">
-          <span class="info-label">Vehicle</span>
-          <span class="info-value">${ride.vehicleModel || 'N/A'} • ${ride.vehicleNumber || 'N/A'}</span>
-        </div>
-        ` : ''}
-        <div class="info-row">
-          <span class="info-label">Seats Booked</span>
-          <span class="info-value">${booking.seatsBooked}</span>
-        </div>
-      </div>
-
-      ${isDriver ? `
-      <div class="payment-summary">
-        <div class="info-title">💰 YOUR EARNINGS</div>
-        <div class="payment-row">
-          <span class="payment-label">Base Fare (Trip Cost)</span>
-          <span class="payment-value">₹${baseFare.toFixed(2)}</span>
-        </div>
-        <div class="payment-row payment-indent">
-          <span class="payment-label">− Platform Fee (8%)</span>
-          <span class="payment-value">₹${platformFee.toFixed(2)}</span>
-        </div>
-        <div class="payment-row payment-indent">
-          <span class="payment-label">− GST on Platform Fee (18%)</span>
-          <span class="payment-value">₹${gst.toFixed(2)}</span>
-        </div>
-        <div class="payment-row payment-total">
-          <span class="payment-label">You Receive</span>
-          <span class="payment-value">₹${driverReceives.toFixed(2)}</span>
-        </div>
-      </div>
-      ` : `
-      <div class="payment-summary">
-        <div class="info-title">💳 PAYMENT DETAILS</div>
-        <div class="payment-row">
-          <span class="payment-label">Base Fare</span>
-          <span class="payment-value">₹${baseFare.toFixed(2)}</span>
-        </div>
-        <div class="payment-row payment-indent">
-          <span class="payment-label">+ Platform Service Fee (8%)</span>
-          <span class="payment-value">₹${platformFee.toFixed(2)}</span>
-        </div>
-        <div class="payment-row payment-indent">
-          <span class="payment-label">+ GST (18% on service fee)</span>
-          <span class="payment-value">₹${gst.toFixed(2)}</span>
-        </div>
-        <div class="payment-row payment-total">
-          <span class="payment-label">Total Amount Paid</span>
-          <span class="payment-value">₹${totalAmount.toFixed(2)}</span>
-        </div>
-        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #10b981;">
-          <div class="payment-row" style="padding: 4px 0;">
-            <span class="payment-label">Payment Method</span>
-            <span class="payment-value">Razorpay</span>
-          </div>
-          <div class="payment-row" style="padding: 4px 0;">
-            <span class="payment-label">Transaction ID</span>
-            <span class="payment-value" style="font-family: 'Courier New', monospace; font-size: 12px;">${booking.razorpayPaymentId || 'N/A'}</span>
-          </div>
-          <div class="payment-row" style="padding: 4px 0;">
-            <span class="payment-label">Payment Date</span>
-            <span class="payment-value">${paymentDate}</span>
-          </div>
-          <div class="payment-row" style="padding: 4px 0;">
-            <span class="payment-label">Status</span>
-            <span class="payment-value" style="color: #10b981;">✓ Success</span>
-          </div>
-        </div>
-      </div>
-      `}
-
-      <div class="id-badge">
-        <div class="id-label">Booking Reference ID</div>
-        <div class="id-value">${booking._id}</div>
-      </div>
-
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${process.env.FRONTEND_URL}/my-bookings" class="cta-button">
-          View Booking Details
-        </a>
-        ${!isDriver ? `
-        <a href="${process.env.FRONTEND_URL}/support" class="cta-button cta-secondary">
-          Contact Support
-        </a>
-        ` : ''}
-      </div>
-
-      <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; margin: 20px 0;">
-        <div style="font-weight: 600; color: #92400e; margin-bottom: 5px;">🔔 Automatic Reminders</div>
-        <div style="font-size: 13px; color: #78350f;">
-          You'll receive reminders 24 hours and 1 hour before your ride. Add this trip to your calendar using the attached file.
-        </div>
-      </div>
-
-      <div style="background: #f7fafc; border-radius: 8px; padding: 15px; margin: 20px 0; font-size: 13px; color: #4a5568;">
-        <div style="font-weight: 600; color: #2d3748; margin-bottom: 8px;">📋 Important Notes:</div>
-        <ul style="margin-left: 20px;">
-          <li style="margin: 5px 0;">Please arrive at the pickup location 5-10 minutes early</li>
-          <li style="margin: 5px 0;">${isDriver ? 'Contact the passenger if there are any delays' : 'Contact the driver if you need to make changes'}</li>
-          <li style="margin: 5px 0;">Keep your phone charged and accessible</li>
-          <li style="margin: 5px 0;">Follow COVID-19 safety protocols if applicable</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="footer">
-      <div style="font-size: 15px; font-weight: 600; margin-bottom: 10px;">Need Help?</div>
-      <div class="footer-links">
-        <a href="${process.env.FRONTEND_URL}/support" class="footer-link">Support Center</a>
-        <a href="${process.env.FRONTEND_URL}/faq" class="footer-link">FAQs</a>
-        <a href="${process.env.FRONTEND_URL}/terms" class="footer-link">Terms</a>
-      </div>
-      <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #4a5568;">
-        <p>© ${new Date().getFullYear()} ShareMyRide. All rights reserved.</p>
-        <p style="font-size: 12px; color: #a0aec0; margin-top: 8px;">
-          This is an automated message. Please do not reply to this email.
-        </p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-  `.trim();
-};
+const buildAction = (template, payload) => ({ template, payload });
 
 /**
- * Send booking confirmation emails with calendar attachment
+ * Send booking confirmation emails (passenger + driver)
+ * Returns an emailAction with an `emails` array — one entry per recipient —
+ * so the frontend can loop through and fire emailjs.send() for each.
  */
 const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) => {
   const cid = getCorrelationId();
   try {
-    console.info(`[${cid}] Initiating booking confirmation workflow for Booking: ${booking._id}`);
+    console.info(`[${cid}] Building booking confirmation emailAction for Booking: ${booking._id}`);
 
-    // Generate calendar event
     const calendarEventContent = generateCalendarEvent(booking, ride, driver);
-    const attachments = [{
-      filename: 'ride-calendar-invite.ics',
-      content: Buffer.from(calendarEventContent),
-      contentType: 'text/calendar'
-    }];
+    const icsBase64 = Buffer.from(calendarEventContent).toString('base64');
 
-    const passengerEmail = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
-      to: passenger.email,
-      subject: `Payment Successful – Your Ride is Confirmed! 🎉`,
-      html: generateEmailTemplate(booking, ride, driver, passenger, false),
-      attachments: attachments,
+    const baseFare = booking.baseFare || 0;
+    const platformFee = baseFare * 0.08;
+    const gst = platformFee * 0.18;
+    const totalAmount = baseFare + platformFee + gst;
+    const driverReceives = baseFare - platformFee - gst;
+
+    const sharedFields = {
+      bookingId: String(booking._id),
+      pickupLocation: booking.pickupLocation,
+      dropLocation: booking.dropLocation,
+      seatsBooked: booking.seatsBooked,
+      rideDate: moment(ride.date).format('dddd, MMMM D, YYYY'),
+      rideTime: ride.time,
+      vehicleModel: ride.vehicleModel || 'N/A',
+      vehicleNumber: ride.vehicleNumber || 'N/A',
+      fare: {
+        baseFare: baseFare.toFixed(2),
+        platformFee: platformFee.toFixed(2),
+        gst: gst.toFixed(2),
+        totalAmount: totalAmount.toFixed(2),
+        driverReceives: driverReceives.toFixed(2),
+      },
+      payment: {
+        method: 'Razorpay',
+        transactionId: booking.razorpayPaymentId || 'N/A',
+        paymentDate: moment(booking.paymentCompletedAt || new Date()).format('MMMM D, YYYY [at] h:mm A'),
+        status: 'Success',
+      },
+      bookingUrl: `${process.env.FRONTEND_URL}/my-bookings`,
+      supportUrl: `${process.env.FRONTEND_URL}/support`,
+      icsAttachmentBase64: icsBase64,
+      icsFilename: 'ride-calendar-invite.ics',
     };
 
-    const driverEmail = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'ShareMyRide'}" <${process.env.EMAIL_USER}>`,
-      to: driver.email,
-      subject: `New Booking Confirmed – Ride on ${moment(ride.date).format('MMM D')}`,
-      html: generateEmailTemplate(booking, ride, driver, passenger, true),
-      attachments: attachments,
+    const passengerPayload = {
+      ...sharedFields,
+      recipientRole: 'passenger',
+      to_email: passenger.email,
+      to_name: passenger.name,
+      driver: { name: driver.name, phone: driver.phone, email: driver.email },
     };
 
-    logEmailStart(cid, 'Booking_Confirmation_Passenger', passengerEmail);
-    logEmailStart(cid, 'Booking_Confirmation_Driver', driverEmail);
+    const driverPayload = {
+      ...sharedFields,
+      recipientRole: 'driver',
+      to_email: driver.email,
+      to_name: driver.name,
+      passenger: { name: passenger.name, phone: passenger.phone, email: passenger.email },
+    };
 
-    // Send in parallel
-    const [passengerResult, driverResult] = await Promise.all([
-      resend.emails.send(passengerEmail),
-      resend.emails.send(driverEmail)
-    ]);
-
-    logEmailEnd(cid + '-P', passengerResult);
-    logEmailEnd(cid + '-D', driverResult);
-
-    if (passengerResult.error) {
-      throw new Error(`Passenger Email Failed: ${JSON.stringify(passengerResult.error)}`);
-    }
-    
-    if (driverResult.error) {
-      throw new Error(`Driver Email Failed: ${JSON.stringify(driverResult.error)}`);
-    }
+    logEmailActionBuilt(cid + '-P', 'booking-confirmation-passenger', passenger.email);
+    logEmailActionBuilt(cid + '-D', 'booking-confirmation-driver', driver.email);
 
     return {
       success: true,
-      passengerEmailId: passengerResult.data?.id,
-      driverEmailId: driverResult.data?.id,
+      emailAction: {
+        emails: [
+          buildAction('booking-confirmation-passenger', passengerPayload),
+          buildAction('booking-confirmation-driver', driverPayload),
+        ],
+      },
     };
   } catch (error) {
-    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendBookingConfirmationEmails:`, error);
+    console.error(`[${cid}] ❌ FAILURE building sendBookingConfirmationEmails action:`, error);
     throw error;
   }
 };
 
 /**
- * Send email verification link
+ * Verification email
  */
 const sendVerificationEmail = async (email, name, verificationLink) => {
   const cid = getCorrelationId();
   try {
-
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verify Your Email – ShareMyRide</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
-    .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
-    .logo { font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 10px; }
-    .header-text { color: #ffffff; font-size: 14px; opacity: 0.95; }
-    .content { padding: 40px 30px; }
-    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
-    .message { color: #4a5568; font-size: 15px; line-height: 1.8; margin-bottom: 30px; }
-    .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; margin: 20px 0; }
-    .cta-button:hover { opacity: 0.95; }
-    .alternative-text { color: #718096; font-size: 13px; margin-top: 20px; }
-    .link-text { color: #667eea; word-break: break-all; font-size: 12px; font-family: monospace; }
-    .footer { background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; }
-    .footer-text { color: #718096; font-size: 12px; }
-    .footer-links { margin-top: 15px; }
-    .footer-links a { color: #667eea; text-decoration: none; margin: 0 15px; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <!-- Header -->
-    <div class="header">
-      <div class="logo">🚗 ShareMyRide</div>
-      <div class="header-text">Verify Your Email Address</div>
-    </div>
-
-    <!-- Content -->
-    <div class="content">
-      <div class="greeting">Hi ${name || 'there'},</div>
-      
-      <div class="message">
-        Thank you for registering with ShareMyRide! To complete your account setup and start sharing rides, please verify your email address by clicking the button below.
-      </div>
-
-      <div style="text-align: center;">
-      <a href="${verificationLink}" class="cta-button" style="color: #ffffff !important; text-decoration: none;">Verify Email Address</a>
-      </div>
-
-      <div class="alternative-text">
-        <strong>Or copy and paste this link in your browser:</strong>
-        <div class="link-text">${verificationLink}</div>
-      </div>
-
-      <div class="message" style="margin-top: 30px; color: #718096; font-size: 13px;">
-        This verification link will expire in 24 hours. If you did not create this account, please ignore this email.
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">
-      <div class="footer-text">
-        © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
-      </div>
-      <div class="footer-links">
-        <a href="${process.env.FRONTEND_URL}/privacy">Privacy Policy</a>
-        <a href="${process.env.FRONTEND_URL}/terms">Terms of Service</a>
-        <a href="${process.env.FRONTEND_URL}/support">Support</a>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Verify Your Email – ShareMyRide',
-      html: html,
+    logEmailActionBuilt(cid, 'verification', email);
+    return {
+      success: true,
+      emailAction: buildAction('verification', {
+        to_email: email,
+        to_name: name || 'there',
+        verificationLink,
+        expiresInHours: 24,
+      }),
     };
-
-    logEmailStart(cid, 'User_Verification', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-
-    if (result.error) {
-      throw new Error(`Resend Verification Error: ${result.error.message}`);
-    }
-
-    if (!result.data || !result.data.id) {
-      console.warn(`[${cid}] ⚠️ Resend returned success but no Email ID was provided.`);
-    }
-
-    return result.data;
   } catch (error) {
-    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendVerificationEmail:`, error);
+    console.error(`[${cid}] ❌ FAILURE building sendVerificationEmail action:`, error);
     throw error;
   }
 };
 
 /**
- * Send password reset email
+ * Password reset email
  */
 const sendPasswordResetEmail = async (email, name, resetToken) => {
   const cid = getCorrelationId();
   try {
-
     const resetLink = `${process.env.FRONTEND_URL || process.env.API_BASE_URL}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
-    
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Your Password – ShareMyRide</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
-    .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
-    .logo { font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 10px; }
-    .header-text { color: #ffffff; font-size: 14px; opacity: 0.95; }
-    .content { padding: 40px 30px; }
-    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
-    .message { color: #4a5568; font-size: 15px; line-height: 1.8; margin-bottom: 30px; }
-    .warning { background: #fed7d7; color: #742a2a; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 14px; }
-    .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; margin: 20px 0; }
-    .footer { background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; }
-    .footer-text { color: #718096; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">🚗 ShareMyRide</div>
-      <div class="header-text">Password Reset Request</div>
-    </div>
 
-    <div class="content">
-      <div class="greeting">Hi ${name || 'there'},</div>
-      
-      <div class="message">
-        We received a request to reset the password for your ShareMyRide account. Click the button below to create a new password.
-      </div>
-
-      <div class="warning">
-        <strong>⚠️ Security Note:</strong> This reset link will expire in 15 minutes. If you did not request this reset, please ignore this email.
-      </div>
-
-      <div style="text-align: center;">
-        <a href="${resetLink}" class="cta-button">Reset Password</a>
-      </div>
-
-      <div class="message" style="margin-top: 30px; color: #718096; font-size: 13px;">
-        If the button doesn't work, copy and paste this link into your browser:<br/>
-        <code style="color: #667eea; word-break: break-all;">${resetLink}</code>
-      </div>
-    </div>
-
-    <div class="footer">
-      <div class="footer-text">
-        © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Password Reset Request – ShareMyRide',
-      html: html,
+    logEmailActionBuilt(cid, 'password-reset', email);
+    return {
+      success: true,
+      emailAction: buildAction('password-reset', {
+        to_email: email,
+        to_name: name || 'there',
+        resetLink,
+        resetCode: resetToken,
+        expiresInMinutes: 15,
+      }),
     };
-
-    logEmailStart(cid, 'Password_Reset', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-
-    if (result.error) {
-      throw new Error(result.error.message || 'Failed to send reset email');
-    }
-
-    return result.data;
-  } catch (error) { 
-    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendPasswordResetEmail:`, error);
+  } catch (error) {
+    console.error(`[${cid}] ❌ FAILURE building sendPasswordResetEmail action:`, error);
     throw error;
   }
 };
 
 /**
- * Send welcome email
+ * Welcome email
  */
 const sendWelcomeEmail = async (email, name) => {
   const cid = getCorrelationId();
   try {
-
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to ShareMyRide</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
-    .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; }
-    .logo { font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 10px; }
-    .content { padding: 40px 30px; }
-    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 15px; }
-    .message { color: #4a5568; font-size: 15px; line-height: 1.8; margin-bottom: 20px; }
-    .features { margin: 30px 0; }
-    .feature { display: flex; gap: 12px; margin: 15px 0; }
-    .feature-icon { font-size: 24px; }
-    .feature-text { color: #4a5568; }
-    .footer { background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; }
-    .footer-text { color: #718096; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">🚗 ShareMyRide</div>
-    </div>
-
-    <div class="content">
-      <div class="greeting">Welcome to ShareMyRide, ${name || 'there'}! 🎉</div>
-      
-      <div class="message">
-        Your account has been verified successfully! You're now ready to start sharing rides and enjoying the benefits of our community.
-      </div>
-
-      <div class="features">
-        <div class="feature">
-          <div class="feature-icon">🚗</div>
-          <div class="feature-text"><strong>Find and Share Rides</strong> – Connect with other travelers and save money on transportation.</div>
-        </div>
-        <div class="feature">
-          <div class="feature-icon">💰</div>
-          <div class="feature-text"><strong>Affordable Travel</strong> – Share costs and enjoy lower fares compared to regular taxis.</div>
-        </div>
-        <div class="feature">
-          <div class="feature-icon">⭐</div>
-          <div class="feature-text"><strong>Safe Community</strong> – All users are verified to ensure a safe and trustworthy experience.</div>
-        </div>
-        <div class="feature">
-          <div class="feature-icon">📱</div>
-          <div class="feature-text"><strong>Easy Booking</strong> – Simple, intuitive interface to book rides anytime, anywhere.</div>
-        </div>
-      </div>
-
-      <div class="message">
-        Get started today and explore our available rides or post your own trip!
-      </div>
-    </div>
-
-    <div class="footer">
-      <div class="footer-text">
-        © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Welcome to ShareMyRide! 🚗',
-      html: html,
+    logEmailActionBuilt(cid, 'welcome', email);
+    return {
+      success: true,
+      emailAction: buildAction('welcome', {
+        to_email: email,
+        to_name: name || 'there',
+      }),
     };
-
-    logEmailStart(cid, 'Welcome_Email', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-
-    if (result.error) {
-      throw new Error(`Resend Welcome Error: ${result.error.message}`);
-    }
-    return result.data;
   } catch (error) {
-    console.error(`[${cid}] ❌ CRITICAL FAILURE in sendWelcomeEmail:`, error);
+    console.error(`[${cid}] ❌ FAILURE building sendWelcomeEmail action:`, error);
     throw error;
   }
 };
 
 /**
- * Send a pure test email for debugging
+ * Diagnostic test "email" — now just returns the action payload
+ * so you can verify the EmailJS wiring without hitting any provider.
  */
 const sendTestEmail = async (toEmail) => {
   const cid = getCorrelationId();
-  console.info(`[${cid}] Running Resend Diagnostic Test...`);
-  
-  const mailOptions = {
-    from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
-    to: toEmail,
-    subject: `Resend Diagnostic Test - ${cid}`,
-    html: `<p>Testing Resend integration. Correlation ID: <strong>${cid}</strong></p><p>Timestamp: ${new Date().toISOString()}</p>`
+  console.info(`[${cid}] Running EmailJS Diagnostic (payload-only)...`);
+
+  const payload = {
+    to_email: toEmail,
+    correlationId: cid,
+    timestamp: new Date().toISOString(),
   };
 
-  try {
-    logEmailStart(cid, 'DIAGNOSTIC_TEST', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-    
-    return {
-      success: !result.error,
-      resendResponse: result.data || null,
-      resendError: result.error || null,
-      correlationId: cid
-    };
-  } catch (err) {
-    console.error(`[${cid}] Diagnostic catch block triggered:`, err);
-    throw err;
-  }
+  logEmailActionBuilt(cid, 'diagnostic-test', toEmail);
+
+  return {
+    success: true,
+    correlationId: cid,
+    emailAction: buildAction('diagnostic-test', payload),
+  };
 };
 
 /**
- * Send inquiry received email to the user
+ * Inquiry received (user-facing acknowledgment)
  */
 const sendInquiryReceivedEmail = async (inquiry) => {
   const cid = getCorrelationId();
   try {
     const isReport = ['report', 'bug', 'safety'].includes(inquiry.inquiryType);
-    const label = isReport ? 'Report Received' : 'Inquiry Received';
-    
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${label} – ShareMyRide</title>
-  <style>
-    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
-    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-    .header { background: linear-gradient(135deg, #3b82f6, #1d4ed8); padding: 30px 20px; text-align: center; color: white; }
-    .content { padding: 30px 20px; line-height: 1.6; }
-    .ticket-badge { display: inline-block; background: #eff6ff; color: #1d4ed8; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-family: monospace; font-size: 14px; margin-bottom: 20px; }
-    .details { background: #f8fafc; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6; margin: 20px 0; }
-    .footer { text-align: center; font-size: 12px; color: #64748b; padding: 20px; background: #f1f5f9; border-top: 1px solid #e2e8f0; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h2>🚗 ShareMyRide Support</h2>
-    </div>
-    <div class="content">
-      <h3>Hello ${inquiry.name},</h3>
-      <p>Thank you for reaching out to us. We have received your submission and our team is reviewing it.</p>
-      
-      <div class="ticket-badge">Reference ID: ${inquiry.ticketId}</div>
-      
-      <div class="details">
-        <strong>Subject:</strong> ${inquiry.subject}<br/>
-        <strong>Category:</strong> ${inquiry.inquiryType.toUpperCase()}<br/>
-        <strong>Status:</strong> Pending Review
-      </div>
-      
-      <p>We typically respond to all inquiries within 24 to 48 hours. If this is a high-priority safety concern, our Trust & Safety team will prioritize it.</p>
-      
-      <p>Best regards,<br/>ShareMyRide Team</p>
-    </div>
-    <div class="footer">
-      © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} <${process.env.EMAIL_USER}>`,
-      to: inquiry.email,
-      subject: `[${inquiry.ticketId}] ${label}: ${inquiry.subject}`,
-      html
+    logEmailActionBuilt(cid, 'inquiry-received', inquiry.email);
+    return {
+      success: true,
+      emailAction: buildAction('inquiry-received', {
+        to_email: inquiry.email,
+        to_name: inquiry.name,
+        ticketId: inquiry.ticketId,
+        subject: inquiry.subject,
+        inquiryType: inquiry.inquiryType,
+        label: isReport ? 'Report Received' : 'Inquiry Received',
+      }),
     };
-
-    logEmailStart(cid, 'Inquiry_Received', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-    return result.data;
   } catch (error) {
-    console.error(`[${cid}] Error sending inquiry confirmation email:`, error);
+    console.error(`[${cid}] Error building inquiry-received action:`, error);
   }
 };
 
 /**
- * Send admin notification email for high priority inquiries
+ * Admin alert for high priority inquiries
  */
 const sendInquiryNotificationToAdmin = async (inquiry) => {
   const cid = getCorrelationId();
   try {
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>New Operations Alert – ShareMyRide</title>
-  <style>
-    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
-    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-    .header { background: #e11d48; padding: 20px; text-align: center; color: white; }
-    .content { padding: 30px 20px; line-height: 1.6; }
-    .details { background: #fff1f2; border-left: 4px solid #e11d48; padding: 15px; border-radius: 8px; margin: 20px 0; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h2>⚠️ Operations Alert: ${inquiry.inquiryType.toUpperCase()}</h2>
-    </div>
-    <div class="content">
-      <h3>Dear Admin,</h3>
-      <p>A new high-priority or actionable submission has been logged on the platform.</p>
-      
-      <div class="details">
-        <strong>Ticket ID:</strong> ${inquiry.ticketId}<br/>
-        <strong>From:</strong> ${inquiry.name} (${inquiry.email})<br/>
-        <strong>Type:</strong> ${inquiry.inquiryType}<br/>
-        <strong>Subject:</strong> ${inquiry.subject}<br/>
-        <strong>Message:</strong><br/>
-        <p style="white-space: pre-wrap; font-style: italic; color: #475569;">"${inquiry.message}"</p>
-      </div>
-
-      <p>Please log in to the Founder / Admin Dashboard to respond or assign this ticket.</p>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Operations <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER, // Admin email
-      subject: `⚠️ [ALERT] [${inquiry.ticketId}] New ${inquiry.inquiryType}: ${inquiry.subject}`,
-      html
+    const adminEmail = process.env.EMAIL_USER || process.env.EMAIL_CONTACT;
+    logEmailActionBuilt(cid, 'inquiry-admin-alert', adminEmail);
+    return {
+      success: true,
+      emailAction: buildAction('inquiry-admin-alert', {
+        to_email: adminEmail,
+        ticketId: inquiry.ticketId,
+        fromName: inquiry.name,
+        fromEmail: inquiry.email,
+        inquiryType: inquiry.inquiryType,
+        subject: inquiry.subject,
+        message: inquiry.message,
+      }),
     };
-
-    logEmailStart(cid, 'Inquiry_Admin_Alert', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-    return result.data;
   } catch (error) {
-    console.error(`[${cid}] Error sending admin alert:`, error);
+    console.error(`[${cid}] Error building inquiry-admin-alert action:`, error);
   }
 };
 
 /**
- * Send reply email to user
+ * Reply email to user
  */
 const sendInquiryReplyEmail = async (inquiry, replyMessage) => {
   const cid = getCorrelationId();
   try {
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Response to ticket ${inquiry.ticketId}</title>
-  <style>
-    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
-    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-    .header { background: #2563eb; padding: 20px; text-align: center; color: white; }
-    .content { padding: 30px 20px; line-height: 1.6; }
-    .reply-box { background: #eff6ff; border-left: 4px solid #2563eb; padding: 15px; border-radius: 8px; margin: 20px 0; }
-    .quote-box { background: #f8fafc; border-left: 4px solid #cbd5e1; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 13px; color: #64748b; }
-    .footer { text-align: center; font-size: 12px; color: #64748b; padding: 20px; background: #f1f5f9; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h2>🚗 ShareMyRide Support</h2>
-    </div>
-    <div class="content">
-      <h3>Hello ${inquiry.name},</h3>
-      <p>Our team has responded to your ticket <strong>${inquiry.ticketId}</strong>.</p>
-      
-      <div class="reply-box">
-        <strong>Team Response:</strong><br/>
-        <p style="white-space: pre-wrap; color: #1e293b;">${replyMessage}</p>
-      </div>
-
-      <div class="quote-box">
-        <strong>Original Message:</strong><br/>
-        "${inquiry.message}"
-      </div>
-      
-      <p>If you have any further details to add, you can reply directly to this thread or update it via our support page.</p>
-      <p>Thank you for using ShareMyRide.</p>
-    </div>
-    <div class="footer">
-      © ${new Date().getFullYear()} ShareMyRide. All rights reserved.
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Support <${process.env.EMAIL_USER}>`,
-      to: inquiry.email,
-      subject: `Re: [${inquiry.ticketId}] Support Response: ${inquiry.subject}`,
-      html
+    logEmailActionBuilt(cid, 'inquiry-reply', inquiry.email);
+    return {
+      success: true,
+      emailAction: buildAction('inquiry-reply', {
+        to_email: inquiry.email,
+        to_name: inquiry.name,
+        ticketId: inquiry.ticketId,
+        subject: inquiry.subject,
+        originalMessage: inquiry.message,
+        replyMessage,
+      }),
     };
-
-    logEmailStart(cid, 'Inquiry_Reply', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-    return result.data;
   } catch (error) {
-    console.error(`[${cid}] Error sending reply email:`, error);
+    console.error(`[${cid}] Error building inquiry-reply action:`, error);
   }
 };
 
 /**
- * Send blog moderation updates to author
+ * Blog moderation status notification
  */
 const sendBlogStatusNotification = async (blogPost, status, remark) => {
   const cid = getCorrelationId();
   try {
     const isApproved = status === 'published';
-    const title = isApproved ? 'Your blog post has been published! 🎉' : 'Update regarding your blog post ✍️';
-    const color = isApproved ? '#10b981' : '#f59e0b';
-    
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Blog Moderation Update</title>
-  <style>
-    body { font-family: sans-serif; background-color: #f8fafc; color: #1e293b; padding: 20px; }
-    .card { background: white; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
-    .header { background: ${color}; padding: 25px; text-align: center; color: white; }
-    .content { padding: 30px 20px; line-height: 1.6; }
-    .remark { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; margin: 20px 0; font-style: italic; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h2>${title}</h2>
-    </div>
-    <div class="content">
-      <h3>Hello ${blogPost.author?.name || 'Author'},</h3>
-      <p>We have processed the review for your blog post: <strong>"${blogPost.title}"</strong>.</p>
-      
-      <p>Status: <strong style="color: ${color}; text-transform: uppercase;">${status}</strong></p>
-
-      ${remark ? `
-        <div class="remark">
-          <strong>Moderator Remarks:</strong><br/>
-          "${remark}"
-        </div>
-      ` : ''}
-
-      ${isApproved 
-        ? `<p>Your post is now live! You can view it under our community blog section.</p>`
-        : `<p>Please review the moderator's comments above and update your draft if necessary before resubmitting.</p>`
-      }
-
-      <p>Best regards,<br/>ShareMyRide Editorial Team</p>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Editorial <${process.env.EMAIL_USER}>`,
-      to: blogPost.author?.email,
-      subject: `[ShareMyRide Blog] Moderation Update: "${blogPost.title}"`,
-      html
+    logEmailActionBuilt(cid, 'blog-status', blogPost.author?.email);
+    return {
+      success: true,
+      emailAction: buildAction('blog-status', {
+        to_email: blogPost.author?.email,
+        to_name: blogPost.author?.name || 'Author',
+        blogTitle: blogPost.title,
+        status,
+        remark: remark || null,
+        isApproved,
+      }),
     };
-
-    logEmailStart(cid, 'Blog_Moderation_Notification', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-    return result.data;
   } catch (error) {
-    console.error(`[${cid}] Error sending blog status email:`, error);
+    console.error(`[${cid}] Error building blog-status action:`, error);
   }
 };
 
 /**
- * Unified business notification email to admin/founder inbox
- * Used for all operational events that need visibility at top level
+ * Unified business/admin notification (founder inbox)
  */
 const sendBusinessNotificationToAdmin = async (inquiry) => {
   const cid = getCorrelationId();
   try {
-    const priorityColor = {
-      critical: '#dc2626',
-      high: '#ea580c',
-      medium: '#f59e0b',
-      low: '#3b82f6'
-    }[inquiry.priority] || '#3b82f6';
-
-    const inquiryTypeEmoji = {
-      'contact': '📧',
-      'support': '🆘',
-      'help_request': '❓',
-      'issue_report': '🐛',
-      'partnership': '🤝',
-      'corporate': '🏢',
-      'sponsorship': '💼',
-      'media': '📰',
-      'community_feedback': '💬',
-      'feedback': '⭐',
-      'feature_request': '💡',
-      'blog_submission': '✍️',
-      'blog_report': '🚫',
-      'comment_report': '⚠️',
-      'user_report': '👤',
-      'ride_report': '🚗',
-      'safety_concern': '🚨',
-      'fraud_report': '🚨',
-      'security_issue': '🔒',
-      'guideline_violation': '⛔',
-      'account_request': '👤',
-      'data_request': '📊',
-      'deletion_request': '🗑️',
-      'bug': '🐛',
-      'technical_issue': '⚙️',
-      'other': '📝'
-    };
-
+    const adminEmail = process.env.EMAIL_CONTACT || 'sharemyride.contact@gmail.com';
     const dashboardUrl = `${process.env.FRONTEND_URL}/admin/founder-inbox/${inquiry._id}`;
 
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>ShareMyRide Business Alert</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; color: #1e293b; line-height: 1.6; }
-    .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; color: white; }
-    .header-title { font-size: 18px; font-weight: 700; margin-bottom: 5px; }
-    .priority-badge { display: inline-block; background: ${priorityColor}; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 10px; }
-    .content { padding: 30px; }
-    .section-title { font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; margin-top: 20px; margin-bottom: 10px; letter-spacing: 0.5px; }
-    .info-table { width: 100%; border-collapse: collapse; }
-    .info-row { border-bottom: 1px solid #e2e8f0; }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { padding: 12px 0; font-weight: 600; color: #475569; width: 130px; vertical-align: top; }
-    .info-value { padding: 12px 0; color: #1e293b; }
-    .ticket-id { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 15px; border-radius: 6px; font-family: monospace; font-weight: 600; color: #1e40af; margin: 15px 0; }
-    .message-box { background: #f8fafc; border-left: 4px solid #64748b; padding: 15px; border-radius: 6px; margin: 15px 0; white-space: pre-wrap; color: #1e293b; font-size: 14px; }
-    .action-button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 20px 0; }
-    .action-button:hover { background: #2563eb; }
-    .footer { background: #f8fafc; padding: 20px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
-    .footer-link { color: #3b82f6; text-decoration: none; margin: 0 10px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="header-title">${inquiryTypeEmoji[inquiry.inquiryType] || '📝'} ${inquiry.inquiryType.replace(/_/g, ' ').toUpperCase()}</div>
-      <div class="priority-badge">${inquiry.priority.toUpperCase()} PRIORITY</div>
-    </div>
-
-    <div class="content">
-      <h2>New Inquiry Requires Attention</h2>
-      
-      <div class="ticket-id">${inquiry.ticketId}</div>
-
-      <table class="info-table">
-        <tr class="info-row">
-          <td class="info-label">From</td>
-          <td class="info-value"><strong>${inquiry.name}</strong> • ${inquiry.email} ${inquiry.phone ? `• ${inquiry.phone}` : ''}</td>
-        </tr>
-        <tr class="info-row">
-          <td class="info-label">Subject</td>
-          <td class="info-value"><strong>${inquiry.subject}</strong></td>
-        </tr>
-        <tr class="info-row">
-          <td class="info-label">Category</td>
-          <td class="info-value">${inquiry.inquiryType.replace(/_/g, ' ')}</td>
-        </tr>
-        <tr class="info-row">
-          <td class="info-label">Submitted</td>
-          <td class="info-value">${moment(inquiry.createdAt).format('MMMM D, YYYY [at] h:mm A')}</td>
-        </tr>
-        ${inquiry.userId ? `
-        <tr class="info-row">
-          <td class="info-label">User ID</td>
-          <td class="info-value"><code style="font-family: monospace; font-size: 12px;">${inquiry.userId}</code></td>
-        </tr>
-        ` : ''}
-      </table>
-
-      <div class="section-title">Message</div>
-      <div class="message-box">${inquiry.message}</div>
-
-      ${inquiry.metadata && inquiry.metadata.additionalNotes ? `
-      <div class="section-title">Additional Notes</div>
-      <div class="message-box">${inquiry.metadata.additionalNotes}</div>
-      ` : ''}
-
-      <div style="text-align: center;">
-        <a href="${dashboardUrl}" class="action-button">📊 View in Founder Inbox</a>
-      </div>
-
-      <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 15px; border-radius: 6px; margin-top: 20px; font-size: 13px;">
-        <strong>⏱️ Next Steps:</strong> Review this inquiry, assign to an admin if needed, and update status to keep tracking accurate.
-      </div>
-    </div>
-
-    <div class="footer">
-      <p>© ${new Date().getFullYear()} ShareMyRide Business Operations</p>
-      <p><a href="${dashboardUrl}" class="footer-link">View Full Details</a></p>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Operations <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_CONTACT || 'sharemyride.contact@gmail.com',
-      subject: `[${inquiry.priority.toUpperCase()}] [${inquiry.ticketId}] ${inquiry.inquiryType.replace(/_/g, ' ')}: ${inquiry.subject}`,
-      html
+    logEmailActionBuilt(cid, 'business-notification', adminEmail);
+    return {
+      success: true,
+      emailAction: buildAction('business-notification', {
+        to_email: adminEmail,
+        ticketId: inquiry.ticketId,
+        fromName: inquiry.name,
+        fromEmail: inquiry.email,
+        fromPhone: inquiry.phone || null,
+        inquiryType: inquiry.inquiryType,
+        priority: inquiry.priority,
+        subject: inquiry.subject,
+        message: inquiry.message,
+        submittedAt: moment(inquiry.createdAt).format('MMMM D, YYYY [at] h:mm A'),
+        userId: inquiry.userId || null,
+        additionalNotes: inquiry.metadata?.additionalNotes || null,
+        dashboardUrl,
+      }),
     };
-
-    logEmailStart(cid, 'Business_Notification', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-    return result.data;
   } catch (error) {
-    console.error(`[${cid}] Error sending business notification:`, error);
+    console.error(`[${cid}] Error building business-notification action:`, error);
   }
 };
 
 /**
- * Send user confirmation email with ticket number
- * Standard acknowledgment for all user submissions
+ * Standard acknowledgment email with ticket number
  */
 const sendUserConfirmationEmail = async (inquiry) => {
   const cid = getCorrelationId();
   try {
     const inquiryTypeName = inquiry.inquiryType.replace(/_/g, ' ');
-    const estimatedResponseTime = inquiry.priority === 'critical' ? '4-6 hours' : inquiry.priority === 'high' ? '12-24 hours' : '24-48 hours';
+    const estimatedResponseTime =
+      inquiry.priority === 'critical' ? '4-6 hours' :
+      inquiry.priority === 'high' ? '12-24 hours' : '24-48 hours';
 
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>We received your ${inquiryTypeName}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f5f7fa; color: #1a202c; line-height: 1.6; }
-    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; }
-    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; color: white; }
-    .logo { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
-    .content { padding: 40px 30px; }
-    .greeting { font-size: 20px; font-weight: 600; color: #1a202c; margin-bottom: 20px; }
-    .success-icon { font-size: 48px; text-align: center; margin-bottom: 20px; }
-    .ticket-box { background: #eff6ff; border: 2px dashed #3b82f6; border-radius: 8px; padding: 20px; text-align: center; margin: 25px 0; }
-    .ticket-label { font-size: 12px; color: #1e40af; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
-    .ticket-id { font-size: 24px; font-weight: 800; color: #1e40af; font-family: monospace; }
-    .info-section { background: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 6px; margin: 20px 0; }
-    .info-section strong { display: block; margin-bottom: 5px; }
-    .timeline { margin: 25px 0; }
-    .timeline-item { display: flex; gap: 15px; margin-bottom: 15px; }
-    .timeline-icon { width: 30px; height: 30px; border-radius: 50%; background: #dbeafe; color: #1e40af; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
-    .timeline-content { padding-top: 2px; }
-    .timeline-content strong { color: #1a202c; }
-    .timeline-content p { color: #64748b; font-size: 14px; }
-    .footer { background: #f8fafc; padding: 30px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">🚗 ShareMyRide</div>
-      <div style="font-size: 18px; margin-top: 10px;">We Got Your ${inquiryTypeName}!</div>
-    </div>
+    logEmailActionBuilt(cid, 'user-confirmation', inquiry.email);
 
-    <div class="content">
-      <div class="success-icon">✅</div>
-      <h1 class="greeting">Thanks for reaching out, ${inquiry.name}!</h1>
+    const emailAction = buildAction('user-confirmation', {
+      to_email: inquiry.email,
+      to_name: inquiry.name,
+      ticketId: inquiry.ticketId,
+      subject: inquiry.subject,
+      inquiryTypeName,
+      messagePreview: inquiry.message.substring(0, 150) + (inquiry.message.length > 150 ? '...' : ''),
+      estimatedResponseTime,
+    });
 
-      <p>Your ${inquiryTypeName} has been successfully received and logged in our system. We'll review it carefully and get back to you soon.</p>
-
-      <div class="ticket-box">
-        <div class="ticket-label">Your Reference Number</div>
-        <div class="ticket-id">${inquiry.ticketId}</div>
-        <p style="margin-top: 10px; font-size: 12px; color: #64748b;">Keep this number handy for future reference</p>
-      </div>
-
-      <div class="info-section">
-        <strong>What You Submitted:</strong>
-        <div style="margin-top: 8px;">
-          <div><strong style="color: #1a202c;">Subject:</strong> ${inquiry.subject}</div>
-          <div style="margin-top: 5px; color: #64748b; font-size: 14px; white-space: pre-wrap;">"${inquiry.message.substring(0, 150)}${inquiry.message.length > 150 ? '...' : ''}"</div>
-        </div>
-      </div>
-
-      <div class="timeline">
-        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 15px; color: #1a202c;">📋 What Happens Next</h3>
-        <div class="timeline-item">
-          <div class="timeline-icon">1</div>
-          <div class="timeline-content">
-            <strong>Received</strong>
-            <p>Your ${inquiryTypeName} is now in our system and marked as "New"</p>
-          </div>
-        </div>
-        <div class="timeline-item">
-          <div class="timeline-icon">2</div>
-          <div class="timeline-content">
-            <strong>Review</strong>
-            <p>Our team will review your submission within ${estimatedResponseTime}</p>
-          </div>
-        </div>
-        <div class="timeline-item">
-          <div class="timeline-icon">3</div>
-          <div class="timeline-content">
-            <strong>Response</strong>
-            <p>We'll send you an update via email with next steps and any questions we may have</p>
-          </div>
-        </div>
-      </div>
-
-      <p style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 15px; border-radius: 6px; margin: 20px 0; font-size: 14px;">
-        <strong>⏱️ Estimated Response Time:</strong> ${estimatedResponseTime}
-      </p>
-
-      <p style="color: #64748b; font-size: 14px;">
-        If you need immediate assistance, you can reply to this email or contact our support team directly.
-      </p>
-    </div>
-
-    <div class="footer">
-      <p>© ${new Date().getFullYear()} ShareMyRide. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'ShareMyRide'} Support <${process.env.EMAIL_USER}>`,
-      to: inquiry.email,
-      subject: `We received your ${inquiryTypeName} – Reference: ${inquiry.ticketId}`,
-      html
-    };
-
-    logEmailStart(cid, 'User_Confirmation', mailOptions);
-    const result = await resend.emails.send(mailOptions);
-    logEmailEnd(cid, result);
-    
-    // Track that we sent confirmation email
-    if (!result.error && result.data) {
+    // Preserve original side-effect: mark confirmation email as "sent"
+    // on the in-memory inquiry doc so the caller's existing .save() logic
+    // (in the controller) continues to work unmodified.
+    if (inquiry.emailsSent) {
       inquiry.emailsSent.confirmationEmail = true;
       inquiry.emailsSent.confirmationEmailAt = new Date();
     }
-    
-    return result.data;
+
+    return { success: true, emailAction };
   } catch (error) {
-    console.error(`[${cid}] Error sending user confirmation email:`, error);
+    console.error(`[${cid}] Error building user-confirmation action:`, error);
   }
 };
 
-// Export functions
+// Export functions — same names, same shape, no Resend dependency
 module.exports = {
   sendBookingConfirmationEmails,
   sendPasswordResetEmail,
@@ -1313,5 +437,5 @@ module.exports = {
   sendInquiryReplyEmail,
   sendBlogStatusNotification,
   sendBusinessNotificationToAdmin,
-  sendUserConfirmationEmail
+  sendUserConfirmationEmail,
 };

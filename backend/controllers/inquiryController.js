@@ -4,11 +4,13 @@ const { logAction } = require('../services/auditService');
 
 /**
  * INQUIRY EVENT HANDLER
- * Creates record → sends confirmation email → notifies admin → logs audit
+ * Creates record → builds confirmation emailAction → builds admin emailAction → logs audit
  *
- * NOTE: Email methods (sendUserConfirmationEmail, sendAdminNotificationEmail)
- * are stubbed here. Wire them up once your emailService is ready.
- * The controller will not fail if email sending throws — it logs and continues.
+ * emailService no longer sends mail directly (EmailJS migration). Each
+ * emailService.send* function instead returns { success, emailAction } where
+ * emailAction = { template, payload }. This controller collects those
+ * actions and returns them to the frontend, which is responsible for
+ * actually calling emailjs.send(serviceId, templateId, payload).
  */
 exports.createInquiry = async (req, res) => {
     try {
@@ -23,7 +25,6 @@ exports.createInquiry = async (req, res) => {
         }
 
         // ── Type validation against schema enum ───────────────────────────────
-        // The Inquiry model accepts these exact values:
         const VALID_TYPES = [
             'contact_general', 'contact_partnership', 'contact_corporate',
             'contact_community', 'contact_media', 'contact_feedback',
@@ -63,7 +64,6 @@ exports.createInquiry = async (req, res) => {
             priority,
             status: 'open',
 
-            // Structured report fields live under `meta`
             meta: {
                 affectedPage: meta?.affectedPage || undefined,
                 stepsToReproduce: meta?.stepsToReproduce || undefined,
@@ -75,7 +75,6 @@ exports.createInquiry = async (req, res) => {
                 severity: meta?.severity || (priority === 'critical' ? 'critical' : 'medium'),
             },
 
-            // Email tracking defaults (updated after send attempts below)
             emailSentToAdmin: false,
             emailSentToUser: false,
         });
@@ -83,51 +82,40 @@ exports.createInquiry = async (req, res) => {
         await inquiry.save();
 
         // ── Email: confirmation to user ───────────────────────────────────────
-        // Replace stub with real implementation once emailService is wired.
+        // sendUserConfirmationEmail expects the FULL inquiry document — it reads
+        // inquiry.email, inquiry.message, inquiry.priority, inquiry.emailsSent, etc.
+        let userConfirmationAction = null;
         try {
             if (typeof emailService.sendUserConfirmationEmail === 'function') {
-                await emailService.sendUserConfirmationEmail({
-                    to: inquiry.email,
-                    name: inquiry.name,
-                    ticketNumber: inquiry.ticketNumber,
-                    subject: inquiry.subject,
-                    type: inquiry.type,
-                });
-                inquiry.emailSentToUser = true;
-                inquiry.confirmationEmailAt = new Date();
-                inquiry.emailsSent.confirmationEmail = true;
-                inquiry.emailsSent.confirmationEmailAt = new Date();
+                const result = await emailService.sendUserConfirmationEmail(inquiry);
+                if (result?.emailAction) {
+                    userConfirmationAction = result.emailAction;
+                    inquiry.emailSentToUser = true;
+                    inquiry.confirmationEmailAt = new Date();
+                    inquiry.emailsSent.confirmationEmail = true;
+                    inquiry.emailsSent.confirmationEmailAt = new Date();
+                }
             }
         } catch (emailErr) {
             // Non-fatal — log but don't fail the request
-            console.error(`[Inquiry] Confirmation email failed (${inquiry.ticketNumber}):`, emailErr.message);
+            console.error(`[Inquiry] Confirmation emailAction build failed (${inquiry.ticketNumber}):`, emailErr.message);
         }
 
         // ── Email: alert to admin ─────────────────────────────────────────────
+        let adminNotificationAction = null;
         try {
-            if (typeof emailService.sendAdminNotificationEmail === 'function') {
-                await emailService.sendAdminNotificationEmail({
-                    ticketNumber: inquiry.ticketNumber,
-                    type: inquiry.type,
-                    priority: inquiry.priority,
-                    name: inquiry.name,
-                    email: inquiry.email,
-                    subject: inquiry.subject,
-                    message: inquiry.message,
-                    meta: inquiry.meta,
-                });
-                inquiry.emailSentToAdmin = true;
-                inquiry.adminEmailAt = new Date();
-                inquiry.emailsSent.adminAlertEmail = true;
-                inquiry.emailsSent.adminAlertEmailAt = new Date();
-            } else if (typeof emailService.sendBusinessNotificationToAdmin === 'function') {
-                // Backward compat with original name
-                await emailService.sendBusinessNotificationToAdmin(inquiry);
-                inquiry.emailSentToAdmin = true;
-                inquiry.adminEmailAt = new Date();
+            if (typeof emailService.sendBusinessNotificationToAdmin === 'function') {
+                const result = await emailService.sendBusinessNotificationToAdmin(inquiry);
+                if (result?.emailAction) {
+                    adminNotificationAction = result.emailAction;
+                    inquiry.emailSentToAdmin = true;
+                    inquiry.adminEmailAt = new Date();
+                    inquiry.emailsSent.adminAlertEmail = true;
+                    inquiry.emailsSent.adminAlertEmailAt = new Date();
+                }
             }
         } catch (emailErr) {
-            console.error(`[Inquiry] Admin notification email failed (${inquiry.ticketNumber}):`, emailErr.message);
+            console.error(`[Inquiry] Admin notification emailAction build failed (${inquiry.ticketNumber}):`, emailErr.message);
         }
 
         // Save email tracking updates
@@ -161,6 +149,12 @@ exports.createInquiry = async (req, res) => {
                 ticketNumber: inquiry.ticketNumber,
                 status: inquiry.status,
                 estimatedResponseTime: etaMap[inquiry.priority] || '24–48 hours',
+            },
+            // NEW: frontend uses these to fire emailjs.send() client-side.
+            // Each is either { template, payload } or null if it couldn't be built.
+            emailActions: {
+                userConfirmation: userConfirmationAction,
+                adminNotification: adminNotificationAction,
             },
         });
 
@@ -338,13 +332,12 @@ exports.addInternalNote = async (req, res) => {
 // POST /api/inquiries/:id/notes
 // ─────────────────────────────────────────────────────────────────────────────
 exports.addInquiryNote = async (req, res) => {
-    // Re-uses internalNotes array (same schema field)
     req.body.note = req.body.note || req.body.text;
     return exports.addInternalNote(req, res);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Admin: Reply to inquiry (sends email + marks resolved)
+// Admin: Reply to inquiry — now ALSO returns an emailAction in the response
 // POST /api/inquiries/:id/reply
 // ─────────────────────────────────────────────────────────────────────────────
 exports.replyInquiry = async (req, res) => {
@@ -361,22 +354,30 @@ exports.replyInquiry = async (req, res) => {
         inquiry.status = 'replied';
         await inquiry.save();
 
-        // Send email reply (stub — wire up when emailService ready)
+        let replyEmailAction = null;
         try {
             if (typeof emailService.sendInquiryReplyEmail === 'function') {
-                await emailService.sendInquiryReplyEmail(inquiry, message);
-                inquiry.adminReplies[inquiry.adminReplies.length - 1].emailSent = true;
-                await inquiry.save();
+                const result = await emailService.sendInquiryReplyEmail(inquiry, message);
+                if (result?.emailAction) {
+                    replyEmailAction = result.emailAction;
+                    inquiry.adminReplies[inquiry.adminReplies.length - 1].emailSent = true;
+                    await inquiry.save();
+                }
             }
         } catch (emailErr) {
-            console.error('[Inquiry] Reply email failed:', emailErr.message);
+            console.error('[Inquiry] Reply emailAction build failed:', emailErr.message);
         }
 
         try {
             await logAction({ actor: req.admin || 'admin', action: 'inquiry.reply', resource: 'Inquiry', resourceId: inquiry._id, resourceRef: inquiry.ticketNumber, note: 'Admin replied to inquiry', req });
         } catch (_) { }
 
-        return res.status(200).json({ success: true, message: 'Reply sent', data: inquiry });
+        return res.status(200).json({
+            success: true,
+            message: 'Reply sent',
+            data: inquiry,
+            emailAction: replyEmailAction,
+        });
     } catch (error) {
         console.error('[Inquiry] Reply error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
