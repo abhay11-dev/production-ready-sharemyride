@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { fetchRequests, updateRequestStatus } from '../../services/adminService.js';
+import emailjs from '@emailjs/browser';
+import {
+  fetchRequests,
+  updateRequestStatus,
+  updateEnquiryAction,   // NEW
+  updateReportAction,    // NEW
+} from '../../services/adminService.js';
 import RequestDetailsModal from './RequestDetailsModal.jsx';
 import UserDetailModal from './UserDetailModal.jsx';
 import RideDetailModal from './RideDetailModal.jsx';
@@ -12,6 +18,62 @@ import BookingDetailModal from './BookingDetailModal.jsx';
 //   export { adminAxios };
 // Then import it here as the drop-in replacement for api:
 import { adminAxios as api } from '../../services/adminService.js';
+
+/* ─── EmailJS config + firing helpers ───────────────────────────────────
+   The backend never sends email itself — every admin action (status change
+   and/or reply) on an enquiry/report returns an `emailActions` object with
+   pre-built { template, payload } actions. This dashboard is responsible for
+   actually firing them via emailjs.send(), same pattern as ContactUs.jsx /
+   Report.jsx use for the user-facing confirmation email.
+
+   Two possible actions come back from updateEnquiryAction / updateReportAction:
+     - emailActions.userNotification → only present if admin wrote a reply;
+       goes to the ORIGINAL SUBMITTER's inbox.
+     - emailActions.adminSync        → always present; goes to the ADMIN
+       inbox, confirming the status/reply was saved and the user was (or
+       wasn't) notified. This is what keeps portal ↔ email ↔ admin in sync.
+─────────────────────────────────────────────────────────────────────── */
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+
+// Map each backend `template` key to its EmailJS template ID env var.
+// Add VITE_EMAILJS_TEMPLATE_ADMIN_REPLY and VITE_EMAILJS_TEMPLATE_ADMIN_SYNC
+// to frontend/.env (see setup notes at the bottom of this file).
+const EMAILJS_TEMPLATES = {
+  'admin-reply': import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_REPLY,
+  'admin-sync':  import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_SYNC,
+};
+
+async function fireEmailAction(action) {
+  if (!action?.template || !action?.payload) return { fired: false };
+  const templateId = EMAILJS_TEMPLATES[action.template];
+  if (!EMAILJS_SERVICE_ID || !templateId || !EMAILJS_PUBLIC_KEY) {
+    console.warn(`[EmailJS] Missing service/template/public key for "${action.template}" — skipping send.`);
+    return { fired: false };
+  }
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, templateId, action.payload, { publicKey: EMAILJS_PUBLIC_KEY });
+    return { fired: true };
+  } catch (err) {
+    console.error(`[EmailJS] Failed to send "${action.template}":`, err);
+    return { fired: false, error: err };
+  }
+}
+
+/**
+ * Fires whichever emailActions are present on an updateEnquiryAction /
+ * updateReportAction response, and returns a small summary so the caller
+ * can show an accurate toast (e.g. "Reply sent" vs "Status updated —
+ * admin sync sent").
+ */
+async function fireEmailActions(emailActions) {
+  if (!emailActions) return { userNotified: false, adminSynced: false };
+  const [userRes, syncRes] = await Promise.all([
+    emailActions.userNotification ? fireEmailAction(emailActions.userNotification) : Promise.resolve({ fired: false }),
+    emailActions.adminSync ? fireEmailAction(emailActions.adminSync) : Promise.resolve({ fired: false }),
+  ]);
+  return { userNotified: userRes.fired, adminSynced: syncRes.fired };
+}
 
 /* ─── Constants ─────────────────────────────────────────── */
 const TABS = [
@@ -66,9 +128,15 @@ const STATUS_MAP = {
   active:       { label: 'Active',      color: 'green'  },
   open:         { label: 'Open',        color: 'blue'   },
   in_progress:  { label: 'In Progress', color: 'purple' },
+  waiting_on_user: { label: 'Waiting on User', color: 'amber' },
+  replied:      { label: 'Replied',     color: 'purple' },
   resolved:     { label: 'Resolved',    color: 'green'  },
+  closed:       { label: 'Closed',      color: 'gray'   },
+  archived:     { label: 'Archived',    color: 'gray'   },
+  seen:         { label: 'Seen',        color: 'blue'   },
   critical:     { label: 'Critical',    color: 'red'    },
   high:         { label: 'High',        color: 'amber'  },
+  urgent:       { label: 'Urgent',      color: 'red'    },
   medium:       { label: 'Medium',      color: 'blue'   },
   low:          { label: 'Low',         color: 'gray'   },
   published:    { label: 'Published',   color: 'green'  },
@@ -157,9 +225,67 @@ function TableSkeleton({ cols = 6, rows = 8 }) {
   ));
 }
 
+/* ─── Reply composer (shared by Enquiries + Reports) ────────────────────
+   Renders: status selector, reply textarea, "Send" button. Calls
+   `onSubmit({ status, reply })` and expects the caller to handle the API
+   call + email firing + toast. Kept dumb/presentational on purpose so
+   both tabs can reuse it with different backend calls. ────────────────*/
+function ReplyComposer({ currentStatus, statusOptions, onSubmit, submitting }) {
+  const [status, setStatus] = useState(currentStatus || '');
+  const [reply, setReply]   = useState('');
+
+  const handleSend = () => {
+    if (!reply.trim() && status === currentStatus) {
+      toast.error('Write a reply or change the status first');
+      return;
+    }
+    onSubmit({ status: status !== currentStatus ? status : undefined, reply: reply.trim() || undefined });
+    setReply('');
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-xs font-bold uppercase text-gray-400">Status</label>
+        <select
+          value={status}
+          onChange={e => setStatus(e.target.value)}
+          className="text-xs font-semibold border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        >
+          {statusOptions.map(s => <option key={s} value={s}>{STATUS_MAP[s]?.label || s}</option>)}
+        </select>
+      </div>
+      <textarea
+        value={reply}
+        onChange={e => setReply(e.target.value)}
+        rows={3}
+        placeholder="Write a reply to send to the user's email…"
+        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none placeholder-gray-400"
+      />
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-gray-400">
+          {reply.trim() ? 'This will email the user their reply.' : 'No reply text — only the status will change.'}
+        </p>
+        <button
+          onClick={handleSend}
+          disabled={submitting}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+        >
+          {submitting ? (
+            <>
+              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+              Sending…
+            </>
+          ) : 'Save & Notify'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Overview Tab ──────────────────────────────────────── */
 function OverviewTab({ analytics, enquiries, reports, verRequests }) {
-  const urgent  = reports.filter(r => r.severity === 'critical' || r.severity === 'high');
+  const urgent  = reports.filter(r => (r.meta?.severity || r.severity) === 'critical' || (r.meta?.severity || r.severity) === 'high');
   const pending = verRequests.filter(r => r.status === 'submitted' || r.status === 'under_review');
 
   return (
@@ -180,7 +306,7 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
       {/* Secondary KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Pending Verifications" value={pending.length}                                          icon="⏳" color="blue"  />
-        <StatCard label="Open Enquiries"        value={enquiries.filter(e => e.status !== 'resolved').length}   icon="💬" color="amber" />
+        <StatCard label="Open Enquiries"        value={enquiries.filter(e => !['resolved','closed'].includes(e.status)).length}   icon="💬" color="amber" />
         <StatCard label="Urgent Reports"        value={urgent.length}                                           icon="🚨" color="red"   />
         <StatCard label="Avg Rating"            value={(analytics.averageRating || 4.8)} unit="★"              icon="⭐" color="amber" />
       </div>
@@ -241,9 +367,9 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
                 <div key={r._id} className="p-3 bg-red-50 rounded-xl border border-red-100">
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-sm font-semibold text-red-900 truncate">{r.subject || r.title || 'Report'}</p>
-                    <StatusBadge status={r.severity} />
+                    <StatusBadge status={r.meta?.severity || r.severity} />
                   </div>
-                  <p className="text-xs text-red-600 truncate">{r.description || r.message}</p>
+                  <p className="text-xs text-red-600 truncate">{r.message || r.description}</p>
                   <p className="text-xs text-red-400 mt-1">{fmtDate(r.createdAt)}</p>
                 </div>
               ))}
@@ -451,7 +577,6 @@ function BookingsTab() {
       if (statusF !== 'all') params.status = statusF;
       const res = await api.get('/bookings', { params });
       setBookings(res.data?.data || []);
-      // FIX #2: typo was res.data?.paginridemodalation?.total
       setTotal(res.data?.pagination?.total || 0);
     } catch { toast.error('Failed to load bookings'); }
     finally { setLoading(false); }
@@ -724,7 +849,14 @@ function VerificationTab({ requests, onUpdate, onRefresh }) {
   );
 }
 
-/* ─── Enquiries Tab ─────────────────────────────────────── */
+/* ─── Enquiries Tab ──────────────────────────────────────────────────────
+   Handles `contact_*` / general submissions from ContactUs.jsx. Fully
+   actionable: expand a row to see the full message, past admin replies,
+   and a composer to change status and/or send a reply. On save:
+     1. PUT /admin/enquiries/:id  → backend saves + builds emailActions
+     2. fireEmailActions()        → actually sends via emailjs
+     3. toast reflects what happened (reply sent / status only / sync sent)
+─────────────────────────────────────────────────────────────────────── */
 function EnquiriesTab() {
   const [enquiries, setEnquiries] = useState([]);
   const [total, setTotal]         = useState(0);
@@ -732,6 +864,7 @@ function EnquiriesTab() {
   const [statusF, setStatusF]     = useState('all');
   const [page, setPage]           = useState(1);
   const [expanded, setExpanded]   = useState(null);
+  const [submittingId, setSubmittingId] = useState(null);
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -749,18 +882,45 @@ function EnquiriesTab() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [statusF]);
 
-  const handleUpdate = async (id, status) => {
+  const handleQuickStatus = async (id, status) => {
+    setSubmittingId(id);
     try {
-      await api.put(`/enquiries/${id}`, { status });
-      toast.success(`Marked as ${status.replace('_', ' ')}`);
+      const res = await updateEnquiryAction(id, { status });
+      const { userNotified, adminSynced } = await fireEmailActions(res.emailActions);
+      toast.success(
+        `Marked as ${status.replace('_', ' ')}` + (adminSynced ? ' · admin sync sent' : '')
+      );
       load();
     } catch { toast.error('Failed to update'); }
+    finally { setSubmittingId(null); }
+  };
+
+  const handleReplySubmit = async (id, { status, reply }) => {
+    setSubmittingId(id);
+    try {
+      const res = await updateEnquiryAction(id, { status, reply, adminName: 'ShareMyRide' });
+      const { userNotified, adminSynced } = await fireEmailActions(res.emailActions);
+      if (reply) {
+        toast.success(userNotified ? 'Reply sent to user ✓' : 'Reply saved (email send failed — check EmailJS config)');
+      } else {
+        toast.success(`Status updated to ${res.data?.status || status}`);
+      }
+      if (adminSynced) toast.success('Admin sync notice sent', { icon: '🔁' });
+      load();
+    } catch {
+      toast.error('Failed to save');
+    } finally {
+      setSubmittingId(null);
+    }
   };
 
   const STATUS_OPTS = [
     { value: 'all', label: 'All' }, { value: 'open', label: 'Open' },
-    { value: 'in_progress', label: 'In Progress' }, { value: 'resolved', label: 'Resolved' },
+    { value: 'in_progress', label: 'In Progress' }, { value: 'replied', label: 'Replied' },
+    { value: 'waiting_on_user', label: 'Waiting on User' }, { value: 'resolved', label: 'Resolved' },
+    { value: 'closed', label: 'Closed' },
   ];
+  const COMPOSER_STATUS_OPTS = ['open', 'in_progress', 'waiting_on_user', 'replied', 'resolved', 'closed'];
 
   return (
     <div>
@@ -788,20 +948,23 @@ function EnquiriesTab() {
                           <p className="font-semibold text-sm text-gray-900">{e.name || e.email}</p>
                           <StatusBadge status={e.status || 'open'} />
                           {e.priority && <StatusBadge status={e.priority} />}
+                          {e.ticketNumber && <span className="font-mono text-xs text-gray-400">{e.ticketNumber}</span>}
                         </div>
                         <p className="text-xs text-gray-400">{e.email}{e.phone ? ` · ${e.phone}` : ''}</p>
                         <p className="text-sm text-gray-600 mt-1.5 line-clamp-1">{e.subject || e.message}</p>
                         <p className="text-xs text-gray-400 mt-1">{fmtDT(e.createdAt)}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {e.status !== 'resolved' && (
+                        {!['resolved', 'closed'].includes(e.status) && (
                           <>
-                            <button onClick={ev => { ev.stopPropagation(); handleUpdate(e._id, 'in_progress'); }}
-                              className="px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors">
+                            <button onClick={ev => { ev.stopPropagation(); handleQuickStatus(e._id, 'in_progress'); }}
+                              disabled={submittingId === e._id}
+                              className="px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors disabled:opacity-50">
                               In Progress
                             </button>
-                            <button onClick={ev => { ev.stopPropagation(); handleUpdate(e._id, 'resolved'); }}
-                              className="px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 transition-colors">
+                            <button onClick={ev => { ev.stopPropagation(); handleQuickStatus(e._id, 'resolved'); }}
+                              disabled={submittingId === e._id}
+                              className="px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 transition-colors disabled:opacity-50">
                               Resolve
                             </button>
                           </>
@@ -814,11 +977,11 @@ function EnquiriesTab() {
                     </div>
                   </div>
                   {expanded === e._id && (
-                    <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50 space-y-3">
+                    <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50 space-y-4">
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <span className="text-xs font-bold uppercase text-gray-400">Type</span>
-                          <p className="text-gray-700 mt-0.5">{e.type || '—'}</p>
+                          <p className="text-gray-700 mt-0.5">{(e.type || '').replace(/_/g, ' ') || '—'}</p>
                         </div>
                         <div>
                           <span className="text-xs font-bold uppercase text-gray-400">Ticket</span>
@@ -827,7 +990,39 @@ function EnquiriesTab() {
                       </div>
                       <div>
                         <span className="text-xs font-bold uppercase text-gray-400">Message</span>
-                        <p className="text-gray-700 mt-1 text-sm leading-relaxed">{e.message}</p>
+                        <p className="text-gray-700 mt-1 text-sm leading-relaxed whitespace-pre-wrap">{e.message}</p>
+                      </div>
+
+                      {/* Past admin replies */}
+                      {Array.isArray(e.adminReplies) && e.adminReplies.length > 0 && (
+                        <div>
+                          <span className="text-xs font-bold uppercase text-gray-400">Reply history</span>
+                          <div className="mt-2 space-y-2">
+                            {e.adminReplies.map((ar, i) => (
+                              <div key={i} className="bg-white border border-gray-200 rounded-xl p-3">
+                                <div className="flex items-center justify-between mb-1">
+                                  <p className="text-xs font-semibold text-gray-700">{ar.sentBy}</p>
+                                  <div className="flex items-center gap-1.5">
+                                    {ar.emailSent && <Badge label="Emailed" color="green" />}
+                                    <span className="text-xs text-gray-400">{fmtDT(ar.sentAt)}</span>
+                                  </div>
+                                </div>
+                                <p className="text-sm text-gray-600 whitespace-pre-wrap">{ar.message}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Reply composer — the actionable bit */}
+                      <div>
+                        <span className="text-xs font-bold uppercase text-gray-400 mb-2 block">Reply / change status</span>
+                        <ReplyComposer
+                          currentStatus={e.status || 'open'}
+                          statusOptions={COMPOSER_STATUS_OPTS}
+                          submitting={submittingId === e._id}
+                          onSubmit={({ status, reply }) => handleReplySubmit(e._id, { status, reply })}
+                        />
                       </div>
                     </div>
                   )}
@@ -840,13 +1035,20 @@ function EnquiriesTab() {
   );
 }
 
-/* ─── Reports Tab ───────────────────────────────────────── */
+/* ─── Reports Tab ─────────────────────────────────────────────────────────
+   Handles `report_*` submissions from Report.jsx (technical / ride / safety /
+   account / payment / other). These are Inquiry documents — same shape as
+   enquiries, same reply/status/email-sync flow, just filtered + rendered
+   with the report-specific meta fields (affected page, repro steps, etc).
+─────────────────────────────────────────────────────────────────────── */
 function ReportsTab() {
-  const [reports, setReports]   = useState([]);
-  const [total, setTotal]       = useState(0);
-  const [loading, setLoading]   = useState(true);
+  const [reports, setReports]     = useState([]);
+  const [total, setTotal]         = useState(0);
+  const [loading, setLoading]     = useState(true);
   const [severityF, setSeverityF] = useState('all');
-  const [page, setPage]         = useState(1);
+  const [page, setPage]           = useState(1);
+  const [expanded, setExpanded]   = useState(null);
+  const [submittingId, setSubmittingId] = useState(null);
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -864,18 +1066,41 @@ function ReportsTab() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [severityF]);
 
-  const handleUpdate = async (id, status) => {
+  const handleQuickStatus = async (id, status) => {
+    setSubmittingId(id);
     try {
-      await api.put(`/reports/${id}`, { status });
-      toast.success('Report updated');
+      const res = await updateReportAction(id, { status });
+      const { adminSynced } = await fireEmailActions(res.emailActions);
+      toast.success(`Marked as ${status.replace('_', ' ')}` + (adminSynced ? ' · admin sync sent' : ''));
       load();
     } catch { toast.error('Failed to update'); }
+    finally { setSubmittingId(null); }
+  };
+
+  const handleReplySubmit = async (id, { status, reply }) => {
+    setSubmittingId(id);
+    try {
+      const res = await updateReportAction(id, { status, reply, adminName: 'ShareMyRide' });
+      const { userNotified, adminSynced } = await fireEmailActions(res.emailActions);
+      if (reply) {
+        toast.success(userNotified ? 'Reply sent to reporter ✓' : 'Reply saved (email send failed — check EmailJS config)');
+      } else {
+        toast.success(`Status updated to ${res.data?.status || status}`);
+      }
+      if (adminSynced) toast.success('Admin sync notice sent', { icon: '🔁' });
+      load();
+    } catch {
+      toast.error('Failed to save');
+    } finally {
+      setSubmittingId(null);
+    }
   };
 
   const SEVERITY_OPTS = [
     { value: 'all', label: 'All' }, { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' },
   ];
+  const COMPOSER_STATUS_OPTS = ['open', 'in_progress', 'waiting_on_user', 'replied', 'resolved', 'closed'];
 
   return (
     <div>
@@ -893,30 +1118,116 @@ function ReportsTab() {
           ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No reports" icon="🚨" /></div>
           : (
             <div className="space-y-2">
-              {reports.map(r => (
-                <div key={r._id} className={`bg-white rounded-2xl border overflow-hidden ${r.severity === 'critical' ? 'border-red-200' : 'border-gray-200'}`}>
-                  <div className="p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <p className="font-semibold text-sm text-gray-900">{r.subject || r.title || 'Issue Report'}</p>
-                          <StatusBadge status={r.severity || 'medium'} />
-                          <StatusBadge status={r.status || 'open'} />
+              {reports.map(r => {
+                const severity = r.meta?.severity || 'medium';
+                return (
+                  <div key={r._id} className={`bg-white rounded-2xl border overflow-hidden ${severity === 'critical' ? 'border-red-200' : 'border-gray-200'}`}>
+                    <div className="p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => setExpanded(expanded === r._id ? null : r._id)}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <p className="font-semibold text-sm text-gray-900">{r.subject || 'Issue Report'}</p>
+                            <StatusBadge status={severity} />
+                            <StatusBadge status={r.status || 'open'} />
+                            {r.ticketNumber && <span className="font-mono text-xs text-gray-400">{r.ticketNumber}</span>}
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            {r.name} · {r.email}{r.meta?.relatedRideId ? ` · Ride: ${r.meta.relatedRideId}` : ''}
+                          </p>
+                          <p className="text-sm text-gray-600 mt-1.5 line-clamp-2">{r.message}</p>
+                          <p className="text-xs text-gray-400 mt-1">{fmtDT(r.createdAt)}</p>
                         </div>
-                        <p className="text-xs text-gray-400">{r.email}{r.rideId ? ` · Ride: ${r.rideId}` : ''}</p>
-                        <p className="text-sm text-gray-600 mt-1.5 line-clamp-2">{r.description || r.message}</p>
-                        <p className="text-xs text-gray-400 mt-1">{fmtDT(r.createdAt)}</p>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {!['resolved', 'closed'].includes(r.status) && (
+                            <button onClick={ev => { ev.stopPropagation(); handleQuickStatus(r._id, 'resolved'); }}
+                              disabled={submittingId === r._id}
+                              className="px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 transition-colors disabled:opacity-50">
+                              Resolve
+                            </button>
+                          )}
+                          <svg className={`w-4 h-4 text-gray-300 transition-transform ${expanded === r._id ? 'rotate-180' : ''}`}
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
                       </div>
-                      {r.status !== 'resolved' && (
-                        <button onClick={() => handleUpdate(r._id, 'resolved')}
-                          className="px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-100 transition-colors flex-shrink-0">
-                          Resolve
-                        </button>
-                      )}
                     </div>
+
+                    {expanded === r._id && (
+                      <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50 space-y-4">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-xs font-bold uppercase text-gray-400">Type</span>
+                            <p className="text-gray-700 mt-0.5">{(r.type || '').replace(/_/g, ' ') || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold uppercase text-gray-400">Affected page</span>
+                            <p className="text-gray-700 mt-0.5">{r.meta?.affectedPage || '—'}</p>
+                          </div>
+                        </div>
+
+                        {r.meta?.stepsToReproduce && (
+                          <div>
+                            <span className="text-xs font-bold uppercase text-gray-400">Steps to reproduce</span>
+                            <p className="text-gray-700 mt-1 text-sm whitespace-pre-wrap">{r.meta.stepsToReproduce}</p>
+                          </div>
+                        )}
+                        {(r.meta?.expectedBehaviour || r.meta?.actualBehaviour) && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <span className="text-xs font-bold uppercase text-gray-400">Expected</span>
+                              <p className="text-gray-700 mt-1 text-sm">{r.meta?.expectedBehaviour || '—'}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold uppercase text-gray-400">Actual</span>
+                              <p className="text-gray-700 mt-1 text-sm">{r.meta?.actualBehaviour || '—'}</p>
+                            </div>
+                          </div>
+                        )}
+                        {r.meta?.additionalNotes && (
+                          <div>
+                            <span className="text-xs font-bold uppercase text-gray-400">Additional notes</span>
+                            <p className="text-gray-700 mt-1 text-sm">{r.meta.additionalNotes}</p>
+                          </div>
+                        )}
+
+                        {/* Past admin replies */}
+                        {Array.isArray(r.adminReplies) && r.adminReplies.length > 0 && (
+                          <div>
+                            <span className="text-xs font-bold uppercase text-gray-400">Reply history</span>
+                            <div className="mt-2 space-y-2">
+                              {r.adminReplies.map((ar, i) => (
+                                <div key={i} className="bg-white border border-gray-200 rounded-xl p-3">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <p className="text-xs font-semibold text-gray-700">{ar.sentBy}</p>
+                                    <div className="flex items-center gap-1.5">
+                                      {ar.emailSent && <Badge label="Emailed" color="green" />}
+                                      <span className="text-xs text-gray-400">{fmtDT(ar.sentAt)}</span>
+                                    </div>
+                                  </div>
+                                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{ar.message}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Reply composer */}
+                        <div>
+                          <span className="text-xs font-bold uppercase text-gray-400 mb-2 block">Reply / change status</span>
+                          <ReplyComposer
+                            currentStatus={r.status || 'open'}
+                            statusOptions={COMPOSER_STATUS_OPTS}
+                            submitting={submittingId === r._id}
+                            onSubmit={({ status, reply }) => handleReplySubmit(r._id, { status, reply })}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <Pagination page={page} total={total} limit={LIMIT} onPage={setPage} />
             </div>
           )}

@@ -2,6 +2,7 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { getSignedUrl, getObjectFromS3, normalizeS3Key } = require('../services/s3Service');
+const emailService = require('../services/emailService'); // needed for enquiry/report status+reply email flow
 
 const DOCUMENT_FIELDS = {
   profilePhoto: {
@@ -99,12 +100,10 @@ exports.adminLogin = async (req, res) => {
 // @access  Private (Admin)
 exports.getVerifications = async (req, res) => {
   try {
-    // Find all users who have submitted their verification
     const users = await User.find({
       'driverVerification.status': { $ne: 'not_started' }
     }).sort({ 'driverVerification.submittedAt': -1 });
 
-    // Generate fresh presigned URLs for each user
     const usersWithFreshUrls = await Promise.all(users.map(async (user) => {
       const dv = user.driverVerification;
       const userObj = user.toObject();
@@ -159,15 +158,12 @@ exports.updateVerification = async (req, res) => {
     }
 
     const user = await User.findById(userId);
-
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Update status
     user.driverVerification.status = status;
 
-    // Add audit trail entry
     const actionMap = {
       approved: 'Approved',
       rejected: 'Rejected',
@@ -186,7 +182,6 @@ exports.updateVerification = async (req, res) => {
     if (status === 'approved') {
       user.driverVerification.approvedAt = new Date();
       user.driverVerification.rejectionReason = null;
-      // The pre-save hook on User will automatically set isDriverVerified = true
     } else if (status === 'rejected' || status === 'needs_info') {
       user.driverVerification.rejectionReason = remark;
     }
@@ -213,10 +208,7 @@ exports.streamVerificationDocument = async (req, res) => {
     const field = DOCUMENT_FIELDS[documentType];
 
     if (!field) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid document type'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid document type' });
     }
 
     const user = await User.findById(id).select('driverVerification');
@@ -228,10 +220,7 @@ exports.streamVerificationDocument = async (req, res) => {
     const s3Key = key || normalizeS3Key(url);
 
     if (!s3Key) {
-      return res.status(404).json({
-        success: false,
-        message: `${field.label} has not been uploaded`
-      });
+      return res.status(404).json({ success: false, message: `${field.label} has not been uploaded` });
     }
 
     const object = await getObjectFromS3(s3Key);
@@ -253,52 +242,19 @@ exports.streamVerificationDocument = async (req, res) => {
     });
 
     const statusCode = error.name === 'NoSuchKey' ? 404 : 500;
-    res.status(statusCode).json({
-      success: false,
-      message: 'Unable to load verification document'
-    });
+    res.status(statusCode).json({ success: false, message: 'Unable to load verification document' });
   }
 };
 
 /* ════════════════════════════════════════════════════════════════════
-   ADMIN DASHBOARD ANALYTICS ENDPOINTS
+   ADMIN DASHBOARD ANALYTICS + ENQUIRY/REPORT ENDPOINTS
    ════════════════════════════════════════════════════════════════════ */
 
 const Inquiry = require('../models/Inquiry');
 const Ride = require('../models/Ride');
 const BlogPost = require('../models/BlogPost');
 const Payment = require('../models/Payment');
-const RideReport = require('../models/RideReport');
-
-// @desc    Get dashboard analytics summary
-// @route   GET /api/admin/analytics/summary
-// @access  Private (Admin)
-exports.getAnalyticsSummary = async (req, res) => {
-  try {
-    const [totalUsers, activeUsers, totalRides, totalRevenue, avgRating] = await Promise.all([
-      User.countDocuments(),
-      User.countDocuments({ lastLogin: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }),
-      Ride.countDocuments(),
-      Payment.aggregate([{ $match: { status: 'completed' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
-      Ride.aggregate([{ $match: { rating: { $exists: true } } }, { $group: { _id: null, avg: { $avg: '$rating' } } }]),
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        totalUsers,
-        activeUsers,
-        totalRides,
-        totalRevenue: totalRevenue[0]?.total || 0,
-        averageRating: (avgRating[0]?.avg || 4.5).toFixed(1),
-        totalCities: 50, // Placeholder: replace with distinct city count
-      },
-    });
-  } catch (error) {
-    console.error('Analytics summary error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch analytics' });
-  }
-};
+const Booking = require('../models/Booking');
 
 // @desc    Get users list with pagination
 // @route   GET /api/admin/users
@@ -357,7 +313,7 @@ exports.getRidesList = async (req, res) => {
   }
 };
 
-// @desc    Get enquiries list
+// @desc    Get enquiries list (contact_*, help_center, blog_*, community_report, support_request)
 // @route   GET /api/admin/enquiries
 // @access  Private (Admin)
 exports.getEnquiriesList = async (req, res) => {
@@ -365,12 +321,13 @@ exports.getEnquiriesList = async (req, res) => {
     const { page = 1, limit = 20, status } = req.query;
     const skip = (page - 1) * limit;
 
-    const query = status ? { status } : {};
+    const query = { type: { $not: /^report_/ } };
+    if (status && status !== 'all') query.status = status;
+
     const enquiries = await Inquiry.find(query)
-      .select('subject email message status createdAt')
-      .limit(parseInt(limit))
+      .sort({ createdAt: -1 })
       .skip(skip)
-      .sort({ createdAt: -1 });
+      .limit(parseInt(limit));
 
     const total = await Inquiry.countDocuments(query);
 
@@ -385,47 +342,118 @@ exports.getEnquiriesList = async (req, res) => {
   }
 };
 
-// @desc    Update enquiry status
+// @desc    Update an enquiry/report: change status and/or send a reply.
+//          FIXED: previously called emailService.sendStatusReplyUpdate which
+//          did not exist — every save silently swallowed the error and NO
+//          email ever fired. sendStatusReplyUpdate now exists in
+//          emailService.js. The response shape below
+//          ({ userNotification, adminSync }) matches exactly what
+//          AdminDashboard.jsx's fireEmailActions() already reads — no
+//          frontend change needed once this file + emailService.js are
+//          both updated.
 // @route   PUT /api/admin/enquiries/:id
+// @route   PUT /api/admin/reports/:id   (same handler — reports ARE Inquiry docs)
 // @access  Private (Admin)
 exports.updateEnquiry = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, reply, adminName } = req.body;
 
-    const enquiry = await Inquiry.findByIdAndUpdate(
-      id,
-      { status, updatedAt: new Date() },
-      { new: true }
-    );
+    if (!status && !reply?.trim()) {
+      return res.status(400).json({ success: false, message: 'Provide a status change and/or a reply message' });
+    }
 
-    if (!enquiry) {
+    const inquiry = await Inquiry.findById(id);
+    if (!inquiry) {
       return res.status(404).json({ success: false, message: 'Enquiry not found' });
     }
 
-    res.json({ success: true, data: enquiry, message: 'Enquiry updated' });
+    const oldStatus = inquiry.status;
+
+    // ── 1. Apply status change (optional) ──
+    if (status) {
+      inquiry.status = status;
+      if (status === 'resolved' && oldStatus !== 'resolved') inquiry.resolvedAt = new Date();
+      if (status === 'closed' && oldStatus !== 'closed') inquiry.closedAt = new Date();
+    }
+
+    // ── 2. Save reply text (optional) ──
+    let replyIndex = -1;
+    if (reply && reply.trim()) {
+      inquiry.adminReplies.push({
+        message: reply.trim(),
+        sentBy: adminName || 'ShareMyRide Support',
+        sentAt: new Date(),
+        emailSent: false,
+      });
+      replyIndex = inquiry.adminReplies.length - 1;
+
+      // If admin didn't explicitly pick a status, move it to 'replied'
+      if (!status) inquiry.status = 'replied';
+    }
+
+    await inquiry.save();
+
+    // ── 3. Build emailActions: user reply (if any) + admin sync (always) ──
+    let userNotification = null;
+    let adminSync = null;
+    try {
+      const result = await emailService.sendStatusReplyUpdate(inquiry, {
+        oldStatus,
+        newStatus: inquiry.status,
+        replyMessage: reply,
+        adminName,
+      });
+
+      if (result?.emailActions) {
+        userNotification = result.emailActions.user;
+        adminSync = result.emailActions.admin;
+
+        if (replyIndex >= 0 && userNotification) {
+          inquiry.adminReplies[replyIndex].emailSent = true;
+          await inquiry.save();
+        }
+      }
+    } catch (err) {
+      // Surfaced to logs; the dashboard still gets a clear success/partial
+      // message instead of a silently-lost email.
+      console.error(`[Enquiry] status+reply emailAction build failed (${inquiry.ticketNumber}):`, err.message);
+    }
+
+    return res.json({
+      success: true,
+      data: inquiry,
+      message: reply && reply.trim() ? 'Reply saved' : `Status updated to ${inquiry.status}`,
+      // Frontend (AdminDashboard) fires emailjs.send() for each non-null entry
+      emailActions: {
+        userNotification, // → original submitter's inbox, only if a reply was sent
+        adminSync,        // → admin inbox, always present
+      },
+    });
   } catch (error) {
     console.error('Enquiry update error:', error);
     res.status(500).json({ success: false, message: 'Failed to update enquiry' });
   }
 };
 
-// @desc    Get reports list
+// @desc    Get reports list (report_* types, backed by Inquiry model)
 // @route   GET /api/admin/reports
 // @access  Private (Admin)
 exports.getReportsList = async (req, res) => {
   try {
-    const { page = 1, limit = 20, severity } = req.query;
+    const { page = 1, limit = 20, severity, status } = req.query;
     const skip = (page - 1) * limit;
 
-    const query = severity ? { severity } : {};
-    const reports = await RideReport.find(query)
-      .select('title description severity status createdAt')
-      .limit(parseInt(limit))
-      .skip(skip)
-      .sort({ createdAt: -1 });
+    const query = { type: /^report_/ };
+    if (severity && severity !== 'all') query['meta.severity'] = severity;
+    if (status && status !== 'all') query.status = status;
 
-    const total = await RideReport.countDocuments(query);
+    const reports = await Inquiry.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Inquiry.countDocuments(query);
 
     res.json({
       success: true,
@@ -438,30 +466,12 @@ exports.getReportsList = async (req, res) => {
   }
 };
 
-// @desc    Update report status
+// @desc    Update report status and/or send a reply. Reports are Inquiry
+//          documents (type: report_*), so this reuses the exact same
+//          status/reply/email flow as updateEnquiry.
 // @route   PUT /api/admin/reports/:id
 // @access  Private (Admin)
-exports.updateReport = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    const report = await RideReport.findByIdAndUpdate(
-      id,
-      { status, updatedAt: new Date() },
-      { new: true }
-    );
-
-    if (!report) {
-      return res.status(404).json({ success: false, message: 'Report not found' });
-    }
-
-    res.json({ success: true, data: report, message: 'Report updated' });
-  } catch (error) {
-    console.error('Report update error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update report' });
-  }
-};
+exports.updateReport = exports.updateEnquiry;
 
 // @desc    Get blogs list
 // @route   GET /api/admin/blogs
@@ -516,15 +526,6 @@ exports.updateBlog = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to update blog' });
   }
 };
-
-
-// ═══════════════════════════════════════════════════════════════════
-// ADD THESE ENDPOINTS to your existing adminController.js
-// (paste after the existing getBlogsList / updateBlog functions)
-// ═══════════════════════════════════════════════════════════════════
-
-const Booking = require('../models/Booking');
-const Transaction = require('../models/Transaction');
 
 // @desc    Get bookings list with pagination
 // @route   GET /api/admin/bookings
@@ -634,8 +635,8 @@ exports.updateUser = async (req, res) => {
   }
 };
 
-// @desc    Updated analytics summary (adds totalBookings)
-// @route   GET /api/admin/analytics/summary   (REPLACE existing)
+// @desc    Dashboard analytics summary
+// @route   GET /api/admin/analytics/summary
 // @access  Private (Admin)
 exports.getAnalyticsSummary = async (req, res) => {
   try {
@@ -646,6 +647,9 @@ exports.getAnalyticsSummary = async (req, res) => {
       totalBookings,
       totalRevenueAgg,
       avgRatingAgg,
+      openEnquiries,
+      urgentReports,
+      pendingVerifications,
     ] = await Promise.all([
       User.countDocuments(),
       User.countDocuments({ lastLogin: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }),
@@ -653,6 +657,9 @@ exports.getAnalyticsSummary = async (req, res) => {
       Booking.countDocuments(),
       Payment.aggregate([{ $match: { status: 'completed' } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
       Ride.aggregate([{ $match: { rating: { $exists: true } } }, { $group: { _id: null, avg: { $avg: '$rating' } } }]),
+      Inquiry.countDocuments({ type: { $not: /^report_/ }, status: { $nin: ['resolved', 'closed'] } }),
+      Inquiry.countDocuments({ type: /^report_/, 'meta.severity': { $in: ['high', 'critical'] }, status: { $nin: ['resolved', 'closed'] } }),
+      User.countDocuments({ 'driverVerification.status': { $in: ['submitted', 'under_review'] } }),
     ]);
 
     res.json({
@@ -665,6 +672,9 @@ exports.getAnalyticsSummary = async (req, res) => {
         totalRevenue: totalRevenueAgg[0]?.total || 0,
         averageRating: (avgRatingAgg[0]?.avg || 4.5).toFixed(1),
         totalCities: 50,
+        openEnquiries,
+        urgentReports,
+        pendingVerifications,
       },
     });
   } catch (error) {

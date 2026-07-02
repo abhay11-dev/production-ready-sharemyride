@@ -4,6 +4,8 @@ import api from '../../config/api.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import emailjs from '@emailjs/browser';
 import toast from 'react-hot-toast';
+import RecentTicketsPanel from '../../components/common/RecentTicketsPanel';
+import { getStoredTickets, saveTicketToStorage } from '../../utils/ticketStorage';
 
 function useScrollTop() { useEffect(() => { window.scrollTo(0, 0); }, []); }
 
@@ -169,27 +171,42 @@ function HeroBackground() {
 // ─── EmailJS config (from .env — see setup walkthrough) ───────────────────
 const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
 const EMAILJS_TEMPLATE_USER_CONFIRMATION = import.meta.env.VITE_EMAILJS_TEMPLATE_USER_CONFIRMATION;
+const EMAILJS_TEMPLATE_ADMIN_ALERT = import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_ALERT; // NEW
 const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
 
-const sendUserConfirmationViaEmailJS = async (emailAction) => {
-  console.log("Service ID:", import.meta.env.VITE_EMAILJS_SERVICE_ID);
-console.log("Template ID:", import.meta.env.VITE_EMAILJS_TEMPLATE_USER_CONFIRMATION);
-console.log("Public Key:", import.meta.env.VITE_EMAILJS_PUBLIC_KEY);
-    if (!emailAction?.payload) return;
-    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_USER_CONFIRMATION || !EMAILJS_PUBLIC_KEY) {
-        console.warn('[EmailJS] Missing service/template/public key env vars — skipping send.');
-        return;
-    }
-    try {
-        await emailjs.send(
-            EMAILJS_SERVICE_ID,
-            EMAILJS_TEMPLATE_USER_CONFIRMATION,
-            emailAction.payload,
-            { publicKey: EMAILJS_PUBLIC_KEY }
-        );
-    } catch (err) {
-        console.error('[EmailJS] Failed to send user confirmation email:', err);
-    }
+// Maps each backend `emailAction.template` key to its EmailJS template ID.
+const EMAILJS_CREATION_TEMPLATES = {
+  'user-confirmation': EMAILJS_TEMPLATE_USER_CONFIRMATION,
+  'admin-alert': EMAILJS_TEMPLATE_ADMIN_ALERT,
+};
+
+/**
+ * Fire ONE EmailJS emailAction using the { template, payload } shape the
+ * backend returns. Non-fatal — logs and moves on if EmailJS fails.
+ */
+const fireCreationEmailAction = async (action) => {
+  if (!action?.template || !action?.payload) return;
+  const templateId = EMAILJS_CREATION_TEMPLATES[action.template];
+  if (!EMAILJS_SERVICE_ID || !templateId || !EMAILJS_PUBLIC_KEY) {
+    console.warn(`[EmailJS] Missing service/template/public key for "${action.template}" — skipping send.`);
+    return;
+  }
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, templateId, action.payload, { publicKey: EMAILJS_PUBLIC_KEY });
+  } catch (err) {
+    console.error(`[EmailJS] Failed to send "${action.template}":`, err);
+  }
+};
+
+/**
+ * Fires BOTH the reporter confirmation email and the admin new-report alert.
+ * Both come back from the backend on report creation as
+ * `res.data.emailActions.userConfirmation` / `.adminNotification`.
+ */
+const fireCreationEmailActions = (emailActions) => {
+  if (!emailActions) return;
+  if (emailActions.userConfirmation) fireCreationEmailAction(emailActions.userConfirmation);
+  if (emailActions.adminNotification) fireCreationEmailAction(emailActions.adminNotification);
 };
 
 // Maps UI selection → Inquiry model's valid `type` enum values
@@ -228,6 +245,7 @@ export default function Report() {
   const [selected, setSelected] = useState('technical');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [savedTickets, setSavedTickets] = useState([]);
   const [form, setForm] = useState({
     name: '', email: '',
     summary: '', affectedPage: '',
@@ -241,10 +259,19 @@ export default function Report() {
     }
   }, [user]);
 
+  useEffect(() => {
+    setSavedTickets(getStoredTickets());
+  }, []);
+
+  useEffect(() => {
+    setSavedTickets(getStoredTickets());
+  }, []);
+
   const change = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const preservedScrollY = window.scrollY;
     setSubmitting(true);
     try {
       const issueLabel = ISSUE_TYPES.find(t => t.id === selected)?.label || 'Issue';
@@ -266,15 +293,25 @@ export default function Report() {
 
       const res = await api.post('/inquiries', payload);
       const data = res.data?.data || {};
+      const nextTicketNumber = data.ticketId || data.ticketNumber || 'TKT-0000';
+      const updatedTickets = saveTicketToStorage({
+        id: nextTicketNumber,
+        subject: payload.subject,
+        status: data.status || 'open',
+      });
+      setSavedTickets(updatedTickets);
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: preservedScrollY, left: 0, behavior: 'auto' });
+      });
       setResult({
         success: true,
-        ticketNumber: data.ticketId || data.ticketNumber || 'TKT-0000',
+        ticketNumber: nextTicketNumber,
       });
       setStep(3);
 
-      // Fire confirmation email client-side via EmailJS (non-blocking)
-      const emailAction = res.data?.emailActions?.userConfirmation;
-      sendUserConfirmationViaEmailJS(emailAction);
+      // Fire BOTH the reporter confirmation email and the admin new-report
+      // alert (non-blocking).
+      fireCreationEmailActions(res.data?.emailActions);
 
     } catch (err) {
       setResult({
@@ -377,6 +414,9 @@ export default function Report() {
           FORM BODY
       ══════════════════════════════════════════════════════════════ */}
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12 lg:py-16">
+        <div className="mb-8">
+          <RecentTicketsPanel tickets={savedTickets} title="Recent support tickets" emptyMessage="Your submitted reports will appear here after you send one." />
+        </div>
 
         {/* ── Step 3: Result ─────────────────────────────────────── */}
         {step === 3 ? (

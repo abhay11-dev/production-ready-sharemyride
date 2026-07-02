@@ -3,75 +3,87 @@ const moment = require('moment');
 const crypto = require('crypto');
 
 /**
- * STARTUP VALIDATION
- * Resend-specific vars removed. EmailJS is frontend-only, so the backend
- * no longer needs an email API key — it only needs to know where the
- * frontend lives (for links) and how to label outgoing "from" names.
+ * SHAREMYRIDE EMAIL SERVICE — EmailJS payload mode
+ *
+ * No server-side email sending. Every function builds and returns an
+ * { emailAction: { template, payload } } object (or, for combined flows,
+ * { emailActions: { user, admin } }). The frontend caller is responsible
+ * for firing emailjs.send(serviceId, templateId, payload).
+ *
+ * EmailJS templates required (configure in your EmailJS dashboard, see
+ * /emailjs-templates/*.html in this delivery for ready-to-paste HTML):
+ *
+ *   VITE_EMAILJS_TEMPLATE_USER_CONFIRMATION
+ *     Variables: to_email, to_name, ticketId, subject, inquiryTypeName,
+ *                messagePreview, estimatedResponseTime, submittedAt, platformUrl
+ *
+ *   VITE_EMAILJS_TEMPLATE_ADMIN_ALERT
+ *     Variables: to_email, ticketId, fromName, fromEmail, fromPhone,
+ *                inquiryType, priority, subject, message, submittedAt,
+ *                dashboardUrl, affectedPage, severity
+ *
+ *   VITE_EMAILJS_TEMPLATE_ADMIN_REPLY
+ *     Variables: to_email, to_name, ticketId, subject, replyMessage,
+ *                originalMessage, adminName, sentAt, platformUrl
+ *
+ *   VITE_EMAILJS_TEMPLATE_ADMIN_SYNC
+ *     Sent to the admin inbox after ANY admin action on an inquiry/report
+ *     (status change and/or reply). Confirms the loop closed and the
+ *     user-facing email was actually dispatched.
+ *     Variables: to_email, ticketId, userEmail, userName, oldStatus,
+ *                newStatus, replyMessage, adminName, actionAt, dashboardUrl
+ *
+ *   VITE_EMAILJS_TEMPLATE_BOOKING_CONFIRMATION (passenger + driver)
+ *     Variables: to_email, to_name, bookingId, pickupLocation,
+ *                dropLocation, seatsBooked, rideDate, rideTime, ...
  */
+
 const requiredEnvVars = ['FRONTEND_URL', 'NODE_ENV'];
-console.log('📧 [EmailService] Initializing Production Audit (EmailJS payload mode)...');
 
 requiredEnvVars.forEach(varName => {
   const isSet = !!process.env[varName];
-  console.log(`   - ${varName}: ${isSet ? 'OK ✅' : 'MISSING ❌'}`);
   if (!isSet && process.env.NODE_ENV === 'production') {
-    throw new Error(`CRITICAL STARTUP ERROR: Missing environment variable ${varName}`);
+    throw new Error(`CRITICAL: Missing environment variable ${varName}`);
   }
 });
 
-/**
- * UTILITY: Logging Helpers
- */
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
 const getCorrelationId = () => crypto.randomBytes(4).toString('hex').toUpperCase();
 
-const logEmailActionBuilt = (cid, template, to) => {
-  console.log(`
-===== [${cid}] EMAIL ACTION BUILT =====
-Template:    ${template}
-Recipient:   ${to}
-Environment: ${process.env.NODE_ENV}
-Correlation: ${cid}
-========================================`);
-};
+const buildAction = (template, payload) => ({ template, payload });
 
-/**
- * Generate calendar event (.ics) for a ride.
- * Kept as-is — EmailJS can't send binary attachments, so we return the
- * ICS content as a base64 string inside the payload. The frontend can
- * either attach it via a custom EmailJS variable, or offer it as a
- * "Add to calendar" download link/button next to the email send call.
- */
+const fmtIST = (date) =>
+  moment(date || new Date()).utcOffset('+05:30').format('D MMM YYYY [at] h:mm A [IST]');
+
+// ─── Calendar Event ───────────────────────────────────────────────────────────
+
 const generateCalendarEvent = (booking, ride, driver) => {
-  console.log(`[EmailService] Generating ICS calendar event for Booking: ${booking._id}`);
-
   const calendar = ical({ name: 'ShareMyRide Trip' });
-
   const rideDateTime = moment(`${ride.date} ${ride.time}`, 'YYYY-MM-DD HH:mm');
 
   calendar.createEvent({
     start: rideDateTime.toDate(),
     end: moment(rideDateTime).add(2, 'hours').toDate(),
     summary: `Ride: ${booking.pickupLocation} → ${booking.dropLocation}`,
-    description: `
-ShareMyRide Trip Details
-
-Driver: ${driver.name}
-Phone: ${driver.phone}
-Vehicle: ${ride.vehicleModel || 'N/A'} (${ride.vehicleNumber || 'N/A'})
-
-Pickup: ${booking.pickupLocation}
-Drop: ${booking.dropLocation}
-Seats: ${booking.seatsBooked}
-
-Booking ID: ${booking._id}
-Payment: ₹${(booking.finalAmount || booking.totalFare || booking.baseFare).toFixed(2)} (Paid)
-
-Safe travels!
-    `.trim(),
+    description: [
+      'ShareMyRide Trip Details',
+      '',
+      `Driver: ${driver.name}`,
+      `Phone: ${driver.phone}`,
+      `Vehicle: ${ride.vehicleModel || 'N/A'} (${ride.vehicleNumber || 'N/A'})`,
+      '',
+      `Pickup: ${booking.pickupLocation}`,
+      `Drop: ${booking.dropLocation}`,
+      `Seats: ${booking.seatsBooked}`,
+      '',
+      `Booking ID: ${booking._id}`,
+      `Payment: ₹${(booking.finalAmount || booking.totalFare || booking.baseFare || 0).toFixed(2)} (Paid)`,
+    ].join('\n'),
     location: booking.pickupLocation,
     url: `${process.env.FRONTEND_URL}/my-bookings`,
     organizer: {
-      name: process.env.EMAIL_FROM_NAME || 'ShareMyRide',
+      name: 'ShareMyRide',
       email: process.env.EMAIL_USER || 'no-reply@sharemyride.app',
     },
     alarms: [
@@ -83,99 +95,76 @@ Safe travels!
   return calendar.toString();
 };
 
-/**
- * Helper: standard envelope every emailAction returns.
- */
-const buildAction = (template, payload) => ({ template, payload });
+// ─── Booking Confirmation ─────────────────────────────────────────────────────
 
-/**
- * Send booking confirmation emails (passenger + driver)
- * Returns an emailAction with an `emails` array — one entry per recipient —
- * so the frontend can loop through and fire emailjs.send() for each.
- */
 const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) => {
   const cid = getCorrelationId();
   try {
-    console.info(`[${cid}] Building booking confirmation emailAction for Booking: ${booking._id}`);
-
-    const calendarEventContent = generateCalendarEvent(booking, ride, driver);
-    const icsBase64 = Buffer.from(calendarEventContent).toString('base64');
+    const calendarContent = generateCalendarEvent(booking, ride, driver);
+    const icsBase64 = Buffer.from(calendarContent).toString('base64');
 
     const baseFare = booking.baseFare || 0;
     const platformFee = baseFare * 0.08;
     const gst = platformFee * 0.18;
     const totalAmount = baseFare + platformFee + gst;
-    const driverReceives = baseFare - platformFee - gst;
+    const driverGets = baseFare - platformFee - gst;
 
-    const sharedFields = {
+    const shared = {
       bookingId: String(booking._id),
       pickupLocation: booking.pickupLocation,
       dropLocation: booking.dropLocation,
       seatsBooked: booking.seatsBooked,
-      rideDate: moment(ride.date).format('dddd, MMMM D, YYYY'),
+      rideDate: moment(ride.date).format('dddd, D MMMM YYYY'),
       rideTime: ride.time,
       vehicleModel: ride.vehicleModel || 'N/A',
       vehicleNumber: ride.vehicleNumber || 'N/A',
-      fare: {
-        baseFare: baseFare.toFixed(2),
-        platformFee: platformFee.toFixed(2),
-        gst: gst.toFixed(2),
-        totalAmount: totalAmount.toFixed(2),
-        driverReceives: driverReceives.toFixed(2),
-      },
-      payment: {
-        method: 'Razorpay',
-        transactionId: booking.razorpayPaymentId || 'N/A',
-        paymentDate: moment(booking.paymentCompletedAt || new Date()).format('MMMM D, YYYY [at] h:mm A'),
-        status: 'Success',
-      },
+      baseFare: baseFare.toFixed(2),
+      platformFee: platformFee.toFixed(2),
+      gst: gst.toFixed(2),
+      totalAmount: totalAmount.toFixed(2),
+      driverReceives: driverGets.toFixed(2),
+      paymentMethod: 'Razorpay',
+      transactionId: booking.razorpayPaymentId || 'N/A',
+      paymentDate: fmtIST(booking.paymentCompletedAt),
       bookingUrl: `${process.env.FRONTEND_URL}/my-bookings`,
-      supportUrl: `${process.env.FRONTEND_URL}/support`,
       icsAttachmentBase64: icsBase64,
       icsFilename: 'ride-calendar-invite.ics',
     };
-
-    const passengerPayload = {
-      ...sharedFields,
-      recipientRole: 'passenger',
-      to_email: passenger.email,
-      to_name: passenger.name,
-      driver: { name: driver.name, phone: driver.phone, email: driver.email },
-    };
-
-    const driverPayload = {
-      ...sharedFields,
-      recipientRole: 'driver',
-      to_email: driver.email,
-      to_name: driver.name,
-      passenger: { name: passenger.name, phone: passenger.phone, email: passenger.email },
-    };
-
-    logEmailActionBuilt(cid + '-P', 'booking-confirmation-passenger', passenger.email);
-    logEmailActionBuilt(cid + '-D', 'booking-confirmation-driver', driver.email);
 
     return {
       success: true,
       emailAction: {
         emails: [
-          buildAction('booking-confirmation-passenger', passengerPayload),
-          buildAction('booking-confirmation-driver', driverPayload),
+          buildAction('booking-confirmation-passenger', {
+            ...shared,
+            recipientRole: 'passenger',
+            to_email: passenger.email,
+            to_name: passenger.name,
+            driver_name: driver.name,
+            driver_phone: driver.phone,
+          }),
+          buildAction('booking-confirmation-driver', {
+            ...shared,
+            recipientRole: 'driver',
+            to_email: driver.email,
+            to_name: driver.name,
+            passenger_name: passenger.name,
+            passenger_phone: passenger.phone,
+          }),
         ],
       },
     };
   } catch (error) {
-    console.error(`[${cid}] ❌ FAILURE building sendBookingConfirmationEmails action:`, error);
+    console.error(`[${cid}] sendBookingConfirmationEmails failed:`, error);
     throw error;
   }
 };
 
-/**
- * Verification email
- */
+// ─── Verification Email ───────────────────────────────────────────────────────
+
 const sendVerificationEmail = async (email, name, verificationLink) => {
   const cid = getCorrelationId();
   try {
-    logEmailActionBuilt(cid, 'verification', email);
     return {
       success: true,
       emailAction: buildAction('verification', {
@@ -186,20 +175,17 @@ const sendVerificationEmail = async (email, name, verificationLink) => {
       }),
     };
   } catch (error) {
-    console.error(`[${cid}] ❌ FAILURE building sendVerificationEmail action:`, error);
+    console.error(`[${cid}] sendVerificationEmail failed:`, error);
     throw error;
   }
 };
 
-/**
- * Password reset email
- */
+// ─── Password Reset ───────────────────────────────────────────────────────────
+
 const sendPasswordResetEmail = async (email, name, resetToken) => {
   const cid = getCorrelationId();
   try {
-    const resetLink = `${process.env.FRONTEND_URL || process.env.API_BASE_URL}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
-
-    logEmailActionBuilt(cid, 'password-reset', email);
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password?email=${encodeURIComponent(email)}&code=${resetToken}`;
     return {
       success: true,
       emailAction: buildAction('password-reset', {
@@ -211,18 +197,16 @@ const sendPasswordResetEmail = async (email, name, resetToken) => {
       }),
     };
   } catch (error) {
-    console.error(`[${cid}] ❌ FAILURE building sendPasswordResetEmail action:`, error);
+    console.error(`[${cid}] sendPasswordResetEmail failed:`, error);
     throw error;
   }
 };
 
-/**
- * Welcome email
- */
+// ─── Welcome Email ────────────────────────────────────────────────────────────
+
 const sendWelcomeEmail = async (email, name) => {
   const cid = getCorrelationId();
   try {
-    logEmailActionBuilt(cid, 'welcome', email);
     return {
       success: true,
       emailAction: buildAction('welcome', {
@@ -231,114 +215,237 @@ const sendWelcomeEmail = async (email, name) => {
       }),
     };
   } catch (error) {
-    console.error(`[${cid}] ❌ FAILURE building sendWelcomeEmail action:`, error);
+    console.error(`[${cid}] sendWelcomeEmail failed:`, error);
     throw error;
   }
 };
 
-/**
- * Diagnostic test "email" — now just returns the action payload
- * so you can verify the EmailJS wiring without hitting any provider.
- */
-const sendTestEmail = async (toEmail) => {
-  const cid = getCorrelationId();
-  console.info(`[${cid}] Running EmailJS Diagnostic (payload-only)...`);
-
-  const payload = {
-    to_email: toEmail,
-    correlationId: cid,
-    timestamp: new Date().toISOString(),
-  };
-
-  logEmailActionBuilt(cid, 'diagnostic-test', toEmail);
-
-  return {
-    success: true,
-    correlationId: cid,
-    emailAction: buildAction('diagnostic-test', payload),
-  };
-};
+// ─── Inquiry: User Confirmation ───────────────────────────────────────────────
 
 /**
- * Inquiry received (user-facing acknowledgment)
+ * Returns emailAction for the user-facing ticket acknowledgment.
+ * Template: VITE_EMAILJS_TEMPLATE_USER_CONFIRMATION
  */
-const sendInquiryReceivedEmail = async (inquiry) => {
+const sendUserConfirmationEmail = async (inquiry) => {
   const cid = getCorrelationId();
   try {
-    const isReport = ['report', 'bug', 'safety'].includes(inquiry.inquiryType);
-    logEmailActionBuilt(cid, 'inquiry-received', inquiry.email);
-    return {
-      success: true,
-      emailAction: buildAction('inquiry-received', {
-        to_email: inquiry.email,
-        to_name: inquiry.name,
-        ticketId: inquiry.ticketId,
-        subject: inquiry.subject,
-        inquiryType: inquiry.inquiryType,
-        label: isReport ? 'Report Received' : 'Inquiry Received',
-      }),
+    const typeName = (inquiry.type || inquiry.inquiryType || '').replace(/_/g, ' ');
+
+    const etaMap = {
+      critical: '4–6 hours',
+      high: '12–24 hours',
+      medium: '24–48 hours',
+      low: '48–72 hours',
     };
+    const estimatedResponseTime = etaMap[inquiry.priority] || '24–48 hours';
+
+    const messagePreview = (inquiry.message || '').substring(0, 200) +
+      ((inquiry.message || '').length > 200 ? '...' : '');
+
+    const emailAction = buildAction('user-confirmation', {
+      to_email: inquiry.email,
+      to_name: inquiry.name,
+      ticketId: inquiry.ticketNumber || inquiry.ticketId,
+      subject: inquiry.subject,
+      inquiryTypeName: typeName || 'General Inquiry',
+      messagePreview,
+      estimatedResponseTime,
+      submittedAt: fmtIST(inquiry.createdAt || new Date()),
+      platformUrl: process.env.FRONTEND_URL || 'https://sharemyride.in',
+    });
+
+    if (inquiry.emailsSent) {
+      inquiry.emailsSent.confirmationEmail = true;
+      inquiry.emailsSent.confirmationEmailAt = new Date();
+    }
+
+    return { success: true, emailAction };
   } catch (error) {
-    console.error(`[${cid}] Error building inquiry-received action:`, error);
+    console.error(`[${cid}] sendUserConfirmationEmail failed:`, error);
   }
 };
 
+// ─── Inquiry: Admin Alert (NEW inquiry notification to admin) ─────────────────
+
 /**
- * Admin alert for high priority inquiries
+ * Template: VITE_EMAILJS_TEMPLATE_ADMIN_ALERT
  */
-const sendInquiryNotificationToAdmin = async (inquiry) => {
+const sendAdminNotificationEmail = async ({
+  to,
+  ticketNumber,
+  type,
+  priority,
+  name,
+  email,
+  subject,
+  message,
+  meta,
+}) => {
   const cid = getCorrelationId();
   try {
-    const adminEmail = process.env.EMAIL_USER || process.env.EMAIL_CONTACT;
-    logEmailActionBuilt(cid, 'inquiry-admin-alert', adminEmail);
-    return {
-      success: true,
-      emailAction: buildAction('inquiry-admin-alert', {
-        to_email: adminEmail,
-        ticketId: inquiry.ticketId,
-        fromName: inquiry.name,
-        fromEmail: inquiry.email,
-        inquiryType: inquiry.inquiryType,
-        subject: inquiry.subject,
-        message: inquiry.message,
-      }),
-    };
+    const adminEmail = process.env.EMAIL_USER ||
+      process.env.EMAIL_CONTACT ||
+      'sharemyride.contact@gmail.com';
+
+    const dashboardUrl = `${process.env.FRONTEND_URL || 'https://sharemyride.in'}/admin/dashboard`;
+
+    const priorityLabel = {
+      critical: 'CRITICAL',
+      high: 'HIGH',
+      urgent: 'URGENT',
+      medium: 'MEDIUM',
+      low: 'LOW',
+    }[priority] || priority?.toUpperCase() || 'MEDIUM';
+
+    const emailAction = buildAction('admin-alert', {
+      to_email: to || adminEmail,
+      ticketId: ticketNumber,
+      fromName: name,
+      fromEmail: email,
+      fromPhone: meta?.phone || '',
+      inquiryType: (type || '').replace(/_/g, ' '),
+      priority: priorityLabel,
+      subject,
+      message: (message || '').substring(0, 500) + ((message || '').length > 500 ? '...' : ''),
+      submittedAt: fmtIST(new Date()),
+      dashboardUrl,
+      affectedPage: meta?.affectedPage || '',
+      severity: meta?.severity || '',
+    });
+
+    return { success: true, emailAction };
   } catch (error) {
-    console.error(`[${cid}] Error building inquiry-admin-alert action:`, error);
+    console.error(`[${cid}] sendAdminNotificationEmail failed:`, error);
   }
 };
 
+const sendBusinessNotificationToAdmin = async (inquiry) => {
+  return sendAdminNotificationEmail({
+    to: process.env.EMAIL_USER || 'sharemyride.contact@gmail.com',
+    ticketNumber: inquiry.ticketNumber || inquiry.ticketId,
+    type: inquiry.type || inquiry.inquiryType,
+    priority: inquiry.priority,
+    name: inquiry.name,
+    email: inquiry.email,
+    subject: inquiry.subject,
+    message: inquiry.message,
+    meta: inquiry.meta || {},
+  });
+};
+
+// ─── Inquiry: Admin Reply to User ─────────────────────────────────────────────
+
 /**
- * Reply email to user
+ * Template: VITE_EMAILJS_TEMPLATE_ADMIN_REPLY
  */
-const sendInquiryReplyEmail = async (inquiry, replyMessage) => {
+const sendInquiryReplyEmail = async (inquiry, replyMessage, adminName) => {
   const cid = getCorrelationId();
   try {
-    logEmailActionBuilt(cid, 'inquiry-reply', inquiry.email);
-    return {
-      success: true,
-      emailAction: buildAction('inquiry-reply', {
-        to_email: inquiry.email,
-        to_name: inquiry.name,
-        ticketId: inquiry.ticketId,
-        subject: inquiry.subject,
-        originalMessage: inquiry.message,
-        replyMessage,
-      }),
-    };
+    const emailAction = buildAction('admin-reply', {
+      to_email: inquiry.email,
+      to_name: inquiry.name,
+      ticketId: inquiry.ticketNumber || inquiry.ticketId,
+      subject: inquiry.subject,
+      replyMessage,
+      originalMessage: (inquiry.message || '').substring(0, 300) +
+        ((inquiry.message || '').length > 300 ? '...' : ''),
+      adminName: adminName || 'ShareMyRide Support',
+      sentAt: fmtIST(new Date()),
+      platformUrl: process.env.FRONTEND_URL || 'https://sharemyride.in',
+    });
+
+    return { success: true, emailAction };
   } catch (error) {
-    console.error(`[${cid}] Error building inquiry-reply action:`, error);
+    console.error(`[${cid}] sendInquiryReplyEmail failed:`, error);
   }
 };
 
+// ─── Inquiry/Report: Admin Sync Confirmation ──────────────────────────────────
+
 /**
- * Blog moderation status notification
+ * Template: VITE_EMAILJS_TEMPLATE_ADMIN_SYNC
  */
+const sendAdminSyncNotification = async (inquiry, { oldStatus, newStatus, replyMessage, adminName } = {}) => {
+  const cid = getCorrelationId();
+  try {
+    const adminEmail = process.env.EMAIL_USER ||
+      process.env.EMAIL_CONTACT ||
+      'sharemyride.contact@gmail.com';
+
+    const emailAction = buildAction('admin-sync', {
+      to_email: adminEmail,
+      ticketId: inquiry.ticketNumber || inquiry.ticketId,
+      userEmail: inquiry.email,
+      userName: inquiry.name,
+      oldStatus: oldStatus || '—',
+      newStatus: newStatus || inquiry.status,
+      replyMessage: replyMessage
+        ? (replyMessage.substring(0, 300) + (replyMessage.length > 300 ? '...' : ''))
+        : '(status change only — no reply text sent)',
+      adminName: adminName || 'ShareMyRide Support',
+      actionAt: fmtIST(new Date()),
+      dashboardUrl: `${process.env.FRONTEND_URL || 'https://sharemyride.in'}/admin/dashboard`,
+    });
+
+    return { success: true, emailAction };
+  } catch (error) {
+    console.error(`[${cid}] sendAdminSyncNotification failed:`, error);
+  }
+};
+
+// ─── Inquiry/Report: Combined Status + Reply Update ───────────────────────────  // NEW — fixes the missing export
+
+/**
+ * THIS IS THE FUNCTION adminController.updateEnquiry() calls. It previously
+ * did not exist in this file, which meant every admin reply/status-change
+ * silently threw inside the controller's try/catch — the inquiry saved to
+ * the DB, but NO email ever fired (to user or admin), and no error surfaced
+ * to the dashboard.
+ *
+ * It composes:
+ *   - a user-facing reply email  (only if replyMessage was provided)  → 'admin-reply' template
+ *   - an admin sync confirmation (always)                             → 'admin-sync' template
+ *
+ * Returns emailActions in the SHAPE the admin dashboard already expects:
+ *   { emailActions: { user, admin } }
+ * The controller maps these to { userNotification, adminSync } for the
+ * frontend's fireEmailActions() helper.
+ */
+const sendStatusReplyUpdate = async (inquiry, { oldStatus, newStatus, replyMessage, adminName } = {}) => {
+  const cid = getCorrelationId();
+  try {
+    let userAction = null;
+    if (replyMessage && replyMessage.trim()) {
+      const userResult = await sendInquiryReplyEmail(inquiry, replyMessage.trim(), adminName);
+      userAction = userResult?.emailAction || null;
+    }
+
+    const adminResult = await sendAdminSyncNotification(inquiry, {
+      oldStatus,
+      newStatus,
+      replyMessage,
+      adminName,
+    });
+    const adminAction = adminResult?.emailAction || null;
+
+    return {
+      success: true,
+      emailActions: {
+        user: userAction,
+        admin: adminAction,
+      },
+    };
+  } catch (error) {
+    console.error(`[${cid}] sendStatusReplyUpdate failed:`, error);
+    return { success: false, emailActions: { user: null, admin: null } };
+  }
+};
+
+// ─── Blog Status ──────────────────────────────────────────────────────────────
+
 const sendBlogStatusNotification = async (blogPost, status, remark) => {
   const cid = getCorrelationId();
   try {
-    const isApproved = status === 'published';
-    logEmailActionBuilt(cid, 'blog-status', blogPost.author?.email);
     return {
       success: true,
       emailAction: buildAction('blog-status', {
@@ -347,95 +454,58 @@ const sendBlogStatusNotification = async (blogPost, status, remark) => {
         blogTitle: blogPost.title,
         status,
         remark: remark || null,
-        isApproved,
+        isApproved: status === 'published',
       }),
     };
   } catch (error) {
-    console.error(`[${cid}] Error building blog-status action:`, error);
+    console.error(`[${cid}] sendBlogStatusNotification failed:`, error);
   }
 };
 
-/**
- * Unified business/admin notification (founder inbox)
- */
-const sendBusinessNotificationToAdmin = async (inquiry) => {
+// ─── Legacy / misc ────────────────────────────────────────────────────────────
+
+const sendInquiryReceivedEmail = sendUserConfirmationEmail;
+const sendInquiryNotificationToAdmin = sendAdminNotificationEmail;
+
+const sendTestEmail = async (toEmail) => {
   const cid = getCorrelationId();
-  try {
-    const adminEmail = process.env.EMAIL_CONTACT || 'sharemyride.contact@gmail.com';
-    const dashboardUrl = `${process.env.FRONTEND_URL}/admin/founder-inbox/${inquiry._id}`;
-
-    logEmailActionBuilt(cid, 'business-notification', adminEmail);
-    return {
-      success: true,
-      emailAction: buildAction('business-notification', {
-        to_email: adminEmail,
-        ticketId: inquiry.ticketId,
-        fromName: inquiry.name,
-        fromEmail: inquiry.email,
-        fromPhone: inquiry.phone || null,
-        inquiryType: inquiry.inquiryType,
-        priority: inquiry.priority,
-        subject: inquiry.subject,
-        message: inquiry.message,
-        submittedAt: moment(inquiry.createdAt).format('MMMM D, YYYY [at] h:mm A'),
-        userId: inquiry.userId || null,
-        additionalNotes: inquiry.metadata?.additionalNotes || null,
-        dashboardUrl,
-      }),
-    };
-  } catch (error) {
-    console.error(`[${cid}] Error building business-notification action:`, error);
-  }
+  return {
+    success: true,
+    correlationId: cid,
+    emailAction: buildAction('diagnostic-test', {
+      to_email: toEmail,
+      correlationId: cid,
+      timestamp: new Date().toISOString(),
+    }),
+  };
 };
 
-/**
- * Standard acknowledgment email with ticket number
- */
-const sendUserConfirmationEmail = async (inquiry) => {
-  const cid = getCorrelationId();
-  try {
-    const inquiryTypeName = inquiry.inquiryType.replace(/_/g, ' ');
-    const estimatedResponseTime =
-      inquiry.priority === 'critical' ? '4-6 hours' :
-      inquiry.priority === 'high' ? '12-24 hours' : '24-48 hours';
+// ─── Exports ──────────────────────────────────────────────────────────────────
 
-    logEmailActionBuilt(cid, 'user-confirmation', inquiry.email);
-
-    const emailAction = buildAction('user-confirmation', {
-      to_email: inquiry.email,
-      to_name: inquiry.name,
-      ticketId: inquiry.ticketId,
-      subject: inquiry.subject,
-      inquiryTypeName,
-      messagePreview: inquiry.message.substring(0, 150) + (inquiry.message.length > 150 ? '...' : ''),
-      estimatedResponseTime,
-    });
-
-    // Preserve original side-effect: mark confirmation email as "sent"
-    // on the in-memory inquiry doc so the caller's existing .save() logic
-    // (in the controller) continues to work unmodified.
-    if (inquiry.emailsSent) {
-      inquiry.emailsSent.confirmationEmail = true;
-      inquiry.emailsSent.confirmationEmailAt = new Date();
-    }
-
-    return { success: true, emailAction };
-  } catch (error) {
-    console.error(`[${cid}] Error building user-confirmation action:`, error);
-  }
-};
-
-// Export functions — same names, same shape, no Resend dependency
 module.exports = {
+  // Booking
   sendBookingConfirmationEmails,
-  sendPasswordResetEmail,
+
+  // Auth
   sendVerificationEmail,
+  sendPasswordResetEmail,
   sendWelcomeEmail,
-  sendTestEmail,
+
+  // Inquiry — user submission flow
+  sendUserConfirmationEmail,
+  sendAdminNotificationEmail,
+  sendBusinessNotificationToAdmin,
+
+  // Inquiry — admin action flow
+  sendInquiryReplyEmail,
+  sendAdminSyncNotification,
+  sendStatusReplyUpdate,       // NEW — required by adminController.updateEnquiry
+
+  // Blog
+  sendBlogStatusNotification,
+
+  // Legacy / misc
   sendInquiryReceivedEmail,
   sendInquiryNotificationToAdmin,
-  sendInquiryReplyEmail,
-  sendBlogStatusNotification,
-  sendBusinessNotificationToAdmin,
-  sendUserConfirmationEmail,
+  sendTestEmail,
 };

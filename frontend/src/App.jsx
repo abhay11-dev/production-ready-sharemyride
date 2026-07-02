@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import AppRoutes from './routes/AppRoutes';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
@@ -17,6 +17,52 @@ function App() {
 }
 
 function AppShell() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const navigationType = useNavigationType();
+
+  useEffect(() => {
+    const handleInternalLinkClick = (event) => {
+      const link = event.target.closest('a[href]');
+      if (!link) return;
+
+      const href = link.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+
+      const url = new URL(href, window.location.origin);
+      if (url.origin !== window.location.origin) return;
+
+      const targetPath = `${url.pathname}${url.search}`;
+      const currentPath = `${location.pathname}${location.search}`;
+
+      if (targetPath === currentPath) {
+        event.preventDefault();
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+        return;
+      }
+
+      event.preventDefault();
+      navigate(targetPath);
+    };
+
+    document.addEventListener('click', handleInternalLinkClick);
+
+    return () => document.removeEventListener('click', handleInternalLinkClick);
+  }, [location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    const shouldSkipScroll = navigationType === 'PUSH' || navigationType === 'REPLACE';
+
+    if (shouldSkipScroll) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      return;
+    }
+
+    if (location.key) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+  }, [location.pathname, location.key, navigationType]);
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
@@ -39,7 +85,6 @@ const ScrollToTop = () => {
       setIsVisible(window.pageYOffset > 300);
     };
 
-    window.scrollTo({ top: 0, behavior: 'instant' });
     window.addEventListener('scroll', toggleVisibility);
     toggleVisibility();
 

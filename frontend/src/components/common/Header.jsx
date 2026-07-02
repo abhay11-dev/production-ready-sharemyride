@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import NotificationDropdown from '../NotificationDropdown.jsx';
 
@@ -8,6 +8,7 @@ function Header() {
   const [scrolled, setScrolled] = useState(false);
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const sidebarRef = useRef(null);
 
   // Shrink header on scroll
@@ -45,6 +46,21 @@ function Header() {
   };
 
   const isActive = (path) => location.pathname === path;
+
+  const handleNavClick = (path, event) => {
+    if (event) {
+      event.preventDefault();
+    }
+
+    if (location.pathname === path) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      setIsMenuOpen(false);
+      return;
+    }
+
+    navigate(path);
+    setIsMenuOpen(false);
+  };
 
   const navLinkClass = (path) =>
     `relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
@@ -84,14 +100,14 @@ function Header() {
 
             {/* ── Desktop Nav ── */}
             <nav className="hidden md:flex items-center gap-1" aria-label="Primary navigation">
-              <Link to="/ride/search" className={navLinkClass('/ride/search')}>
+              <Link to="/ride/search" className={navLinkClass('/ride/search')} onClick={(event) => handleNavClick('/ride/search', event)}>
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <span>Find a Ride</span>
               </Link>
 
-              <Link to="/ride/post" className={navLinkClass('/ride/post')}>
+              <Link to="/ride/post" className={navLinkClass('/ride/post')} onClick={(event) => handleNavClick('/ride/post', event)}>
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
@@ -100,14 +116,14 @@ function Header() {
 
               {user && (
                 <>
-                  <Link to="/upcoming-rides" className={navLinkClass('/upcoming-rides')}>
+                  <Link to="/upcoming-rides" className={navLinkClass('/upcoming-rides')} onClick={(event) => handleNavClick('/upcoming-rides', event)}>
                     <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     <span>My Trips</span>
                   </Link>
 
-                  <Link to="/bookings/my-bookings" className={navLinkClass('/bookings/my-bookings')}>
+                  <Link to="/bookings/my-bookings" className={navLinkClass('/bookings/my-bookings')} onClick={(event) => handleNavClick('/bookings/my-bookings', event)}>
                     <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
@@ -126,6 +142,7 @@ function Header() {
                   <Link
                     to="/profile"
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-blue-100 hover:text-white hover:bg-white/10 transition-all duration-150"
+                    onClick={(event) => handleNavClick('/profile', event)}
                   >
                     <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                       {user?.name?.charAt(0)?.toUpperCase() || 'U'}
@@ -150,12 +167,14 @@ function Header() {
                   <Link
                     to="/login"
                     className="text-blue-100 hover:text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-white/10 transition-all duration-150"
+                    onClick={(event) => handleNavClick('/login', event)}
                   >
                     Sign in
                   </Link>
                   <Link
                     to="/signup"
                     className="bg-white text-blue-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-50 hover:shadow-md transition-all duration-150"
+                    onClick={(event) => handleNavClick('/signup', event)}
                   >
                     Get started
                   </Link>

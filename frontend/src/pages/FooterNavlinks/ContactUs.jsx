@@ -1,14 +1,23 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import emailjs from '@emailjs/browser';
 import toast from 'react-hot-toast';
+import RecentTicketsPanel from '../../components/common/RecentTicketsPanel';
+import { getStoredTickets, saveTicketToStorage } from '../../utils/ticketStorage';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
 // ─── EmailJS config (from .env — see setup walkthrough) ───────────────────
 const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
 const EMAILJS_TEMPLATE_USER_CONFIRMATION = import.meta.env.VITE_EMAILJS_TEMPLATE_USER_CONFIRMATION;
+const EMAILJS_TEMPLATE_ADMIN_ALERT = import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_ALERT; // NEW
 const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+
+// Maps each backend `emailAction.template` key to its EmailJS template ID.
+const EMAILJS_CREATION_TEMPLATES = {
+  'user-confirmation': EMAILJS_TEMPLATE_USER_CONFIRMATION,
+  'admin-alert': EMAILJS_TEMPLATE_ADMIN_ALERT,
+};
 
 // Maps UI selection → Inquiry model's valid `type` enum values
 const INQUIRY_TYPE_MAP = {
@@ -191,30 +200,34 @@ function HeroBackground() {
 }
 
 /**
- * Fire the EmailJS "user confirmation" email using the emailAction object
- * the backend returns. Non-fatal — if EmailJS fails, we just log it; the
+ * Fire ONE EmailJS emailAction using the { template, payload } shape the
+ * backend returns. Non-fatal — if EmailJS fails, we just log it; the
  * inquiry is already saved server-side regardless.
  */
-const sendUserConfirmationViaEmailJS = async (emailAction) => {
-    console.log("Service ID:", import.meta.env.VITE_EMAILJS_SERVICE_ID);
-console.log("Template ID:", import.meta.env.VITE_EMAILJS_TEMPLATE_USER_CONFIRMATION);
-console.log("Public Key:", import.meta.env.VITE_EMAILJS_PUBLIC_KEY);
-    if (!emailAction?.payload) return;
-    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_USER_CONFIRMATION || !EMAILJS_PUBLIC_KEY) {
-        console.warn('[EmailJS] Missing service/template/public key env vars — skipping send.');
-        return;
-    }
-    try {
-        await emailjs.send(
-            EMAILJS_SERVICE_ID,
-            EMAILJS_TEMPLATE_USER_CONFIRMATION,
-            emailAction.payload,
-            { publicKey: EMAILJS_PUBLIC_KEY }
-        );
-    } catch (err) {
-        console.error('[EmailJS] Failed to send user confirmation email:', err);
-        // Non-fatal: don't block the success UI just because the email failed
-    }
+const fireCreationEmailAction = async (action) => {
+  if (!action?.template || !action?.payload) return;
+  const templateId = EMAILJS_CREATION_TEMPLATES[action.template];
+  if (!EMAILJS_SERVICE_ID || !templateId || !EMAILJS_PUBLIC_KEY) {
+    console.warn(`[EmailJS] Missing service/template/public key for "${action.template}" — skipping send.`);
+    return;
+  }
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, templateId, action.payload, { publicKey: EMAILJS_PUBLIC_KEY });
+  } catch (err) {
+    console.error(`[EmailJS] Failed to send "${action.template}":`, err);
+    // Non-fatal: don't block the success UI just because the email failed
+  }
+};
+
+/**
+ * Fires BOTH the user confirmation email and the admin new-ticket alert.
+ * Both come back from the backend on ticket creation as
+ * `res.data.emailActions.userConfirmation` / `.adminNotification`.
+ */
+const fireCreationEmailActions = (emailActions) => {
+  if (!emailActions) return;
+  if (emailActions.userConfirmation) fireCreationEmailAction(emailActions.userConfirmation);
+  if (emailActions.adminNotification) fireCreationEmailAction(emailActions.adminNotification);
 };
 
 export default function ContactUs() {
@@ -223,11 +236,17 @@ export default function ContactUs() {
     const [sent, setSent] = useState(false);
     const [ticketId, setTicketId] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [savedTickets, setSavedTickets] = useState([]);
+
+    useEffect(() => {
+        setSavedTickets(getStoredTickets());
+    }, []);
 
     const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const preservedScrollY = window.scrollY;
         setSubmitting(true);
         try {
             const res = await axios.post(`${API_URL}/inquiries`, {
@@ -240,16 +259,25 @@ export default function ContactUs() {
             });
 
             const data = res.data?.data || {};
-            setTicketId(data.ticketId || data.ticketNumber || '');
+            const nextTicketId = data.ticketId || data.ticketNumber || '';
+            setTicketId(nextTicketId);
+            const updatedTickets = saveTicketToStorage({
+                id: nextTicketId || `TKT-${Date.now()}`,
+                subject: form.subject,
+                status: data.status || 'open',
+            });
+            setSavedTickets(updatedTickets);
             setSent(true);
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: preservedScrollY, left: 0, behavior: 'auto' });
+            });
             toast.success('Your inquiry has been submitted!', {
                 style: { borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '14px' },
             });
 
-            // Fire the confirmation email client-side via EmailJS.
-            // Don't await-block the UI on this — already showed success above.
-            const emailAction = res.data?.emailActions?.userConfirmation;
-            sendUserConfirmationViaEmailJS(emailAction);
+            // Fire BOTH the user confirmation email and the admin new-ticket
+            // alert. Don't await-block the UI on this — success is already shown.
+            fireCreationEmailActions(res.data?.emailActions);
 
         } catch (err) {
             console.error('Inquiry submission error:', err);
@@ -308,6 +336,7 @@ export default function ContactUs() {
 
                     {/* Left: Info */}
                     <div className="lg:col-span-2 space-y-6">
+                        <RecentTicketsPanel tickets={savedTickets} title="Recent support tickets" emptyMessage="Your submitted inquiries will appear here after you send one." />
                         <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                             <div className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                                 <span className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
