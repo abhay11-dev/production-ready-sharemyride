@@ -120,6 +120,10 @@ const userSchema = new mongoose.Schema({
   // ── Password Reset ────────────────────────────────────────────────────────
   resetPasswordToken: { type: String, default: null },
   resetPasswordExpires: { type: Date, default: null },
+  resetOtp: { type: String, default: null, select: false },
+  resetOtpExpires: { type: Date, default: null, select: false },
+  resetOtpAttempts: { type: Number, default: 0, select: false },
+  resetOtpLastSentAt: { type: Date, default: null, select: false },
 
   // ── Email Verification ────────────────────────────────────────────────────
   emailVerified: { type: Boolean, default: false },
@@ -127,6 +131,10 @@ const userSchema = new mongoose.Schema({
   emailVerificationExpires: { type: Date, default: null },
   emailVerificationAttempts: { type: Number, default: 0 },
   lastEmailVerificationAttempt: { type: Date, default: null },
+  signupOtp: { type: String, default: null, select: false },
+  signupOtpExpires: { type: Date, default: null, select: false },
+  signupOtpAttempts: { type: Number, default: 0, select: false },
+  signupOtpLastSentAt: { type: Date, default: null, select: false },
 
   // ── Login Security ────────────────────────────────────────────────────────
   // Number of consecutive failed login attempts since last success
@@ -225,6 +233,10 @@ userSchema.methods.toJSON = function () {
   delete user.resetPasswordToken;
   delete user.resetPasswordExpires;
   delete user.emailVerificationToken;
+  delete user.signupOtp;
+  delete user.signupOtpExpires;
+  delete user.resetOtp;
+  delete user.resetOtpExpires;
   delete user.failedLoginAttempts;
   delete user.lockoutUntil;
   delete user.__v;

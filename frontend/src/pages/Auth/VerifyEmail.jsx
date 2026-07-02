@@ -45,7 +45,7 @@ function VerifyEmail() {
         setTimeout(() => {
           localStorage.removeItem('pendingVerificationEmail');
           navigate('/login', {
-            state: { 
+            state: {
               message: 'Email verified! You can now log in.',
               email: email
             }
@@ -94,7 +94,7 @@ function VerifyEmail() {
     <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-green-50 to-green-100 px-4 py-8">
       <div className="w-full max-w-md">
         <div className="bg-white shadow-2xl rounded-2xl px-6 sm:px-8 py-8 sm:py-10 border border-gray-100 text-center">
-          
+
           {loading ? (
             <>
               {/* Loading State */}

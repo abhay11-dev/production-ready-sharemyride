@@ -14,6 +14,9 @@ const {
   resetPassword,
   verifyEmail,
   resendVerificationEmail,
+  resendSignupOtp,
+  verifySignupOtp,
+  verifyResetOtp,
 } = require('../controllers/authController');
 
 const { protect } = require('../middleware/auth');
@@ -25,8 +28,11 @@ router.post('/logout',                    logout);            // Clears HttpOnly
 router.post('/refresh-token',             refreshToken);      // Uses HttpOnly cookie
 router.post('/forgot-password',           forgotPassword);
 router.post('/verify-reset-code',         verifyResetCode);
+router.post('/verify-reset-otp',          verifyResetOtp);
 router.post('/reset-password',            resetPassword);
 router.post('/verify-email',              verifyEmail);
+router.post('/verify-otp',                verifySignupOtp);
+router.post('/resend-otp',                resendSignupOtp);
 router.post('/resend-verification-email', resendVerificationEmail);
 
 // ── Protected routes (valid access token required) ────────────────────────────

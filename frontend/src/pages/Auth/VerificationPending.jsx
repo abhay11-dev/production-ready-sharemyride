@@ -1,97 +1,90 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { resendVerificationEmail } from '../../services/authService';
+import { verifySignupOtp, resendSignupOtp } from '../../services/authService';
+import OtpInput from '../../components/common/OtpInput';
 import toast from 'react-hot-toast';
+
+const RESEND_COOLDOWN = 60;
 
 function VerificationPending() {
   const navigate = useNavigate();
   const location = useLocation();
+
   const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [otp, setOtp] = useState('');
+  const [error, setError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
-  const [cooldownTimer, setCooldownTimer] = useState(0);
+  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN);
+  const hasAutoSent = useRef(true); // OTP is already sent by the signup call itself
 
   useEffect(() => {
-    // Get email from state or localStorage
     const emailFromState = location.state?.email;
+    const nameFromState = location.state?.name;
     const emailFromStorage = localStorage.getItem('pendingVerificationEmail');
     const emailToUse = emailFromState || emailFromStorage;
 
     if (emailToUse) {
       setEmail(emailToUse);
+      setName(nameFromState || '');
       localStorage.setItem('pendingVerificationEmail', emailToUse);
     } else {
-      // Redirect to signup if no email
       navigate('/signup');
     }
   }, [navigate, location]);
 
-  // Countdown timer for resend
   useEffect(() => {
-    let interval;
-    if (cooldownTimer > 0) {
-      interval = setInterval(() => {
-        setCooldownTimer(prev => prev - 1);
-      }, 1000);
-    }
+    if (cooldown <= 0) return;
+    const interval = setInterval(() => setCooldown((c) => c - 1), 1000);
     return () => clearInterval(interval);
-  }, [cooldownTimer]);
+  }, [cooldown]);
 
-  const handleResendEmail = async () => {
+  const toastStyle = (bg) => ({
+    duration: 4000,
+    position: 'top-center',
+    style: { background: bg, color: '#fff', fontWeight: '600', padding: '14px 18px', borderRadius: '12px' },
+  });
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (otp.length !== 6) {
+      setError('Enter the full 6-digit code');
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      await verifySignupOtp(email, otp);
+      toast.success('Email verified successfully!', { ...toastStyle('#10B981'), iconTheme: { primary: '#fff', secondary: '#10B981' } });
+      localStorage.removeItem('pendingVerificationEmail');
+      setTimeout(() => {
+        navigate('/login', { state: { message: 'Email verified! You can now log in.', email } });
+      }, 500);
+    } catch (err) {
+      const msg = err.message || 'Invalid or expired code. Please try again.';
+      setError(msg);
+      toast.error(msg, toastStyle('#EF4444'));
+      setOtp('');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError('');
     setIsResending(true);
     try {
-      const response = await resendVerificationEmail(email);
-      
-      if (response && response.emailBypassed) {
-        toast.success('Email auto-verified for demo! You can log in now.', {
-          duration: 5000,
-          position: 'top-center',
-          icon: '🚀',
-          style: {
-            background: '#10B981',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        });
-        
-        setTimeout(() => {
-          navigate('/login');
-        }, 1500);
-      } else {
-        toast.success('Verification email sent! Please check your inbox.', {
-          duration: 4000,
-          position: 'top-center',
-          style: {
-            background: '#10B981',
-            color: '#fff',
-            fontWeight: '600',
-            padding: '16px',
-            borderRadius: '12px',
-          },
-        });
-
-        // Set 60-second cooldown
-        setCooldownTimer(60);
-      }
+      await resendSignupOtp(email);
+      toast.success('A new code has been sent to your email', toastStyle('#10B981'));
+      setOtp('');
+      setCooldown(RESEND_COOLDOWN);
     } catch (err) {
-      const errorMessage = err.message || 'Failed to resend email. Please try again.';
-      toast.error(errorMessage, {
-        duration: 4000,
-        position: 'top-center',
-        style: {
-          background: '#EF4444',
-          color: '#fff',
-          fontWeight: '600',
-          padding: '16px',
-          borderRadius: '12px',
-        },
-      });
-
-      // Handle rate limiting
-      if (err.retryAfter) {
-        setCooldownTimer(err.retryAfter * 60);
-      }
+      const msg = err.message || 'Failed to resend code. Please try again.';
+      toast.error(msg, toastStyle('#EF4444'));
+      if (err.retryAfter) setCooldown(err.retryAfter);
     } finally {
       setIsResending(false);
     }
@@ -103,101 +96,112 @@ function VerificationPending() {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-gradient-to-br from-green-50 to-green-100 px-4 py-8">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-6 sm:py-10 lg:py-14 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md">
-        <div className="bg-white shadow-2xl rounded-2xl px-6 sm:px-8 py-8 sm:py-10 border border-gray-100 text-center">
-          
-          {/* Illustration */}
-          <div className="mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full">
-              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/60 border border-gray-100 overflow-hidden">
+
+          {/* Card header */}
+          <div className="px-6 sm:px-8 pt-8 sm:pt-9 pb-5 text-center">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-50 mb-4">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </div>
-          </div>
-
-          {/* Header */}
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">
-            Verify Your Email
-          </h2>
-          <p className="text-gray-600 text-sm sm:text-base mb-6">
-            We've sent a verification link to
-          </p>
-          
-          {/* Email Display */}
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg px-4 py-3 mb-6">
-            <p className="text-blue-900 font-semibold text-sm sm:text-base break-all">
-              {email || 'your email'}
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Verify your email</h2>
+            <p className="text-sm text-gray-500 mt-1.5">
+              Enter the 6-digit code sent to
             </p>
+            <p className="text-sm font-semibold text-gray-900 mt-0.5 break-all">{email || 'your email'}</p>
           </div>
 
-          {/* Instructions */}
-          <div className="bg-green-50 border-l-4 border-green-500 p-4 mb-6 text-left rounded">
-            <h3 className="font-semibold text-green-900 mb-2">Next Steps:</h3>
-            <ol className="text-green-800 text-sm space-y-2">
-              <li>1. Check your email inbox for the verification link</li>
-              <li>2. Click the link to verify your email address</li>
-              <li>3. Return here or go to login to proceed</li>
-            </ol>
-          </div>
+          {/* Form */}
+          <form onSubmit={handleVerify} className="px-6 sm:px-8 pb-7 space-y-5">
 
-          {/* Spam Warning */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-left">
-            <p className="text-yellow-800 text-xs sm:text-sm">
-              <strong>💡 Tip:</strong> If you don't see the email, check your spam or junk folder.
-            </p>
-          </div>
+            {error && (
+              <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
+                <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span className="text-sm font-medium">{error}</span>
+              </div>
+            )}
 
-          {/* Buttons */}
-          <div className="space-y-3">
-            {/* Resend Button */}
+            <div>
+              <OtpInput value={otp} onChange={setOtp} disabled={isVerifying} error={Boolean(error)} />
+            </div>
+
+            {/* Resend row */}
+            <div className="text-center">
+              {cooldown > 0 ? (
+                <p className="text-xs text-gray-400">
+                  Didn't get it? Resend in <span className="font-semibold text-gray-600">{cooldown}s</span>
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={isResending}
+                  className="text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                >
+                  {isResending ? 'Sending new code…' : "Didn't get it? Resend code"}
+                </button>
+              )}
+            </div>
+
+            {/* CTA */}
             <button
-              onClick={handleResendEmail}
-              disabled={isResending || cooldownTimer > 0}
-              className="w-full bg-gradient-to-r from-green-600 to-green-500 text-white py-3 rounded-lg font-semibold hover:from-green-700 hover:to-green-600 hover:shadow-lg transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-none flex items-center justify-center gap-2"
+              type="submit"
+              disabled={isVerifying || otp.length !== 6}
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 text-white py-3 rounded-xl text-sm font-bold shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
-              {isResending ? (
+              {isVerifying ? (
                 <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  <span>Sending...</span>
+                  Verifying…
                 </>
-              ) : cooldownTimer > 0 ? (
-                <span>Resend in {cooldownTimer}s</span>
               ) : (
                 <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  Verify account
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
-                  <span>Resend Verification Email</span>
                 </>
               )}
             </button>
 
-            {/* Change Email Button */}
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-100" />
+              </div>
+            </div>
+
             <button
+              type="button"
               onClick={handleChangeEmail}
-              className="w-full bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-all duration-200"
+              disabled={isVerifying}
+              className="w-full flex items-center justify-center gap-1.5 border border-gray-200 text-gray-700 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 disabled:opacity-50"
             >
-              Change Email Address
+              Use a different email
             </button>
 
-            {/* Login Button */}
             <button
+              type="button"
               onClick={() => navigate('/login')}
-              className="w-full text-green-600 hover:text-green-700 font-semibold py-3 hover:underline transition-colors duration-200"
+              disabled={isVerifying}
+              className="w-full text-center text-xs text-gray-400 hover:text-blue-600 transition-colors duration-150"
             >
-              Back to Login
+              Back to sign in
             </button>
-          </div>
-
-          {/* Help Text */}
-          <p className="text-xs text-gray-500 mt-6">
-            The verification link will expire in 24 hours. Make sure to verify your email within this timeframe.
-          </p>
+          </form>
         </div>
+
+        <p className="text-center text-xs text-gray-400 mt-4">
+          The code expires in a few minutes — check your spam folder if you don't see it.
+        </p>
       </div>
     </div>
   );

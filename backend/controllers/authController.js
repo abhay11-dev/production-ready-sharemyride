@@ -1,13 +1,14 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
+const OTP_EXPIRY_MS = 10 * 60 * 1000;
+const MAX_OTP_RESENDS = 3;
+const OTP_COOLDOWN_MS = 15 * 60 * 1000;
 
 // ─── Token Generators ─────────────────────────────────────────────────────────
 const generateAccessToken = (userId) => {
@@ -34,6 +35,10 @@ const sanitizeUser = (user) => {
   delete safeUser.resetPasswordToken;
   delete safeUser.resetPasswordExpires;
   delete safeUser.emailVerificationToken;
+  delete safeUser.signupOtp;
+  delete safeUser.signupOtpExpires;
+  delete safeUser.resetOtp;
+  delete safeUser.resetOtpExpires;
   delete safeUser.failedLoginAttempts;
   delete safeUser.lockoutUntil;
   return safeUser;
@@ -48,6 +53,26 @@ const setRefreshTokenCookie = (res, refreshToken) => {
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
   });
+};
+
+const generateOtpCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+const setSignupOtp = (user) => {
+  const otp = generateOtpCode();
+  user.signupOtp = otp;
+  user.signupOtpExpires = Date.now() + OTP_EXPIRY_MS;
+  user.signupOtpAttempts = 0;
+  user.signupOtpLastSentAt = Date.now();
+  return otp;
+};
+
+const setResetOtp = (user) => {
+  const otp = generateOtpCode();
+  user.resetOtp = otp;
+  user.resetOtpExpires = Date.now() + OTP_EXPIRY_MS;
+  user.resetOtpAttempts = 0;
+  user.resetOtpLastSentAt = Date.now();
+  return otp;
 };
 
 // ─── Signup ───────────────────────────────────────────────────────────────────
@@ -78,56 +103,125 @@ const signup = async (req, res) => {
       accountStatus: 'PENDING_VERIFICATION'
     });
 
-    const verificationToken = user.generateEmailVerificationToken();
+    const otp = setSignupOtp(user);
     await user.save();
 
-    try {
-      if (!process.env.FRONTEND_URL) {
-        throw new Error('Server configuration error: FRONTEND_URL not set');
-      }
-      const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}&email=${encodeURIComponent(user.email)}`;
-      await sendVerificationEmail(user.email, user.name, verificationLink);
-
-      return res.status(201).json({
-        success: true,
-        message: 'Account created successfully! Please check your email to verify your account.',
-        user: sanitizeUser(user),
-        verificationPending: true
-      });
-    } catch (emailError) {
-      // Check if this is a Resend sandbox restriction error
-      const isResendSandboxRestriction = emailError.message && 
-        (emailError.message.includes('You can only send testing emails to your own email address') || 
-         emailError.message.includes('verify a domain at resend.com'));
-
-      if (isResendSandboxRestriction) {
-        console.warn(`⚠️ Resend sandbox restriction detected. Auto-verifying email for ${user.email} to allow demo testing.`);
-        user.emailVerified = true;
-        user.accountStatus = 'ACTIVE';
-        user.emailVerificationToken = null;
-        user.emailVerificationExpires = null;
-        await user.save();
-
-        return res.status(201).json({
-          success: true,
-          message: 'Account created successfully! (Email auto-verified for demo/testing purposes as Resend is in Sandbox mode).',
-          user: sanitizeUser(user),
-          verificationPending: false
-        });
-      }
-
-      await User.findByIdAndDelete(user._id);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send verification email. Please try again.',
-        error: process.env.NODE_ENV === 'development' ? emailError.message : undefined
-      });
-    }
+    return res.status(201).json({
+      success: true,
+      message: 'Account created successfully! Please verify your email with the code sent to your inbox.',
+      user: sanitizeUser(user),
+      otp,
+      email: user.email,
+      name: user.name,
+      verificationPending: true
+    });
   } catch (error) {
     console.error('Signup error:', error.message);
     return res.status(500).json({
       success: false,
       message: 'Server error during signup'
+    });
+  }
+};
+
+const resendSignupOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If your email is registered and unverified, a new verification code has been sent.'
+      });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified'
+      });
+    }
+
+    const canResend = !user.signupOtpLastSentAt || Date.now() - user.signupOtpLastSentAt > OTP_COOLDOWN_MS;
+    if (!canResend) {
+      return res.status(429).json({
+        success: false,
+        message: 'Please wait before requesting another code.',
+        retryAfter: Math.ceil((OTP_COOLDOWN_MS - (Date.now() - user.signupOtpLastSentAt)) / 1000 / 60)
+      });
+    }
+
+    const otp = setSignupOtp(user);
+    user.signupOtpAttempts = (user.signupOtpAttempts || 0) + 1;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'A new verification code has been sent to your email.',
+      otp,
+      email: user.email,
+      name: user.name
+    });
+  } catch (error) {
+    console.error('Resend signup OTP error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to resend verification code. Please try again.'
+    });
+  }
+};
+
+const verifySignupOtp = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and OTP are required'
+      });
+    }
+
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      signupOtp: otp,
+      signupOtpExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code'
+      });
+    }
+
+    user.emailVerified = true;
+    user.accountStatus = 'ACTIVE';
+    user.signupOtp = null;
+    user.signupOtpExpires = null;
+    user.signupOtpAttempts = 0;
+    user.signupOtpLastSentAt = null;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email verified successfully. You can now log in.',
+      user: sanitizeUser(user)
+    });
+  } catch (error) {
+    console.error('Verify signup OTP error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify code. Please try again.'
     });
   }
 };
@@ -513,42 +607,24 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // SECURITY: Always return the same response regardless of whether the email
-    // exists — this prevents user enumeration attacks
     const GENERIC_MESSAGE = 'If an account exists with this email, a password reset code has been sent.';
 
     const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      // Return 200 with generic message — do NOT return 404
       return res.status(200).json({ success: true, message: GENERIC_MESSAGE });
     }
 
-    const resetToken = user.generateResetToken();
+    const otp = setResetOtp(user);
     await user.save();
 
-    try {
-      await sendPasswordResetEmail(user.email, user.name, resetToken);
-    } catch (emailError) {
-      console.error('Email service error:', emailError.message);
-      
-      const isResendSandboxRestriction = emailError.message && 
-        (emailError.message.includes('You can only send testing emails to your own email address') || 
-         emailError.message.includes('verify a domain at resend.com'));
-
-      if (isResendSandboxRestriction) {
-        console.warn(`⚠️ Resend sandbox restriction detected during forgotPassword. Keeping resetToken valid and logging it:`);
-        console.warn(`   Password Reset Link: ${process.env.FRONTEND_URL || process.env.API_BASE_URL}/reset-password?email=${encodeURIComponent(user.email)}&code=${resetToken}`);
-        console.warn(`   Reset Token: ${resetToken}`);
-      } else {
-        user.resetPasswordToken = null;
-        user.resetPasswordExpires = null;
-        await user.save();
-      }
-      // Still return generic message — don't expose internal email errors
-    }
-
-    return res.status(200).json({ success: true, message: GENERIC_MESSAGE });
+    return res.status(200).json({
+      success: true,
+      message: GENERIC_MESSAGE,
+      otp,
+      email: user.email,
+      name: user.name
+    });
   } catch (error) {
     console.error('Forgot password error:', error.message);
     return res.status(500).json({
@@ -559,11 +635,12 @@ const forgotPassword = async (req, res) => {
 };
 
 // ─── Verify Reset Code ────────────────────────────────────────────────────────
-const verifyResetCode = async (req, res) => {
+const verifyResetOtp = async (req, res) => {
   try {
-    const { email, code } = req.body;
+    const { email, otp, code } = req.body;
+    const verificationCode = otp || code;
 
-    if (!email || !code) {
+    if (!email || !verificationCode) {
       return res.status(400).json({
         success: false,
         message: 'Email and code are required'
@@ -572,8 +649,8 @@ const verifyResetCode = async (req, res) => {
 
     const user = await User.findOne({
       email: email.toLowerCase(),
-      resetPasswordToken: code,
-      resetPasswordExpires: { $gt: Date.now() }
+      resetOtp: verificationCode,
+      resetOtpExpires: { $gt: Date.now() }
     });
 
     if (!user) {
@@ -588,20 +665,22 @@ const verifyResetCode = async (req, res) => {
       message: 'Code verified successfully'
     });
   } catch (error) {
-    console.error('Verify code error:', error.message);
+    console.error('Verify reset OTP error:', error.message);
     return res.status(500).json({
       success: false,
       message: 'Verification failed. Please try again.'
     });
   }
 };
+const verifyResetCode = verifyResetOtp;
 
 // ─── Reset Password ───────────────────────────────────────────────────────────
 const resetPassword = async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
+    const { email, otp, code, newPassword } = req.body;
+    const verificationCode = otp || code;
 
-    if (!email || !code || !newPassword) {
+    if (!email || !verificationCode || !newPassword) {
       return res.status(400).json({
         success: false,
         message: 'Email, code, and new password are required'
@@ -617,8 +696,8 @@ const resetPassword = async (req, res) => {
 
     const user = await User.findOne({
       email: email.toLowerCase(),
-      resetPasswordToken: code,
-      resetPasswordExpires: { $gt: Date.now() }
+      resetOtp: verificationCode,
+      resetOtpExpires: { $gt: Date.now() }
     });
 
     if (!user) {
@@ -628,11 +707,11 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    // Pre-save hook will hash the new password — never store plain text
     user.password = newPassword;
-    user.resetPasswordToken = null;
-    user.resetPasswordExpires = null;
-    // Reset lockout on successful password reset
+    user.resetOtp = null;
+    user.resetOtpExpires = null;
+    user.resetOtpAttempts = 0;
+    user.resetOtpLastSentAt = null;
     user.failedLoginAttempts = 0;
     user.lockoutUntil = null;
     await user.save();
@@ -653,7 +732,36 @@ const resetPassword = async (req, res) => {
 // ─── Verify Email ─────────────────────────────────────────────────────────────
 const verifyEmail = async (req, res) => {
   try {
-    const { token, email } = req.body;
+    const { token, email, otp } = req.body;
+
+    if (otp && email) {
+      const user = await User.findOne({
+        email: email.toLowerCase(),
+        signupOtp: otp,
+        signupOtpExpires: { $gt: Date.now() }
+      });
+
+      if (!user) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid or expired verification code'
+        });
+      }
+
+      user.emailVerified = true;
+      user.accountStatus = 'ACTIVE';
+      user.signupOtp = null;
+      user.signupOtpExpires = null;
+      user.signupOtpAttempts = 0;
+      user.signupOtpLastSentAt = null;
+      await user.save();
+
+      return res.status(200).json({
+        success: true,
+        message: 'Email verified successfully! You can now log in.',
+        user: sanitizeUser(user)
+      });
+    }
 
     if (!token || !email) {
       return res.status(400).json({
@@ -662,7 +770,6 @@ const verifyEmail = async (req, res) => {
       });
     }
 
-    // Find user with matching token and email
     const user = await User.findOne({
       email: email.toLowerCase(),
       emailVerificationToken: token,
@@ -676,7 +783,6 @@ const verifyEmail = async (req, res) => {
       });
     }
 
-    // Check if already verified
     if (user.emailVerified) {
       return res.status(400).json({
         success: false,
@@ -684,7 +790,6 @@ const verifyEmail = async (req, res) => {
       });
     }
 
-    // Mark email as verified
     user.emailVerified = true;
     user.accountStatus = 'ACTIVE';
     user.emailVerificationToken = null;
@@ -706,106 +811,7 @@ const verifyEmail = async (req, res) => {
 };
 
 // ─── Resend Verification Email ────────────────────────────────────────────────
-const resendVerificationEmail = async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-    }
-
-    const user = await User.findOne({ email: email.toLowerCase() });
-
-    // Generic response for non-existent email (prevent enumeration)
-    if (!user) {
-      return res.status(200).json({
-        success: true,
-        message: 'If your email is registered and unverified, a new verification link has been sent.'
-      });
-    }
-
-    // Check if already verified
-    if (user.emailVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is already verified'
-      });
-    }
-
-    // Rate limiting: Max 3 resend attempts within 15 minutes
-    if (user.emailVerificationAttempts >= 3) {
-      const lastAttempt = user.lastEmailVerificationAttempt;
-      const timeSinceLastAttempt = Date.now() - lastAttempt;
-      const fifteenMinutes = 15 * 60 * 1000;
-
-      if (timeSinceLastAttempt < fifteenMinutes) {
-        const cooldownMinutes = Math.ceil((fifteenMinutes - timeSinceLastAttempt) / 1000 / 60);
-        return res.status(429).json({
-          success: false,
-          message: `Too many resend attempts. Please try again in ${cooldownMinutes} minutes.`,
-          retryAfter: cooldownMinutes
-        });
-      } else {
-        // Reset attempts if cooldown has passed
-        user.emailVerificationAttempts = 0;
-      }
-    }
-
-    // Generate new verification token
-    const verificationToken = user.generateEmailVerificationToken();
-    user.emailVerificationAttempts += 1;
-    user.lastEmailVerificationAttempt = Date.now();
-    await user.save();
-
-    try {
-      if (!process.env.FRONTEND_URL) {
-        throw new Error('Server configuration error: FRONTEND_URL not set');
-      }
-      const verificationLink = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}&email=${encodeURIComponent(user.email)}`;
-      await sendVerificationEmail(user.email, user.name, verificationLink);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Verification email sent successfully. Please check your inbox.'
-      });
-    } catch (emailError) {
-      console.error('Email sending error:', emailError.message);
-
-      const isResendSandboxRestriction = emailError.message && 
-        (emailError.message.includes('You can only send testing emails to your own email address') || 
-         emailError.message.includes('verify a domain at resend.com'));
-
-      if (isResendSandboxRestriction) {
-        console.warn(`⚠️ Resend sandbox restriction detected during resend. Auto-verifying email for ${user.email} to allow demo testing.`);
-        user.emailVerified = true;
-        user.accountStatus = 'ACTIVE';
-        user.emailVerificationToken = null;
-        user.emailVerificationExpires = null;
-        await user.save();
-
-        return res.status(200).json({
-          success: true,
-          message: 'Email auto-verified for demo/testing purposes as Resend is in Sandbox mode.',
-          emailBypassed: true
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send verification email. Please try again.'
-      });
-    }
-  } catch (error) {
-    console.error('Resend verification email error:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to process resend request. Please try again.'
-    });
-  }
-};
+const resendVerificationEmail = resendSignupOtp;
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
@@ -818,7 +824,10 @@ module.exports = {
   deleteAccount,
   forgotPassword,
   verifyResetCode,
+  verifyResetOtp,
   resetPassword,
   verifyEmail,
-  resendVerificationEmail
+  resendVerificationEmail,
+  resendSignupOtp,
+  verifySignupOtp
 };

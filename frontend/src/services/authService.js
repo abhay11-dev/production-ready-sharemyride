@@ -1,141 +1,178 @@
-import api from '../config/api';
+import emailjs from '@emailjs/browser';
 
-/**
- * Signup user
- * @param {Object} userData - {name, email, password}
- * @returns {Promise<Object>} - {token, user}
- */
-export const signupUser = async (userData) => {
-  try {
-    const response = await api.post('/auth/signup', userData);
-    return response.data;
-  } catch (error) {
-    // Extract error message from response or use default
-    const message = error.response?.data?.message || error.message || 'Signup failed. Please try again.';
-    const customError = new Error(message);
-    customError.status = error.response?.status;
-    customError.data = error.response?.data;
-    throw customError;
+// ─────────────────────────────────────────────────────────
+// Config — all values come from frontend .env (see .env.example)
+// ─────────────────────────────────────────────────────────
+const API_URL = import.meta.env.VITE_API_URL || 'https://production-ready-sharemyride.onrender.com/api';
+
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
+const EMAILJS_TEMPLATE_SIGNUP_OTP = import.meta.env.VITE_EMAILJS_TEMPLATE_SIGNUP_OTP;
+const EMAILJS_TEMPLATE_RESET_OTP = import.meta.env.VITE_EMAILJS_TEMPLATE_RESET_OTP;
+
+const APP_NAME = import.meta.env.VITE_APP_NAME || 'ShareMyRide';
+const OTP_EXPIRY_MINUTES = import.meta.env.VITE_OTP_EXPIRY_MINUTES || '10';
+
+emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+
+// ─────────────────────────────────────────────────────────
+// Internal helpers
+// ─────────────────────────────────────────────────────────
+async function request(path, options = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.message || 'Something went wrong. Please try again.');
+    err.status = res.status;
+    err.retryAfter = data.retryAfter;
+    throw err;
   }
-};
+  return data;
+}
 
 /**
- * Login user
- * @param {Object} credentials - {email, password}
- * @returns {Promise<Object>} - {token, user}
+ * Sends an OTP email via EmailJS.
+ * Backend is expected to generate + persist the OTP and return it in the
+ * response payload (field: `otp`) so the frontend can relay it through EmailJS.
+ *
+ * Template variables sent to EmailJS (map these in your EmailJS template):
+ *   to_email        - recipient email address (bind to the "To email" field)
+ *   to_name         - recipient's name
+ *   otp_code        - the 6-digit code
+ *   app_name        - product name shown in the email
+ *   expiry_minutes  - how long the code is valid for
  */
-export const loginUser = async (credentials) => {
-  try {
-    const response = await api.post('/auth/login', credentials);
-    return response.data;
-  } catch (error) {
-    const message = error.response?.data?.message || error.message || 'Login failed. Please try again.';
-    const customError = new Error(message);
-    customError.status = error.response?.status;
-    customError.response = error.response;
-    throw customError;
+async function sendOtpEmail({ templateId, toEmail, toName, otp }) {
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_PUBLIC_KEY || !templateId) {
+    console.warn('EmailJS is not fully configured — skipping client-side email send.');
+    return;
   }
-};
+  await emailjs.send(EMAILJS_SERVICE_ID, templateId, {
+    to_email: toEmail,
+    to_name: toName || 'there',
+    otp_code: otp,
+    app_name: APP_NAME,
+    expiry_minutes: OTP_EXPIRY_MINUTES,
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// Signup + email/OTP verification
+// ─────────────────────────────────────────────────────────
 
 /**
- * Get current user profile
- * @returns {Promise<Object>} - User data
+ * Creates the account and triggers a signup OTP.
+ * Expected backend response: { name, email, otp, message? }
  */
-export const getProfile = async () => {
-  const response = await api.get('/auth/profile');
-  return response.data;
-};
+export async function signupUser({ name, email, password }) {
+  const data = await request('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password }),
+  });
 
-/**
- * Logout user (client-side cleanup)
- */
-export const logout = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
-  localStorage.removeItem('authToken'); // Remove old key if exists
-};
-
-/**
- * Send password reset email
- * @param {string} email - User's email address
- * @returns {Promise<Object>} - Response data
- */
-export const sendPasswordResetEmail = async (email) => {
-  try {
-    const response = await api.post('/auth/forgot-password', { email });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || error;
-  }
-};
-
-/**
- * Verify reset code
- * @param {string} email - User's email address
- * @param {string} code - Verification code
- * @returns {Promise<Object>} - Response data
- */
-export const verifyResetCode = async (email, code) => {
-  try {
-    const response = await api.post('/auth/verify-reset-code', { email, code });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || error;
-  }
-};
-
-/**
- * Reset password
- * @param {string} email - User's email address
- * @param {string} code - Verification code
- * @param {string} newPassword - New password
- * @returns {Promise<Object>} - Response data
- */
-export const resetPassword = async (email, code, newPassword) => {
-  try {
-    const response = await api.post('/auth/reset-password', { 
-      email, 
-      code, 
-      newPassword 
+  if (data.otp) {
+    await sendOtpEmail({
+      templateId: EMAILJS_TEMPLATE_SIGNUP_OTP,
+      toEmail: email,
+      toName: name,
+      otp: data.otp,
     });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || error;
   }
-};
+
+  return data;
+}
 
 /**
- * Verify email with token
- * @param {string} token - Email verification token
- * @param {string} email - User's email address
- * @returns {Promise<Object>} - Response data
+ * Re-sends a fresh signup OTP.
+ * Expected backend response: { name, email, otp }
  */
-export const verifyEmail = async (token, email) => {
-  try {
-    const response = await api.post('/auth/verify-email', { token, email });
-    return response.data;
-  } catch (error) {
-    const message = error.response?.data?.message || error.message || 'Email verification failed. Please try again.';
-    const customError = new Error(message);
-    customError.status = error.response?.status;
-    throw customError;
+export async function resendSignupOtp(email) {
+  const data = await request('/auth/resend-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+
+  if (data.otp) {
+    await sendOtpEmail({
+      templateId: EMAILJS_TEMPLATE_SIGNUP_OTP,
+      toEmail: email,
+      toName: data.name,
+      otp: data.otp,
+    });
   }
-};
+
+  return data;
+}
 
 /**
- * Resend verification email
- * @param {string} email - User's email address
- * @returns {Promise<Object>} - Response data
+ * Verifies the OTP the user typed in against what the backend stored.
+ * On success, backend should mark the user as emailVerified / twoFAVerified: true.
  */
-export const resendVerificationEmail = async (email) => {
-  try {
-    const response = await api.post('/auth/resend-verification-email', { email });
-    return response.data;
-  } catch (error) {
-    const message = error.response?.data?.message || error.message || 'Failed to resend email. Please try again.';
-    const customError = new Error(message);
-    customError.status = error.response?.status;
-    customError.retryAfter = error.response?.data?.retryAfter;
-    throw customError;
+export async function verifySignupOtp(email, otp) {
+  return request('/auth/verify-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+}
+
+export async function verifyEmail(token, email) {
+  return request('/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ token, email }),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// Login (unchanged — plain email + password)
+// ─────────────────────────────────────────────────────────
+export async function loginUser({ email, password }) {
+  return request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// Forgot password — OTP request, OTP verify, then password reset
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Requests a password-reset OTP.
+ * Expected backend response: { name, email, otp }
+ */
+export async function forgotPasswordSendOtp(email) {
+  const data = await request('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+
+  if (data.otp) {
+    await sendOtpEmail({
+      templateId: EMAILJS_TEMPLATE_RESET_OTP,
+      toEmail: email,
+      toName: data.name,
+      otp: data.otp,
+    });
   }
-};
+
+  return data;
+}
+
+/** Verifies the reset OTP before letting the user set a new password. */
+export async function verifyResetOtp(email, otp) {
+  return request('/auth/verify-reset-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+}
+
+/** Sets the new password. No OTP email involved at this step. */
+export async function resetPassword({ email, otp, newPassword }) {
+  return request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp, newPassword }),
+  });
+}
