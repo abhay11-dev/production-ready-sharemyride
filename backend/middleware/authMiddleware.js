@@ -1,6 +1,7 @@
 // middleware/auth.js
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { isTestUser } = require('../utils/testBypass');
 
 // ─── Protect ──────────────────────────────────────────────────────────────────
 // Verifies the Bearer access token and attaches req.user.
@@ -67,7 +68,8 @@ exports.protect = async (req, res, next) => {
       });
     }
 
-    if (!user.emailVerified) {
+    // Skip email verification check for test accounts
+    if (!user.emailVerified && !isTestUser(user.email)) {
       return res.status(403).json({
         success: false,
         message: 'Please verify your email to access this resource.',
@@ -172,6 +174,9 @@ exports.requireVerifiedDriver = (req, res, next) => {
       message: 'Not authenticated.'
     });
   }
+
+  // Test accounts bypass driver verification entirely
+  if (isTestUser(req.user.email)) return next();
 
   const isApprovedDriver = req.user.isDriverVerified === true || req.user.driverVerification?.status === 'approved';
 

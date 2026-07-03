@@ -202,9 +202,6 @@ export default function RideSearch() {
     if (searchParams.get('start') && searchParams.get('end')) {
       handleSearch();
     }
-    window.setTimeout(() => {
-      searchCardRef.current?.scrollIntoView({ behavior: 'instant', block: 'start' });
-    }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

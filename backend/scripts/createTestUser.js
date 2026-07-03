@@ -21,6 +21,14 @@ const testUsers = [
     phone: process.env.TEST_USER_2_PHONE || '9999999998',
     aadhaarMasked: 'XXXX-XXXX-2222',
     licenseNumber: 'DL01TEST2222'
+  },
+  {
+    name: 'Suspended Test User',
+    email: 'sharemyride.suspended@gmail.com',
+    password: 'ShareMyRide@11',
+    phone: '9999999997',
+    aadhaarMasked: 'XXXX-XXXX-3333',
+    licenseNumber: 'DL01TEST3333'
   }
 ];
 
@@ -31,10 +39,15 @@ const applyVerifiedDriverState = (user, seed) => {
   user.email = seed.email.trim().toLowerCase();
   user.password = seed.password;
   user.phone = seed.phone;
+  user.phone = seed.phone;
   user.role = 'driver';
   user.emailVerified = true;
-  user.accountStatus = 'ACTIVE';
-  user.isActive = true;
+  user.accountStatus = seed.email.includes('suspended') ? 'SUSPENDED' : 'ACTIVE';
+  user.isActive = !seed.email.includes('suspended');
+  if (seed.email.includes('suspended')) {
+    user.suspendedAt = verifiedAt;
+    user.suspensionReason = 'Created for suspension flow testing';
+  }
   user.isDriverVerified = true;
   user.emailVerificationToken = null;
   user.emailVerificationExpires = null;

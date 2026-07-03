@@ -216,6 +216,11 @@ function Footer() {
   const handleFooterLink = useCallback((e, to, requiresAuth, btnEl) => {
     e.preventDefault();
     if (!requiresAuth || user) {
+      // Same page → smooth scroll to top
+      if (window.location.pathname === to) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+        return;
+      }
       navigate(to);
       return;
     }

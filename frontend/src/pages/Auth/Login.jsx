@@ -16,6 +16,33 @@ function EyeIcon({ open }) {
   );
 }
 
+/* ── Shared modal shell: consistent across lockout + suspension states ── */
+function StatusModal({ tone, icon, title, children, onClose, footer }) {
+  const tones = {
+    red: { ring: 'bg-red-50', iconColor: 'text-red-600' },
+    orange: { ring: 'bg-orange-50', iconColor: 'text-orange-600' },
+  };
+  const t = tones[tone] || tones.red;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-md overflow-hidden">
+        <div className="px-6 sm:px-8 pt-8 pb-6 text-center">
+          <div className={`inline-flex items-center justify-center w-16 h-16 ${t.ring} rounded-full mb-4`}>
+            <span className={t.iconColor}>{icon}</span>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">{title}</h2>
+          {children}
+        </div>
+        <div className="px-6 sm:px-8 pb-7">
+          {footer}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -25,9 +52,11 @@ function Login() {
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [lockoutInfo, setLockoutInfo] = useState(null);
+  const [lockoutModalOpen, setLockoutModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [suspensionModal, setSuspensionModal] = useState(null);
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
@@ -70,6 +99,7 @@ function Login() {
 
     if (status === 423) {
       setLockoutInfo({ lockedUntil: data.lockedUntil });
+      setLockoutModalOpen(true);
       setError(message);
       toast.error('Account temporarily locked.', {
         duration: 5000, position: 'top-center',
@@ -84,6 +114,10 @@ function Login() {
         duration: 4000, position: 'top-center',
         style: { background: '#F59E0B', color: '#fff', fontWeight: '600', padding: '14px 18px', borderRadius: '12px' },
       });
+      return;
+    }
+    if (status === 403 && message.toLowerCase().includes('suspended')) {
+      setSuspensionModal({ reason: data.suspensionReason || 'Violation of platform policies. Contact support for details.' });
       return;
     }
     if (status === 403) {
@@ -102,8 +136,94 @@ function Login() {
     });
   };
 
+  const lockoutMinutes = getLockoutMinutes();
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-start justify-center py-6 sm:py-10 lg:py-14 px-4 sm:px-6 lg:px-8">
+
+      {/* ── Locked account modal ── */}
+      {lockoutModalOpen && lockoutMinutes > 0 && (
+        <StatusModal
+          tone="orange"
+          onClose={() => setLockoutModalOpen(false)}
+          icon={
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          }
+          title="Account temporarily locked"
+          footer={
+            <div className="space-y-3">
+              <button
+                onClick={() => setLockoutModalOpen(false)}
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-700 hover:to-orange-600 text-white py-3 rounded-xl text-sm font-bold shadow-md shadow-orange-600/20 hover:shadow-lg transition-all duration-150"
+              >
+                Got it
+              </button>
+              <p className="text-center text-xs text-gray-400">
+                Need access sooner?{' '}
+                <button
+                  onClick={() => { setLockoutModalOpen(false); navigate('/forgot-password'); }}
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  Reset your password
+                </button>
+              </p>
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-600 mb-4">
+            Too many failed sign-in attempts were made on this account. For your security, sign-in has been paused for a short while.
+          </p>
+          <div className="bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 flex items-center justify-center gap-2">
+            <svg className="w-4 h-4 text-orange-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="text-sm font-semibold text-orange-800">
+              Try again in ~{lockoutMinutes} minute{lockoutMinutes !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </StatusModal>
+      )}
+
+      {/* ── Suspended account modal ── */}
+      {suspensionModal && (
+        <StatusModal
+          tone="red"
+          onClose={() => setSuspensionModal(null)}
+          icon={
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          }
+          title="Account suspended"
+          footer={
+            <div className="space-y-3">
+              <button
+                onClick={() => setSuspensionModal(null)}
+                className="w-full flex items-center justify-center gap-1.5 border border-gray-200 text-gray-700 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+              >
+                Close
+              </button>
+              <p className="text-center text-xs text-gray-400">
+                Believe this is a mistake?{' '}
+                <a href="mailto:sharemyride.contact@gmail.com" className="text-blue-600 hover:underline font-medium">
+                  Contact support
+                </a>
+              </p>
+            </div>
+          }
+        >
+          <p className="text-sm text-gray-600 mb-4">
+            This account can't sign in right now. It was suspended for the reason below.
+          </p>
+          <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-left">
+            <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">Reason</p>
+            <p className="text-sm text-red-800 font-medium">{suspensionModal.reason}</p>
+          </div>
+        </StatusModal>
+      )}
+
       <div className="w-full max-w-5xl">
 
         {/* Two-col on lg, single col below */}
@@ -177,7 +297,7 @@ function Login() {
               <div className="flex -space-x-2">
                 {['bg-blue-400', 'bg-green-400', 'bg-purple-400', 'bg-amber-400'].map((c, i) => (
                   <div key={i} className={`w-7 h-7 rounded-full ${c} border-2 border-white flex items-center justify-center text-white text-[10px] font-bold`}>
-                    {['A','R','P','S'][i]}
+                    {['A', 'R', 'P', 'S'][i]}
                   </div>
                 ))}
               </div>
@@ -221,21 +341,6 @@ function Login() {
               {/* Form */}
               <form onSubmit={handleSubmit} autoComplete="on" className="px-6 sm:px-8 py-6 sm:py-7 space-y-4">
 
-                {/* Lockout banner */}
-                {lockoutInfo && getLockoutMinutes() > 0 && (
-                  <div className="flex items-start gap-2.5 bg-orange-50 border border-orange-200 text-orange-800 px-4 py-3 rounded-xl">
-                    <svg className="w-4 h-4 flex-shrink-0 mt-0.5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-semibold">Account temporarily locked</p>
-                      <p className="text-xs mt-0.5 text-orange-700">
-                        Too many failed attempts. Try again in ~{getLockoutMinutes()} minute{getLockoutMinutes() !== 1 ? 's' : ''}.
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 {/* Attempts warning */}
                 {warning && !lockoutInfo && (
                   <div className="flex items-start gap-2.5 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-xl">
@@ -254,6 +359,20 @@ function Login() {
                     </svg>
                     <span className="text-sm font-medium">{error}</span>
                   </div>
+                )}
+
+                {/* Lockout inline reminder (modal already shown on trigger) */}
+                {lockoutInfo && lockoutMinutes > 0 && !lockoutModalOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setLockoutModalOpen(true)}
+                    className="w-full flex items-center gap-2.5 bg-orange-50 border border-orange-200 text-orange-800 px-4 py-3 rounded-xl text-left hover:bg-orange-100 transition-colors"
+                  >
+                    <svg className="w-4 h-4 flex-shrink-0 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm font-semibold">Account locked — try again in ~{lockoutMinutes} min. Tap for details.</span>
+                  </button>
                 )}
 
                 {/* Needs verification */}
@@ -338,7 +457,7 @@ function Login() {
                 <div className="pt-1">
                   <button
                     type="submit"
-                    disabled={isLoading || (lockoutInfo && getLockoutMinutes() > 0)}
+                    disabled={isLoading || (lockoutInfo && lockoutMinutes > 0)}
                     className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-700 to-blue-500 hover:from-blue-800 hover:to-blue-600 text-white py-3 rounded-xl text-sm font-bold shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                   >
                     {isLoading ? (

@@ -75,17 +75,46 @@ async function fireEmailActions(emailActions) {
   return { userNotified: userRes.fired, adminSynced: syncRes.fired };
 }
 
+/* ─── Icon set ────────────────────────────────────────────────────────────
+   Single, consistent stroke-icon system (Heroicons-style outline, 1.8-2px
+   stroke) used across every tab, stat, and empty state. Replaces emoji so
+   the dashboard reads as a real product surface, not a prototype.
+─────────────────────────────────────────────────────────────────────── */
+const Icon = {
+  overview: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 13h4v7H3v-7zM10 8h4v12h-4V8zM17 4h4v16h-4V4z" /></svg>),
+  users: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-1a4 4 0 10-3-6.65" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 20v-2a4 4 0 014-4h0a4 4 0 014 4v2" /></svg>),
+  ride: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 17h14M5 17a2 2 0 100 4 2 2 0 000-4zm14 0a2 2 0 100 4 2 2 0 000-4zM5 17l1.5-6h11L19 17M6.5 11l1-3.5A2 2 0 019.4 6h5.2a2 2 0 011.9 1.5l1 3.5" /></svg>),
+  booking: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 7a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 000 4v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2a2 2 0 000-4V7z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M10 5v14" strokeDasharray="2 2" /></svg>),
+  payment: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><rect x="3" y="6" width="18" height="13" rx="2" strokeWidth={1.8} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 10h18" /></svg>),
+  shield: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>),
+  chat: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.164-3.02-.465L3 21l1.516-4.55A7.936 7.936 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>),
+  alert: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 9v3.75m0 3.75h.008M4.318 19.5h15.364c1.53 0 2.493-1.667 1.732-3L13.732 4.5c-.77-1.333-2.694-1.333-3.464 0L2.586 16.5c-.762 1.333.2 3 1.732 3z" /></svg>),
+  document: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m-7 5h8a2 2 0 002-2V7.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0012.172 2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>),
+  pulse: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 12h4l2 8 4-16 2 8h6" /></svg>),
+  wallet: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2v-2m-4-2h.01" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 8V6a2 2 0 012-2h11" /></svg>),
+  pin: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>),
+  clock: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="9" strokeWidth={1.8} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 7v5l3 3" /></svg>),
+  star: (p) => (<svg {...p} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>),
+  check: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.5 12.75l6 6 9-13.5" /></svg>),
+  checkCircle: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12.75l1.5 1.5 4.5-4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>),
+  inbox: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M4 12h4l2 3h4l2-3h4M4 12l1.5-6.5A2 2 0 017.44 4h9.12a2 2 0 011.94 1.5L20 12M4 12v6a2 2 0 002 2h12a2 2 0 002-2v-6" /></svg>),
+  thumb: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6.633 10.5c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 012.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 00.322-1.672V3a.75.75 0 01.75-.75A2.25 2.25 0 0116.5 4.5c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 01-2.649 7.521c-.388.482-.987.729-1.605.729H14.23c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 00-1.423-.23H6" /></svg>),
+  eye: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><circle cx="12" cy="12" r="3" strokeWidth={1.8} /></svg>),
+  logout: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>),
+  sync: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>),
+};
+
 /* ─── Constants ─────────────────────────────────────────── */
 const TABS = [
-  { id: 'overview',      label: 'Overview',            icon: '📊' },
-  { id: 'users',         label: 'Users',               icon: '👥' },
-  { id: 'rides',         label: 'Rides',               icon: '🚗' },
-  { id: 'bookings',      label: 'Bookings',            icon: '🎫' },
-  { id: 'payments',      label: 'Payments',            icon: '💳' },
-  { id: 'verification',  label: 'Driver Verification', icon: '✅' },
-  { id: 'enquiries',     label: 'Enquiries',           icon: '💬' },
-  { id: 'reports',       label: 'Reports',             icon: '🚨' },
-  { id: 'blogs',         label: 'Blogs',               icon: '📝' },
+  { id: 'overview',      label: 'Overview',            icon: Icon.overview },
+  { id: 'users',         label: 'Users',               icon: Icon.users    },
+  { id: 'rides',         label: 'Rides',               icon: Icon.ride     },
+  { id: 'bookings',      label: 'Bookings',            icon: Icon.booking  },
+  { id: 'payments',      label: 'Payments',            icon: Icon.payment  },
+  { id: 'verification',  label: 'Driver Verification', icon: Icon.shield   },
+  { id: 'enquiries',     label: 'Enquiries',           icon: Icon.chat     },
+  { id: 'reports',       label: 'Reports',             icon: Icon.alert    },
+  { id: 'blogs',         label: 'Blogs',               icon: Icon.document },
 ];
 
 /* ─── Helpers ───────────────────────────────────────────── */
@@ -151,13 +180,14 @@ const StatusBadge = ({ status }) => {
   return <Badge label={label} color={color} />;
 };
 
-function StatCard({ label, value, unit = '', icon, color = 'blue', sub }) {
+function StatCard({ label, value, unit = '', icon: IconCmp, color = 'blue', sub }) {
   const bg = { blue: 'bg-blue-50 border-blue-100', green: 'bg-green-50 border-green-100', purple: 'bg-purple-50 border-purple-100', amber: 'bg-amber-50 border-amber-100', red: 'bg-red-50 border-red-100' }[color] || 'bg-gray-50 border-gray-100';
+  const iconText = { blue: 'text-blue-500', green: 'text-green-500', purple: 'text-purple-500', amber: 'text-amber-500', red: 'text-red-500' }[color] || 'text-gray-400';
   return (
     <div className={`rounded-2xl border ${bg} p-5`}>
       <div className="flex items-start justify-between mb-3">
         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider leading-tight">{label}</p>
-        <span className="text-xl">{icon}</span>
+        {IconCmp && <IconCmp className={`w-4.5 h-4.5 ${iconText}`} style={{ width: 18, height: 18 }} />}
       </div>
       <p className="text-2xl font-black text-gray-900">{typeof value === 'number' ? fmt(value) : (value ?? '—')}{unit}</p>
       {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
@@ -190,10 +220,12 @@ function FilterPills({ options, value, onChange }) {
   );
 }
 
-function EmptyState({ message, icon = '📭' }) {
+function EmptyState({ message }) {
   return (
     <div className="py-16 text-center text-gray-400">
-      <div className="text-4xl mb-3">{icon}</div>
+      <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+        <Icon.inbox className="w-5 h-5 text-gray-300" />
+      </div>
       <p className="text-sm font-medium">{message}</p>
     </div>
   );
@@ -294,21 +326,21 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
       <div>
         <h2 className="text-base font-bold text-gray-900 mb-4">Platform at a glance</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatCard label="Total Users"  value={analytics.totalUsers   || 0} icon="👥" color="blue"   />
-          <StatCard label="Active 7d"    value={analytics.activeUsers  || 0} icon="💚" color="green"  />
-          <StatCard label="Total Rides"  value={analytics.totalRides   || 0} icon="🚗" color="purple" />
-          <StatCard label="Bookings"     value={analytics.totalBookings|| 0} icon="🎫" color="amber"  />
-          <StatCard label="Revenue"      value={Math.floor((analytics.totalRevenue || 0) / 1000)} unit="K" icon="💰" color="green" />
-          <StatCard label="Cities"       value={analytics.totalCities  || 0} icon="🗺️" color="amber"  />
+          <StatCard label="Total Users"  value={analytics.totalUsers   || 0} icon={Icon.users}  color="blue"   />
+          <StatCard label="Active 7d"    value={analytics.activeUsers  || 0} icon={Icon.pulse}  color="green"  />
+          <StatCard label="Total Rides"  value={analytics.totalRides   || 0} icon={Icon.ride}   color="purple" />
+          <StatCard label="Bookings"     value={analytics.totalBookings|| 0} icon={Icon.booking} color="amber"  />
+          <StatCard label="Revenue"      value={Math.floor((analytics.totalRevenue || 0) / 1000)} unit="K" icon={Icon.wallet} color="green" />
+          <StatCard label="Cities"       value={analytics.totalCities  || 0} icon={Icon.pin}    color="amber"  />
         </div>
       </div>
 
       {/* Secondary KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Pending Verifications" value={pending.length}                                          icon="⏳" color="blue"  />
-        <StatCard label="Open Enquiries"        value={enquiries.filter(e => !['resolved','closed'].includes(e.status)).length}   icon="💬" color="amber" />
-        <StatCard label="Urgent Reports"        value={urgent.length}                                           icon="🚨" color="red"   />
-        <StatCard label="Avg Rating"            value={(analytics.averageRating || 4.8)} unit="★"              icon="⭐" color="amber" />
+        <StatCard label="Pending Verifications" value={pending.length}                                          icon={Icon.clock} color="blue"  />
+        <StatCard label="Open Enquiries"        value={enquiries.filter(e => !['resolved','closed'].includes(e.status)).length}   icon={Icon.chat} color="amber" />
+        <StatCard label="Urgent Reports"        value={urgent.length}                                           icon={Icon.alert} color="red"   />
+        <StatCard label="Avg Rating"            value={(analytics.averageRating || 4.8)} unit=""              icon={Icon.star} color="amber" />
       </div>
 
       {/* Activity panels */}
@@ -321,7 +353,7 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
           </div>
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {pending.length === 0
-              ? <p className="text-sm text-gray-400 text-center py-6">All caught up 🎉</p>
+              ? <p className="text-sm text-gray-400 text-center py-6">All caught up</p>
               : pending.slice(0, 6).map(r => (
                 <div key={r._id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition-colors">
                   <img src={r.avatarFallback} alt="" className="w-8 h-8 rounded-lg flex-shrink-0" />
@@ -362,7 +394,7 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
           </div>
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {urgent.length === 0
-              ? <p className="text-sm text-gray-400 text-center py-6">No urgent reports 👍</p>
+              ? <p className="text-sm text-gray-400 text-center py-6">No urgent reports</p>
               : urgent.slice(0, 5).map(r => (
                 <div key={r._id} className="p-3 bg-red-50 rounded-xl border border-red-100">
                   <div className="flex items-center justify-between mb-1">
@@ -447,7 +479,7 @@ function UsersTab() {
               {loading
                 ? <TableSkeleton cols={7} />
                 : users.length === 0
-                  ? <tr><td colSpan={7}><EmptyState message="No users found" icon="👥" /></td></tr>
+                  ? <tr><td colSpan={7}><EmptyState message="No users found" /></td></tr>
                   : users.map(u => (
                     <tr key={u._id} onClick={() => setSelected(u)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
                       <td className="px-4 py-3">
@@ -531,7 +563,7 @@ function RidesTab() {
               {loading
                 ? <TableSkeleton cols={7} />
                 : rides.length === 0
-                  ? <tr><td colSpan={7}><EmptyState message="No rides found" icon="🚗" /></td></tr>
+                  ? <tr><td colSpan={7}><EmptyState message="No rides found" /></td></tr>
                   : rides.map(r => (
                     <tr key={r._id} onClick={() => setSelected(r)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
                       <td className="px-4 py-3">
@@ -613,7 +645,7 @@ function BookingsTab() {
               {loading
                 ? <TableSkeleton cols={7} />
                 : bookings.length === 0
-                  ? <tr><td colSpan={7}><EmptyState message="No bookings found" icon="🎫" /></td></tr>
+                  ? <tr><td colSpan={7}><EmptyState message="No bookings found" /></td></tr>
                   : bookings.map(b => (
                     <tr key={b._id} onClick={() => setSelected(b)} className="hover:bg-blue-50/40 cursor-pointer transition-colors">
                       <td className="px-4 py-3">
@@ -692,7 +724,7 @@ function PaymentsTab() {
               {loading
                 ? <TableSkeleton cols={6} />
                 : payments.length === 0
-                  ? <tr><td colSpan={6}><EmptyState message="No payments found" icon="💳" /></td></tr>
+                  ? <tr><td colSpan={6}><EmptyState message="No payments found" /></td></tr>
                   : payments.map(p => (
                     <tr key={p._id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs text-gray-500">
@@ -792,7 +824,7 @@ function VerificationTab({ requests, onUpdate, onRefresh }) {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0
-                ? <tr><td colSpan={6}><EmptyState message="No requests found" icon="✅" /></td></tr>
+                ? <tr><td colSpan={6}><EmptyState message="No requests found" /></td></tr>
                 : filtered.map(req => {
                   const docs = req.documents || {};
                   const docCount = Object.values(docs).filter(d => d?.available).length;
@@ -901,11 +933,11 @@ function EnquiriesTab() {
       const res = await updateEnquiryAction(id, { status, reply, adminName: 'ShareMyRide' });
       const { userNotified, adminSynced } = await fireEmailActions(res.emailActions);
       if (reply) {
-        toast.success(userNotified ? 'Reply sent to user ✓' : 'Reply saved (email send failed — check EmailJS config)');
+        toast.success(userNotified ? 'Reply sent to user' : 'Reply saved (email send failed — check EmailJS config)');
       } else {
         toast.success(`Status updated to ${res.data?.status || status}`);
       }
-      if (adminSynced) toast.success('Admin sync notice sent', { icon: '🔁' });
+      if (adminSynced) toast.success('Admin sync notice sent');
       load();
     } catch {
       toast.error('Failed to save');
@@ -935,7 +967,7 @@ function EnquiriesTab() {
       {loading
         ? <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-20 bg-white rounded-2xl border border-gray-100 animate-pulse" />)}</div>
         : enquiries.length === 0
-          ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No enquiries" icon="💬" /></div>
+          ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No enquiries" /></div>
           : (
             <div className="space-y-2">
               {enquiries.map(e => (
@@ -1083,11 +1115,11 @@ function ReportsTab() {
       const res = await updateReportAction(id, { status, reply, adminName: 'ShareMyRide' });
       const { userNotified, adminSynced } = await fireEmailActions(res.emailActions);
       if (reply) {
-        toast.success(userNotified ? 'Reply sent to reporter ✓' : 'Reply saved (email send failed — check EmailJS config)');
+        toast.success(userNotified ? 'Reply sent to reporter' : 'Reply saved (email send failed — check EmailJS config)');
       } else {
         toast.success(`Status updated to ${res.data?.status || status}`);
       }
-      if (adminSynced) toast.success('Admin sync notice sent', { icon: '🔁' });
+      if (adminSynced) toast.success('Admin sync notice sent');
       load();
     } catch {
       toast.error('Failed to save');
@@ -1115,7 +1147,7 @@ function ReportsTab() {
       {loading
         ? <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-20 bg-white rounded-2xl border border-gray-100 animate-pulse" />)}</div>
         : reports.length === 0
-          ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No reports" icon="🚨" /></div>
+          ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No reports" /></div>
           : (
             <div className="space-y-2">
               {reports.map(r => {
@@ -1285,7 +1317,7 @@ function BlogsTab() {
       {loading
         ? <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 bg-white rounded-2xl border border-gray-100 animate-pulse" />)}</div>
         : blogs.length === 0
-          ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No posts" icon="📝" /></div>
+          ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No posts" /></div>
           : (
             <div className="space-y-2">
               {blogs.map(b => (
@@ -1299,9 +1331,9 @@ function BlogsTab() {
                       <p className="text-xs text-gray-400">By {b.author?.name || '—'} · {fmtDate(b.createdAt)}</p>
                       {b.excerpt && <p className="text-sm text-gray-500 mt-1 line-clamp-1">{b.excerpt}</p>}
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                        <span>👍 {b.likes?.length ?? b.likes ?? 0}</span>
-                        <span>💬 {Array.isArray(b.comments) ? b.comments.length : (b.commentCount || 0)}</span>
-                        <span>👁️ {b.viewCount || 0}</span>
+                        <span className="inline-flex items-center gap-1"><Icon.thumb className="w-3.5 h-3.5" /> {b.likes?.length ?? b.likes ?? 0}</span>
+                        <span className="inline-flex items-center gap-1"><Icon.chat className="w-3.5 h-3.5" /> {Array.isArray(b.comments) ? b.comments.length : (b.commentCount || 0)}</span>
+                        <span className="inline-flex items-center gap-1"><Icon.eye className="w-3.5 h-3.5" /> {b.viewCount || 0}</span>
                       </div>
                     </div>
                     <div className="flex gap-2 flex-shrink-0">
@@ -1398,25 +1430,23 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
+      {/* Navbar — same blue gradient identity as the public site header */}
+      <nav className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
+            <div className="w-7 h-7 bg-white/15 border border-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
               <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
             <div>
-              <p className="font-bold text-gray-900 text-sm leading-none">ShareMyRide</p>
-              <p className="text-xs text-gray-400 leading-none mt-0.5">Admin</p>
+              <p className="font-bold text-white text-sm leading-none">ShareMyRide</p>
+              <p className="text-xs text-blue-100 leading-none mt-0.5">Admin Console</p>
             </div>
           </div>
           <button onClick={() => { localStorage.removeItem('adminToken'); localStorage.removeItem('isAdminAuthenticated'); toast.success('Signed out'); navigate('/admin/login'); }}
-            className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-red-500 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
+            className="flex items-center gap-1.5 text-xs font-semibold text-blue-100 hover:text-white transition-colors">
+            <Icon.logout className="w-3.5 h-3.5" />
             Sign out
           </button>
         </div>
@@ -1426,22 +1456,25 @@ export default function AdminDashboard() {
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex overflow-x-auto scrollbar-hide">
-            {TABS.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                  activeTab === tab.id
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-400 hover:text-gray-700 hover:border-gray-200'
-                }`}>
-                <span>{tab.icon}</span>
-                {tab.label}
-                {tab.id === 'verification' && pendingCount > 0 && (
-                  <span className="ml-0.5 text-xs bg-blue-600 text-white rounded-full px-1.5 py-0.5 font-bold leading-none">
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
-            ))}
+            {TABS.map(tab => {
+              const TabIcon = tab.icon;
+              return (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  className={`px-4 py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    activeTab === tab.id
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-400 hover:text-gray-700 hover:border-gray-200'
+                  }`}>
+                  <TabIcon className="w-4 h-4" />
+                  {tab.label}
+                  {tab.id === 'verification' && pendingCount > 0 && (
+                    <span className="ml-0.5 text-xs bg-blue-600 text-white rounded-full px-1.5 py-0.5 font-bold leading-none">
+                      {pendingCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
         </div>
       </div>

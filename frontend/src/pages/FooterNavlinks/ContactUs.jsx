@@ -246,7 +246,6 @@ export default function ContactUs() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const preservedScrollY = window.scrollY;
         setSubmitting(true);
         try {
             const res = await axios.post(`${API_URL}/inquiries`, {
@@ -268,8 +267,12 @@ export default function ContactUs() {
             });
             setSavedTickets(updatedTickets);
             setSent(true);
+            // Scroll to the form/result area (not the footer)
             requestAnimationFrame(() => {
-                window.scrollTo({ top: preservedScrollY, left: 0, behavior: 'auto' });
+                const formEl = document.getElementById('contact-form-area');
+                if (formEl) {
+                    formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
             });
             toast.success('Your inquiry has been submitted!', {
                 style: { borderRadius: '8px', background: '#1e293b', color: '#fff', fontSize: '14px' },
@@ -309,7 +312,7 @@ export default function ContactUs() {
 </section>
 
             {/* ── Inquiry type selector ── */}
-            <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <section id="contact-form-area" className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
                 <div className="text-center mb-8">
                     <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-2">What brings you here?</div>
                     <h2 className="text-xl font-bold text-gray-900">Select inquiry type</h2>
@@ -336,7 +339,12 @@ export default function ContactUs() {
 
                     {/* Left: Info */}
                     <div className="lg:col-span-2 space-y-6">
-                        <RecentTicketsPanel tickets={savedTickets} title="Recent support tickets" emptyMessage="Your submitted inquiries will appear here after you send one." />
+                        <RecentTicketsPanel
+                          tickets={savedTickets}
+                          title="Your submitted tickets"
+                          emptyMessage="Your submitted inquiries will appear here after you send one."
+                          onClear={() => setSavedTickets([])}
+                        />
                         <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                             <div className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                                 <span className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">

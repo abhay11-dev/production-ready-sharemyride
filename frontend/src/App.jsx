@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { BrowserRouter as Router, useLocation, useNavigate } from 'react-router-dom';
 import AppRoutes from './routes/AppRoutes';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
@@ -19,7 +19,6 @@ function App() {
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
-  const navigationType = useNavigationType();
 
   useEffect(() => {
     const handleInternalLinkClick = (event) => {
@@ -35,12 +34,14 @@ function AppShell() {
       const targetPath = `${url.pathname}${url.search}`;
       const currentPath = `${location.pathname}${location.search}`;
 
+      // Same page → smooth scroll to top instead of doing nothing
       if (targetPath === currentPath) {
         event.preventDefault();
         window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
         return;
       }
 
+      // Different page → navigate immediately; scroll reset happens after render
       event.preventDefault();
       navigate(targetPath);
     };
@@ -50,18 +51,15 @@ function AppShell() {
     return () => document.removeEventListener('click', handleInternalLinkClick);
   }, [location.pathname, location.search, navigate]);
 
+  // After every route change, reset scroll position to the very top of the
+  // new page. We use requestAnimationFrame so the DOM has painted the new
+  // page before we scroll — this prevents the old page from visibly
+  // scrolling up before the new one appears.
   useEffect(() => {
-    const shouldSkipScroll = navigationType === 'PUSH' || navigationType === 'REPLACE';
-
-    if (shouldSkipScroll) {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      return;
-    }
-
-    if (location.key) {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    }
-  }, [location.pathname, location.key, navigationType]);
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    });
+  }, [location.pathname, location.search]);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">

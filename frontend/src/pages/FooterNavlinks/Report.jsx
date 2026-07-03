@@ -271,7 +271,6 @@ export default function Report() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const preservedScrollY = window.scrollY;
     setSubmitting(true);
     try {
       const issueLabel = ISSUE_TYPES.find(t => t.id === selected)?.label || 'Issue';
@@ -300,14 +299,16 @@ export default function Report() {
         status: data.status || 'open',
       });
       setSavedTickets(updatedTickets);
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: preservedScrollY, left: 0, behavior: 'auto' });
-      });
       setResult({
         success: true,
         ticketNumber: nextTicketNumber,
       });
       setStep(3);
+      // Scroll to result card so user sees the confirmation, not the footer
+      requestAnimationFrame(() => {
+        const el = document.getElementById('report-form-section');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
 
       // Fire BOTH the reporter confirmation email and the admin new-report
       // alert (non-blocking).
@@ -415,7 +416,12 @@ export default function Report() {
       ══════════════════════════════════════════════════════════════ */}
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12 lg:py-16">
         <div className="mb-8">
-          <RecentTicketsPanel tickets={savedTickets} title="Recent support tickets" emptyMessage="Your submitted reports will appear here after you send one." />
+          <RecentTicketsPanel
+            tickets={savedTickets}
+            title="Your submitted tickets"
+            emptyMessage="Your submitted reports will appear here after you send one."
+            onClear={() => setSavedTickets([])}
+          />
         </div>
 
         {/* ── Step 3: Result ─────────────────────────────────────── */}

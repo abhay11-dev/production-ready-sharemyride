@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const { isTestUser } = require('../utils/testBypass');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_FAILED_ATTEMPTS = 5;
@@ -99,9 +100,32 @@ const signup = async (req, res) => {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
-      emailVerified: false,
-      accountStatus: 'PENDING_VERIFICATION'
+      // Test accounts are auto-verified so they never need OTP
+      emailVerified: isTestUser(email) ? true : false,
+      accountStatus: isTestUser(email) ? 'ACTIVE' : 'PENDING_VERIFICATION'
     });
+
+    // Auto-verify test accounts — skip OTP entirely
+    if (isTestUser(email)) {
+      // Also pre-approve driver verification for test users
+      user.isDriverVerified = true;
+      user.driverVerification = {
+        status: 'approved',
+        approvedAt: new Date(),
+        auditTrail: [{ action: 'auto-approved', remark: 'Test account bypass', timestamp: new Date(), admin: 'system' }]
+      };
+      await user.save();
+      const accessToken = generateAccessToken(user._id);
+      const refreshToken = generateRefreshToken(user._id);
+      setRefreshTokenCookie(res, refreshToken);
+      return res.status(201).json({
+        success: true,
+        message: 'Test account created and verified automatically.',
+        token: accessToken,
+        user: sanitizeUser(user),
+        verificationPending: false
+      });
+    }
 
     const otp = setSignupOtp(user);
     await user.save();
@@ -262,6 +286,52 @@ const login = async (req, res) => {
       });
     }
 
+    // ── Test-account bypass ──────────────────────────────────────────────
+    // For the two designated test emails, skip email-verification and
+    // lockout checks entirely. Also ensure the DB record is fully verified.
+    if (isTestUser(email)) {
+      // Auto-patch the record so it's always in a fully-verified state
+      const needsPatch =
+        !user.emailVerified ||
+        user.accountStatus !== 'ACTIVE' ||
+        user.driverVerification?.status !== 'approved';
+
+      if (needsPatch) {
+        await User.findByIdAndUpdate(user._id, {
+          $set: {
+            emailVerified: true,
+            accountStatus: 'ACTIVE',
+            isDriverVerified: true,
+            failedLoginAttempts: 0,
+            lockoutUntil: null,
+            'driverVerification.status': 'approved',
+            'driverVerification.approvedAt': new Date(),
+          }
+        });
+      }
+
+      // Compare password (still enforce correct password for test users)
+      const isPasswordCorrect = await user.comparePassword(password);
+      if (!isPasswordCorrect) {
+        return res.status(401).json({ success: false, message: 'Invalid email or password' });
+      }
+
+      user.lastLogin = new Date();
+      user.failedLoginAttempts = 0;
+      user.lockoutUntil = null;
+      await user.save();
+
+      const accessToken = generateAccessToken(user._id);
+      const refreshToken = generateRefreshToken(user._id);
+      setRefreshTokenCookie(res, refreshToken);
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        token: accessToken,
+        user: sanitizeUser(user)
+      });
+    }
+
     // Check email verification status
     if (!user.emailVerified) {
       return res.status(403).json({
@@ -276,7 +346,8 @@ const login = async (req, res) => {
     if (user.accountStatus === 'SUSPENDED' || user.isActive === false) {
       return res.status(403).json({
         success: false,
-        message: 'Your account has been suspended. Please contact support.'
+        message: 'Your account has been suspended. Please contact support.',
+        suspensionReason: user.suspensionReason
       });
     }
 

@@ -621,9 +621,20 @@ exports.getUserBookings = async (req, res) => {
 // @access  Private (Admin)
 exports.updateUser = async (req, res) => {
   try {
-    const { isSuspended, role } = req.body;
+    const { accountStatus, suspensionReason, role } = req.body;
     const update = {};
-    if (isSuspended !== undefined) update.isSuspended = isSuspended;
+    if (accountStatus) {
+      update.accountStatus = accountStatus;
+      if (accountStatus === 'SUSPENDED') {
+        update.isActive = false;
+        update.suspendedAt = new Date();
+        update.suspensionReason = suspensionReason || 'Violated terms';
+      } else if (accountStatus === 'ACTIVE') {
+        update.isActive = true;
+        update.suspendedAt = null;
+        update.suspensionReason = null;
+      }
+    }
     if (role) update.role = role;
 
     const user = await User.findByIdAndUpdate(req.params.id, update, { new: true });

@@ -1,0 +1,27 @@
+# Email Service Implementation TODOs
+
+This file marks all the locations in the backend codebase where actual email service integration is required in the future. Currently, many of these flows are either bypassed or simulated for testing.
+
+## 1. User Suspension & Unsuspension
+**Location**: `backend/controllers/adminController.js` -> `updateUser`
+**Action Needed**: 
+- When `accountStatus === 'SUSPENDED'`, fire an email to the user explaining that their account was suspended. The email should include the `suspensionReason` and instructions on how to reply if they believe it's a mistake.
+- When `accountStatus === 'ACTIVE'` (unsuspend), fire an email to the user notifying them that their account has been un-frozen/un-suspended and they can now log in again.
+
+## 2. Authentication OTPs (Signup & Password Reset)
+**Location**: `backend/controllers/authController.js`
+**Action Needed**: 
+- In `signup` and `resendSignupOtp`, an email should be dispatched containing the `signupOtp` code.
+- In `forgotPassword`, an email should be dispatched containing the `resetOtp` code.
+*(Note: Test accounts bypass this flow, but real users need actual email delivery).*
+
+## 3. Enquiry / Report Replies
+**Location**: `backend/services/emailService.js` and frontend AdminDashboard
+**Action Needed**:
+- Currently, replies are built using `emailjs` on the frontend, or bypassed. The backend `sendStatusReplyUpdate` should eventually pipe these directly into a real backend email provider (like SendGrid/AWS SES) rather than relying on frontend EmailJS calls for better security and reliability.
+
+## 4. Ride Booking Notifications
+**Location**: `backend/controllers/bookingController.js`
+**Action Needed**:
+- Send an email to the passenger when a booking is confirmed or cancelled.
+- Send an email to the driver when a new booking request is made or confirmed.

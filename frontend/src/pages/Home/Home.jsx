@@ -28,10 +28,13 @@ function formatDate(dateStr, timeStr) {
   return timeStr ? `${label}, ${timeStr}` : label;
 }
 function greet() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+  const str = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour: 'numeric', hour12: false });
+  let h = parseInt(str, 10);
+  if (h === 24) h = 0;
+  if (h >= 5 && h < 12) return 'Good morning';
+  if (h >= 12 && h < 17) return 'Good afternoon';
+  if (h >= 17 && h < 21) return 'Good evening';
+  return 'Good night';
 }
 
 // ─── CSS injection helper (idempotent) ────────────────────────────────────────
@@ -1126,7 +1129,7 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
             </div>
             <Link
               to="/ride/search"
-              onClick={() => { handleNavClick(); window.scrollTo({ top: 0, behavior: 'instant' }); }}
+              onClick={handleNavClick}
               className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
             >
               View all
