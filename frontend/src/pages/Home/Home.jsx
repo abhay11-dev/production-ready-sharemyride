@@ -4,6 +4,7 @@ import api from '../../config/api.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import PlatformMarquee from '../../components/common/PlatformMarquee.jsx';
 import LoginRequiredSpeechToast from '../../components/common/LoginRequiredSpeechToast.jsx';
+import Icon from '../../components/ui/Icon.jsx';
 
 const SCROLL_KEY = 'home_scroll_y';
 
@@ -711,7 +712,7 @@ function Car3D() {
           {/* Boost badge */}
           {boostMode && (
             <div
-              className="absolute"
+              className="absolute flex items-center gap-1"
               style={{
                 top: 12, left: '50%', transform: 'translateX(-50%)',
                 background: 'rgba(52,211,153,0.18)',
@@ -721,7 +722,8 @@ function Car3D() {
                 letterSpacing: '0.08em', textTransform: 'uppercase',
               }}
             >
-              ⚡ Turbo Mode
+              <Icon name="Zap" size="xs" className="text-emerald-400 fill-emerald-400" />
+              Turbo Mode
             </div>
           )}
 
@@ -765,39 +767,39 @@ function Car3D() {
             }}
           >
             <button
-              className={`car3d-btn${autoSpin ? ' active-blue' : ''}`}
+              className={`car3d-btn flex items-center gap-1${autoSpin ? ' active-blue' : ''}`}
               onClick={toggleSpin}
             >
-              <span>↺</span>
+              <Icon name="RotateCw" size="xs" />
               <span>{autoSpin ? 'Spinning mode on' : 'Spinning mode off'}</span>
             </button>
 
             <button
-              className={`car3d-btn${headlights ? ' active-yellow' : ''}`}
+              className={`car3d-btn flex items-center gap-1${headlights ? ' active-yellow' : ''}`}
               onClick={toggleLights}
             >
-              <span>💡</span>
+              <Icon name="Sun" size="xs" className={headlights ? 'text-amber-400 fill-amber-400' : ''} />
               <span>{headlights ? 'Head lights on' : 'Head lights off'}</span>
             </button>
 
             <button
-              className={`car3d-btn${doorsOpen ? ' active-yellow' : ''}`}
+              className={`car3d-btn flex items-center gap-1${doorsOpen ? ' active-yellow' : ''}`}
               onClick={toggleDoors}
             >
-              <span>🚪</span>
+              <Icon name="Columns" size="xs" />
               <span>{doorsOpen ? 'Close doors' : 'Open doors'}</span>
             </button>
 
             <button
-              className={`car3d-btn${boostMode ? ' active-green' : ''}`}
+              className={`car3d-btn flex items-center gap-1${boostMode ? ' active-green' : ''}`}
               onClick={toggleBoost}
             >
-              <span>⚡</span>
+              <Icon name="Zap" size="xs" className={boostMode ? 'text-emerald-400 fill-emerald-400' : ''} />
               <span>{boostMode ? 'Normal' : 'Turbo'}</span>
             </button>
 
-            <button className="car3d-btn" onClick={resetAll}>
-              <span>⟲</span>
+            <button className="car3d-btn flex items-center gap-1" onClick={resetAll}>
+              <Icon name="RefreshCw" size="xs" />
               <span>Reset</span>
             </button>
           </div>
@@ -896,9 +898,7 @@ function RideCard({ ride, onAuthRequired }) {
                   ₹{price || '000'}
                 </div>
                 <div className="absolute top-0.5 left-1/2 -translate-x-1/2">
-                  <svg className="w-4 h-4 text-blue-500 opacity-75" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
-                  </svg>
+                  <Icon name="Lock" size="xs" className="text-blue-500 opacity-75" />
                 </div>
                 <div className="text-xs text-blue-400 font-medium mt-0.5">sign in</div>
               </div>
@@ -935,17 +935,11 @@ function RideCard({ ride, onAuthRequired }) {
                     {blurredName}
                   </span>
                 )}
-                {isVerified && (
-                  <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                )}
+                {isVerified && <Icon name="ShieldCheck" size="sm" className="text-blue-500 flex-shrink-0" />}
               </div>
               {driverRating > 0 && (
                 <div className="flex items-center gap-0.5">
-                  <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                  </svg>
+                  <Icon name="Star" size="xs" className="text-amber-400 fill-amber-400" />
                   <span className="text-xs text-gray-500">{Number(driverRating).toFixed(1)}</span>
                 </div>
               )}
@@ -1007,9 +1001,7 @@ function EmptyRideFeed() {
   return (
     <div className="col-span-full bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
       <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
-        <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
-        </svg>
+        <Icon name="WifiOff" size="lg" className="text-blue-400" />
       </div>
       <p className="font-semibold text-gray-800 mb-1">No rides currently available</p>
       <p className="text-sm text-gray-500 mb-4">Be the first to offer a ride and help fellow travelers.</p>
@@ -1018,9 +1010,7 @@ function EmptyRideFeed() {
         onClick={() => window.scrollTo({ top: 0, behavior: 'instant' })}
         className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
       >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
+        <Icon name="Plus" size="sm" />
         Offer a ride
       </Link>
     </div>
@@ -1063,18 +1053,18 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 pb-16">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
-            { label: 'Upcoming Trips', to: '/upcoming-rides', icon: '📅', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' },
-            { label: 'My Bookings', to: '/bookings/my-bookings', icon: '🎫', bg: 'bg-green-50 border-green-100', text: 'text-green-700' },
-            { label: 'Ride Requests', to: '/driver/bookings', icon: '🔔', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
-            { label: 'Profile', to: '/profile', icon: '👤', bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },
+            { label: 'Upcoming Trips', to: '/upcoming-rides', icon: 'Calendar', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700', iconColor: 'text-blue-600' },
+            { label: 'My Bookings', to: '/bookings/my-bookings', icon: 'Ticket', bg: 'bg-green-50 border-green-100', text: 'text-green-700', iconColor: 'text-green-600' },
+            { label: 'Ride Requests', to: '/driver/bookings', icon: 'Bell', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700', iconColor: 'text-amber-600' },
+            { label: 'Profile', to: '/profile', icon: 'User', bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700', iconColor: 'text-purple-600' },
           ].map(card => (
             <Link
               key={card.label}
               to={card.to}
               onClick={handleNavClick}
-              className={`${card.bg} border rounded-2xl p-4 sm:p-5 flex flex-col items-start gap-2 hover:shadow-md transition-all duration-150`}
+              className={`${card.bg} border rounded-2xl p-4 sm:p-5 flex flex-col items-start gap-2.5 hover:shadow-md transition-all duration-150`}
             >
-              <span className="text-2xl">{card.icon}</span>
+              <Icon name={card.icon} size="md" className={card.iconColor} />
               <span className={`text-xs sm:text-sm font-semibold ${card.text}`}>{card.label}</span>
             </Link>
           ))}
@@ -1107,11 +1097,7 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
               <div key={label} className="text-center py-2 sm:py-0 sm:px-4 first:pt-0 last:pb-0">
                 <div className={`text-xl sm:text-2xl font-bold ${color} flex items-center justify-center gap-1`}>
                   {val}
-                  {star && (
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  )}
+                  {star && <Icon name="Star" size="sm" className="text-amber-500 fill-amber-500" />}
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">{label}</div>
               </div>
@@ -1133,9 +1119,7 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
               className="text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1"
             >
               View all
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              <Icon name="ChevronRight" size="sm" />
             </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -1266,10 +1250,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                   <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 px-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-gray-50 border border-gray-100">
-                        <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                        <Icon name="MapPin" size="sm" className="text-blue-500 flex-shrink-0" />
                         <input
                           type="text"
                           placeholder="From…"
@@ -1281,9 +1262,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 px-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl bg-gray-50 border border-gray-100">
-                        <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m0 0l-7-7m7 7l-7 7" />
-                        </svg>
+                        <Icon name="MapPin" size="sm" className="text-green-500 flex-shrink-0" />
                         <input
                           type="text"
                           placeholder="To…"
@@ -1298,9 +1277,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                     type="submit"
                     className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
+                    <Icon name="Search" size="sm" className="sm:w-4 sm:h-4" />
                     Search rides
                   </button>
                 </form>
@@ -1357,9 +1334,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
               className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 flex-shrink-0 cursor-pointer whitespace-nowrap mt-1"
             >
               Browse all
-              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              <Icon name="ChevronRight" size="sm" className="sm:w-4 sm:h-4" />
             </a>
           </div>
 
@@ -1382,14 +1357,14 @@ function PublicLanding({ stats, rides, ridesLoading }) {
           {!user && !ridesLoading && rides.length > 0 && (
             <div className="mt-6 flex flex-wrap items-center gap-2 justify-center">
               {[
-                { icon: '🛡️', text: 'Verified drivers only' },
-                { icon: '⭐', text: 'Rated community' },
-                { icon: '💸', text: 'Split fuel costs' },
-                { icon: '🌍', text: stats?.totalCities ? `${stats.totalCities} cities active` : 'Cities active' },
-                { icon: '⚡', text: 'Instant booking' },
+                { icon: 'Shield', text: 'Verified drivers only', color: 'text-blue-500' },
+                { icon: 'Star', text: 'Rated community', color: 'text-amber-500' },
+                { icon: 'IndianRupee', text: 'Split fuel costs', color: 'text-green-600' },
+                { icon: 'Globe', text: stats?.totalCities ? `${stats.totalCities} cities active` : 'Cities active', color: 'text-indigo-500' },
+                { icon: 'Zap', text: 'Instant booking', color: 'text-yellow-500' },
               ].map(p => (
                 <span key={p.text} className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 px-3 py-1.5 rounded-full">
-                  {p.icon} {p.text}
+                  <Icon name={p.icon} size="xs" className={p.color} /> {p.text}
                 </span>
               ))}
             </div>
@@ -1400,9 +1375,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
             <div className="mt-5 bg-white border border-blue-100 rounded-2xl p-4 sm:p-5">
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
-                  </svg>
+                  <Icon name="Lock" size="sm" className="sm:w-5 sm:h-5 text-blue-600" />
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-gray-900">Prices &amp; driver details are hidden</p>
@@ -1428,9 +1401,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                 className="inline-flex items-center gap-2 border border-blue-200 text-blue-600 hover:bg-blue-50 px-6 py-3 rounded-xl text-sm font-semibold transition-colors"
               >
                 See all available rides
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                <Icon name="ChevronRight" size="sm" />
               </button>
             </div>
           )}
@@ -1448,19 +1419,19 @@ function PublicLanding({ stats, rides, ridesLoading }) {
             {[
               {
                 iconBg: 'bg-blue-50',
-                icon: <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>,
+                icon: <Icon name="Shield" className="text-blue-600" size="md" />,
                 title: 'Verified drivers only',
                 desc: 'Every driver submits Aadhaar, driving licence, and vehicle docs. You see their rating history before you request.',
               },
               {
                 iconBg: 'bg-green-50',
-                icon: <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                icon: <Icon name="IndianRupee" className="text-green-600" size="md" />,
                 title: 'Fair cost-sharing',
                 desc: "Drivers set a per-seat price to cover fuel — not to profit. Passengers pay a fraction of what a solo trip would cost.",
               },
               {
                 iconBg: 'bg-purple-50',
-                icon: <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+                icon: <Icon name="Leaf" className="text-purple-600" size="md" />,
                 title: 'Less traffic, less carbon',
                 desc: 'Every filled seat is one fewer car on the road. This community has already saved thousands of solo trips.',
               },
@@ -1497,9 +1468,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                 <p className="text-gray-500 text-sm leading-relaxed">{s.desc}</p>
                 {i < 3 && (
                   <div className="hidden lg:flex absolute top-1/2 -right-3 z-10 -translate-y-1/2 w-6 h-6 bg-white border border-gray-100 rounded-full items-center justify-center shadow-sm">
-                    <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
+                    <Icon name="ChevronRight" size="xs" className="text-gray-400" />
                   </div>
                 )}
               </div>
@@ -1523,9 +1492,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-white text-blue-700 px-6 py-3.5 rounded-xl text-sm font-bold hover:bg-blue-50 hover:shadow-lg transition-all duration-150"
             >
               Create free account
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              <Icon name="ChevronRight" size="sm" />
             </Link>
             <button
               onClick={handleBrowseRidesScroll}

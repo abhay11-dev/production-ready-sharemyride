@@ -14,6 +14,7 @@ import { searchRides } from '../../services/rideService';
 import { getMyBookings } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
+import Icon from '../../components/ui/Icon';
 
 const clampDateInput = (value) => {
   if (!value) return '';
@@ -115,9 +116,7 @@ function EmptyResults({ start, end, onClear }) {
   return (
     <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
       <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-        <svg className="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
+        <Icon name="Frown" size="lg" className="text-red-400" />
       </div>
       <p className="font-semibold text-gray-800 text-base mb-1">No rides found</p>
       <p className="text-sm text-gray-500 mb-5">
@@ -130,9 +129,7 @@ function EmptyResults({ start, end, onClear }) {
         </button>
         <Link to="/ride/post"
           className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <Icon name="Plus" size="sm" />
           Post a ride on this route
         </Link>
       </div>
@@ -145,9 +142,7 @@ function SearchPrompt() {
   return (
     <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
       <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
-        <svg className="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
+        <Icon name="Search" size="lg" className="text-blue-400" />
       </div>
       <p className="font-semibold text-gray-800 text-base mb-1">Search for available rides</p>
       <p className="text-sm text-gray-500">Enter your origin and destination above to find rides going your way.</p>
@@ -454,9 +449,7 @@ export default function RideSearch() {
           <div className="p-5 sm:p-6">
             <div className="flex items-center gap-2 mb-5">
               <div className="w-8 h-8 bg-blue-50 rounded-xl flex items-center justify-center">
-                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+                <Icon name="Search" size="sm" className="text-blue-600" />
               </div>
               <div>
                 <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest">Search</p>
@@ -532,9 +525,7 @@ export default function RideSearch() {
                   onClick={() => setShowFilters(f => !f)}
                   className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-semibold hover:text-blue-700"
                 >
-                  <svg className={`w-3.5 h-3.5 transition-transform ${showFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+                  <Icon name="ChevronDown" size="xs" className={`transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
                   Filters
                   {activeFilterCount > 0 && (
                     <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
@@ -586,17 +577,12 @@ export default function RideSearch() {
               >
                 {isLoading ? (
                   <>
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                    <Icon name="Loader2" size="sm" className="animate-spin" />
                     Searching…
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
+                    <Icon name="Search" size="sm" />
                     Search Rides
                   </>
                 )}
@@ -606,9 +592,7 @@ export default function RideSearch() {
                 <div className="mt-3 text-center">
                   <button type="button" onClick={handleClear}
                     className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <Icon name="X" size="xs" />
                     Clear search
                   </button>
                 </div>
@@ -664,9 +648,7 @@ export default function RideSearch() {
                 subtitle={`${exactRides.length} ride${exactRides.length !== 1 ? 's' : ''} pass through your entire journey`}
                 badge={
                   <span className="flex items-center gap-1">
-                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
+                    <Icon name="CheckCircle" size="sm" />
                     Route match
                   </span>
                 }
@@ -682,9 +664,7 @@ export default function RideSearch() {
                   >
                     {/* Match badge */}
                     <div className="absolute -top-2.5 -right-1 z-10 bg-green-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
+                      <Icon name="CheckCircle" size="xs" />
                       #{idx + 1} Route match
                     </div>
                     <RideCard
@@ -826,16 +806,16 @@ export default function RideSearch() {
         {!isLoading && !hasSearched && (
           <div className="mt-6 flex flex-wrap gap-2 justify-center">
             {[
-              { icon: '🛡️', text: 'Verified drivers' },
-              { icon: '📍', text: 'City to village coverage' },
-              { icon: '⭐', text: 'Rated community' },
-              { icon: '💸', text: 'Split fuel costs' },
-              { icon: '🎯', text: 'Smart route matching' },
-              { icon: '🏘️', text: 'Locality-level search' },
-              { icon: '⚡', text: 'Instant booking' },
+              { icon: 'Shield', text: 'Verified drivers', color: 'text-blue-500' },
+              { icon: 'MapPin', text: 'City to village coverage', color: 'text-green-500' },
+              { icon: 'Star', text: 'Rated community', color: 'text-amber-500' },
+              { icon: 'IndianRupee', text: 'Split fuel costs', color: 'text-green-600' },
+              { icon: 'Compass', text: 'Smart route matching', color: 'text-blue-600' },
+              { icon: 'Home', text: 'Locality-level search', color: 'text-purple-500' },
+              { icon: 'Zap', text: 'Instant booking', color: 'text-yellow-500' },
             ].map(p => (
               <span key={p.text} className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 px-3 py-1.5 rounded-full shadow-sm">
-                {p.icon} {p.text}
+                <Icon name={p.icon} size="xs" className={p.color} /> {p.text}
               </span>
             ))}
           </div>

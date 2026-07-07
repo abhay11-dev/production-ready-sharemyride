@@ -89,19 +89,19 @@ export function getCategoryIcon(types = [], name = '') {
     const t = (types || []).join(' ').toLowerCase();
     const n = (name || '').toLowerCase();
 
-    if (t.includes('airport') || n.includes('airport')) return '✈️';
-    if (t.includes('train_station') || t.includes('transit_station') || t.includes('subway_station') || n.includes('railway') || n.includes('station')) return '🚉';
-    if (t.includes('bus_station') || n.includes('bus stop') || n.includes('bus stand')) return '🚌';
-    if (t.includes('hospital') || t.includes('doctor') || n.includes('hospital')) return '🏥';
-    if (t.includes('university') || t.includes('school')) return '🎓';
-    if (t.includes('lodging') || n.includes('hotel') || n.includes('inn')) return '🏨';
-    if (t.includes('shopping_mall') || t.includes('store') || t.includes('supermarket')) return '🛍️';
-    if (t.includes('restaurant') || t.includes('food') || t.includes('cafe')) return '🍽️';
-    if (t.includes('locality') && !t.includes('sublocality')) return '🏙️';
-    if (t.includes('sublocality') || t.includes('neighborhood')) return '🏘️';
-    if (t.includes('route')) return '🛣️';
-    if (t.includes('tourist_attraction') || t.includes('museum')) return '🏛️';
-    return '📍';
+    if (t.includes('airport') || n.includes('airport')) return 'Plane';
+    if (t.includes('train_station') || t.includes('transit_station') || t.includes('subway_station') || n.includes('railway') || n.includes('station')) return 'TrainFront';
+    if (t.includes('bus_station') || n.includes('bus stop') || n.includes('bus stand')) return 'Bus';
+    if (t.includes('hospital') || t.includes('doctor') || n.includes('hospital')) return 'Hospital';
+    if (t.includes('university') || t.includes('school')) return 'GraduationCap';
+    if (t.includes('lodging') || n.includes('hotel') || n.includes('inn')) return 'Bed';
+    if (t.includes('shopping_mall') || t.includes('store') || t.includes('supermarket')) return 'ShoppingBag';
+    if (t.includes('restaurant') || t.includes('food') || t.includes('cafe')) return 'Utensils';
+    if (t.includes('locality') && !t.includes('sublocality')) return 'Building2';
+    if (t.includes('sublocality') || t.includes('neighborhood')) return 'Home';
+    if (t.includes('route')) return 'MapPin';
+    if (t.includes('tourist_attraction') || t.includes('museum')) return 'Landmark';
+    return 'MapPin';
 }
 
 // ── Parse a raw AutocompleteService prediction → unified shape ──────────────

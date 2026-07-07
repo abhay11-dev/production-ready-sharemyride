@@ -10,14 +10,11 @@ import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 import PaymentCalculator from '../../utils/paymentCalculator';
 import NegotiationActions from '../../pages/rides/NegotiationActions';
+import Icon from '../ui/Icon';
 
 // ─── Shared verified badge ────────────────────────────────────────────────────
 function VerifiedBadge() {
-  return (
-    <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-      <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-    </svg>
-  );
+  return <Icon name="ShieldCheck" size="sm" className="text-blue-500 flex-shrink-0" />;
 }
 
 // ─── Fare calculation helpers (use PaymentCalculator — never hardcode %) ──────
@@ -622,7 +619,7 @@ function DetailsModal({ ride, onClose, isFirstRideFree = false }) {
               </div>
               {driver.ratingSummary > 0 && (
                 <div className="flex items-center gap-1">
-                  <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                  <Icon name="Star" size="sm" className="text-amber-400 fill-amber-400" />
                   <span className="text-sm font-semibold text-gray-700">{Number(driver.ratingSummary).toFixed(1)}</span>
                 </div>
               )}
@@ -650,18 +647,21 @@ function DetailsModal({ ride, onClose, isFirstRideFree = false }) {
           {tab === 'preferences' && (
             <div className="grid grid-cols-2 gap-2">
               {[
-                { key: 'smokingAllowed', label: '🚬 Smoking' },
-                { key: 'musicAllowed', label: '🎵 Music' },
-                { key: 'petFriendly', label: '🐾 Pets' },
-                { key: 'luggageAllowed', label: '🧳 Luggage' },
-                { key: 'womenOnly', label: '👩 Women only' },
-                { key: 'talkative', label: '💬 Talkative' },
-                { key: 'childSeatAvailable', label: '👶 Child seat' },
-                { key: 'pickupFlexibility', label: '📍 Flex pickup' },
-              ].map(({ key, label }) => (
-                <div key={key} className={`rounded-xl p-3 border text-sm font-semibold flex items-center gap-2 ${prefs[key] ? 'bg-green-50 border-green-100 text-green-800' : 'bg-red-50 border-red-100 text-red-700'}`}>
-                  <span>{prefs[key] ? '✓' : '✗'}</span>
-                  <span>{label}</span>
+                { key: 'smokingAllowed', label: 'Smoking', icon: 'Cigarette' },
+                { key: 'musicAllowed', label: 'Music', icon: 'Music' },
+                { key: 'petFriendly', label: 'Pets', icon: 'Footprints' },
+                { key: 'luggageAllowed', label: 'Luggage', icon: 'Briefcase' },
+                { key: 'womenOnly', label: 'Women only', icon: 'Sparkles' },
+                { key: 'talkative', label: 'Talkative', icon: 'MessageSquare' },
+                { key: 'childSeatAvailable', label: 'Child seat', icon: 'Baby' },
+                { key: 'pickupFlexibility', label: 'Flex pickup', icon: 'MapPin' },
+              ].map(({ key, label, icon }) => (
+                <div key={key} className={`rounded-xl p-3 border text-sm font-semibold flex items-center gap-2.5 ${prefs[key] ? 'bg-green-50 border-green-100 text-green-800' : 'bg-red-50 border-red-100 text-red-700'}`}>
+                  <Icon name={icon} size="sm" className="flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="block font-semibold text-gray-800">{label}</span>
+                    <span className="text-[10px] font-medium opacity-75">{prefs[key] ? 'Allowed' : 'Not allowed'}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -768,12 +768,12 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
 
   // Preference pills to show
   const prefPills = [
-    vehicle.acAvailable && { label: 'AC', color: 'blue' },
-    prefs.musicAllowed && { label: '🎵 Music', color: 'purple' },
-    prefs.petFriendly && { label: '🐾 Pets', color: 'green' },
-    prefs.womenOnly && { label: '👩 Women', color: 'pink' },
-    ride.tollIncluded && { label: 'Tolls ✓', color: 'indigo' },
-    ride.negotiableFare && { label: 'Negotiable', color: 'amber' },
+    vehicle.acAvailable && { label: 'AC', icon: 'Wind', color: 'blue' },
+    prefs.musicAllowed && { label: 'Music', icon: 'Music', color: 'purple' },
+    prefs.petFriendly && { label: 'Pets', icon: 'Footprints', color: 'green' },
+    prefs.womenOnly && { label: 'Women', icon: 'Sparkles', color: 'pink' },
+    ride.tollIncluded && { label: 'Tolls', icon: 'Check', color: 'indigo' },
+    ride.negotiableFare && { label: 'Negotiable', icon: 'Sliders', color: 'amber' },
   ].filter(Boolean);
 
   const pillColors = {
@@ -816,7 +816,7 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
           {/* Segment badge */}
           {isSegment && (
             <div className="mb-3 flex items-center gap-2 bg-green-50 border border-green-100 rounded-xl px-3 py-2 text-xs font-semibold text-green-800">
-              <svg className="w-3.5 h-3.5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+              <Icon name="CheckCircle" size="sm" className="text-green-600 flex-shrink-0" />
               Your segment: {ride.userSearchDistance} km
               {ride.matchQuality && <span className="ml-1 opacity-60">· {ride.matchQuality}% match</span>}
             </div>
@@ -849,7 +849,7 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
                 </div>
                 {driverRating > 0 && (
                   <div className="flex items-center gap-0.5">
-                    <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                    <Icon name="Star" size="xs" className="text-amber-400 fill-amber-400" />
                     <span className="text-xs text-gray-500">{Number(driverRating).toFixed(1)}</span>
                   </div>
                 )}
@@ -872,7 +872,10 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
           {prefPills.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-3">
               {prefPills.map((p, i) => (
-                <span key={i} className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${pillColors[p.color]}`}>{p.label}</span>
+                <span key={i} className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full ${pillColors[p.color]}`}>
+                  <Icon name={p.icon} size="xs" />
+                  {p.label}
+                </span>
               ))}
             </div>
           )}
