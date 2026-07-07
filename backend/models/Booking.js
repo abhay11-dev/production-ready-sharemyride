@@ -50,13 +50,9 @@ const bookingSchema = new mongoose.Schema({
     required: [true, 'Drop location is required'],
     trim: true
   },
-  dropCoordinates: {
-    lat: Number,
-    lng: Number
-  },
-
-  // models/Booking.js
-
+  // FIXED: was declared twice in the original schema (harmless in a plain
+  // object literal — the second definition silently wins — but redundant
+  // and confusing). Kept once here.
   dropCoordinates: {
     lat: Number,
     lng: Number
@@ -119,12 +115,7 @@ const bookingSchema = new mongoose.Schema({
   // ===========================
   // PASSENGER NOTES
   // ===========================
-  passengerNotes: {
-    type: String,
-    default: '',
-    trim: true,
-    maxlength: [500, 'Notes cannot exceed 500 characters']
-  },
+  // FIXED: was declared twice in the original schema. Kept once here.
   passengerNotes: {
     type: String,
     default: '',
@@ -211,7 +202,6 @@ const bookingSchema = new mongoose.Schema({
   // ===========================
   status: {
     type: String,
-    // FIXED: Match backend controller validation
     enum: ['pending', 'accepted', 'rejected', 'cancelled', 'completed', 'no_show'],
     default: 'pending',
     index: true
@@ -258,6 +248,35 @@ const bookingSchema = new mongoose.Schema({
   paymentFailedAt: {
     type: Date,
     default: null
+  },
+
+  // ===========================
+  // 📬 UPCOMING-RIDE EMAIL REMINDERS — NEW
+  // ===========================
+  // Tracks which of the 3 pre-departure reminder emails have already been
+  // sent, so jobs/rideReminderScheduler.js never double-sends even if the
+  // cron catches the same booking on consecutive runs. Purely additive —
+  // existing documents just read as "nothing sent yet", no migration needed.
+  reminders: {
+    oneDay: {
+      sent: { type: Boolean, default: false },
+      sentAt: { type: Date, default: null }
+    },
+    sixHour: {
+      sent: { type: Boolean, default: false },
+      sentAt: { type: Date, default: null }
+    },
+    oneHour: {
+      sent: { type: Boolean, default: false },
+      sentAt: { type: Date, default: null }
+    },
+    // Set true once oneHour.sent is true — lets the cron's Mongo query skip
+    // fully-reminded bookings instead of loading + re-checking every one.
+    allSent: {
+      type: Boolean,
+      default: false,
+      index: true
+    }
   },
 
   // ===========================
@@ -432,8 +451,6 @@ const bookingSchema = new mongoose.Schema({
     default: null
   },
 
-
-
   razorpayPaymentId: {
     type: String,
     default: null
@@ -449,7 +466,6 @@ const bookingSchema = new mongoose.Schema({
     default: null
   },
 
-  // ✅ Add these fields for email tracking (optional but recommended)
   emailSent: {
     type: Boolean,
     default: false
@@ -459,8 +475,6 @@ const bookingSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-
-
 
   // ===========================
   // COMMUNICATION
@@ -624,8 +638,13 @@ const bookingSchema = new mongoose.Schema({
 // ===========================
 // INDEXES
 // ===========================
-bookingSchema.index({ passengerId: 1, createdAt: -1 });
-bookingSchema.index({ rideId: 1, createdAt: -1 });
+// FIXED: original indexes referenced `passengerId` / `rideId`, which are
+// NOT fields on this schema (the actual reference fields are `passenger`
+// and `ride`). Those indexes were silently useless — Mongo happily builds
+// an index on a field that doesn't exist, it just never gets used by any
+// real query. Corrected to the real field names below.
+bookingSchema.index({ passenger: 1, createdAt: -1 });
+bookingSchema.index({ ride: 1, createdAt: -1 });
 bookingSchema.index({ driver: 1, status: 1 });
 bookingSchema.index({ status: 1, paymentStatus: 1 });
 bookingSchema.index({ paymentStatus: 1 });
@@ -634,9 +653,12 @@ bookingSchema.index({ createdAt: -1 });
 bookingSchema.index({ transactionId: 1 });
 
 // Compound indexes for common queries
-bookingSchema.index({ passengerId: 1, status: 1, createdAt: -1 });
-bookingSchema.index({ rideId: 1, status: 1, paymentStatus: 1 });
+bookingSchema.index({ passenger: 1, status: 1, createdAt: -1 });
+bookingSchema.index({ ride: 1, status: 1, paymentStatus: 1 });
 bookingSchema.index({ driver: 1, status: 1, createdAt: -1 });
+
+// Speeds up jobs/rideReminderScheduler.js's "not fully reminded yet" query.
+bookingSchema.index({ status: 1, paymentStatus: 1, 'reminders.allSent': 1 });
 
 // ===========================
 // VIRTUAL FIELDS
@@ -674,9 +696,12 @@ bookingSchema.virtual('bookingAge').get(function () {
   return Math.floor((Date.now() - this.createdAt) / (1000 * 60 * 60 * 24));
 });
 
-// Virtual for ride date
+// FIXED: checked `this.status === 'confirmed'`, which is not a valid value
+// in the status enum above (real values: pending/accepted/rejected/
+// cancelled/completed/no_show) — this virtual always evaluated to false.
+// "Upcoming" now means accepted + not yet departed.
 bookingSchema.virtual('isUpcoming').get(function () {
-  return this.status === 'confirmed' && this.ride && new Date(this.ride.date) > new Date();
+  return this.status === 'accepted' && this.ride && new Date(this.ride.date) > new Date();
 });
 
 // ===========================
@@ -684,8 +709,13 @@ bookingSchema.virtual('isUpcoming').get(function () {
 // ===========================
 
 // Confirm booking
+// FIXED: previously set status to 'confirmed', which isn't in the enum and
+// would have thrown a Mongoose validation error on save. Driver confirmation
+// is represented by 'accepted' everywhere else in the codebase
+// (bookingController.updateBookingStatus, the frontend filters, etc.) —
+// aligned here to match.
 bookingSchema.methods.confirm = function (notes) {
-  this.status = 'confirmed';
+  this.status = 'accepted';
   this.confirmedAt = new Date();
   if (notes) this.confirmationNotes = notes;
   return this.save();
@@ -803,8 +833,13 @@ bookingSchema.methods.calculateFare = function (baseFarePerSeat, seatsBooked, wa
 // ===========================
 
 // Get passenger bookings with filters
+// FIXED: queried `{ passengerId }`, which doesn't exist on this schema —
+// corrected to `{ passenger: passengerId }`. (This static doesn't appear to
+// be called anywhere in bookingController.js today, which queries directly
+// with `Booking.find({ passenger: userId })` — but it's fixed here so it
+// works correctly if/when something does call it.)
 bookingSchema.statics.getPassengerBookings = function (passengerId, filters = {}) {
-  const query = { passengerId };
+  const query = { passenger: passengerId };
 
   if (filters.status) query.status = filters.status;
   if (filters.paymentStatus) query.paymentStatus = filters.paymentStatus;
@@ -873,12 +908,19 @@ bookingSchema.pre('save', function (next) {
 // ===========================
 // POST-SAVE MIDDLEWARE
 // ===========================
+// NOTE: this only ever runs when `doc.isNew` is true (i.e. on the initial
+// insert), but bookings are always *created* with status 'pending' and
+// only transition to 'accepted' via a later update — so in practice this
+// condition never fires either way, before or after this fix. Ride↔booking
+// linkage is already handled explicitly in bookingController.createBooking
+// (step 8), so this hook is redundant but harmless. Left in place (with the
+// status string corrected from the invalid 'confirmed') rather than removed,
+// in case something upstream is ever changed to insert bookings pre-accepted.
 bookingSchema.post('save', async function (doc) {
-  // Check if this is a new document being confirmed
-  if (doc.status === 'confirmed' && doc.isNew) {  // ✅ Use isNew
+  if (doc.status === 'accepted' && doc.isNew) {
     try {
       await mongoose.model('Ride').findByIdAndUpdate(
-        doc.ride || doc.rideId,  // Use whichever field you have
+        doc.ride,
         { $addToSet: { bookings: doc._id } }
       );
     } catch (error) {

@@ -291,12 +291,12 @@ const MyBookings = () => {
   };
 
   const FILTERS = [
-    { id: 'all',       label: 'All'       },
-    { id: 'pending',   label: 'Pending'   },
-    { id: 'accepted',  label: 'Accepted'  },
-    { id: 'paid',      label: 'Paid'      },
-    { id: 'rejected',  label: 'Rejected'  },
-    { id: 'cancelled', label: 'Cancelled' },
+    { id: 'all', label: 'All', count: stats.total },
+    { id: 'pending', label: 'Pending', count: stats.pending },
+    { id: 'accepted', label: 'Accepted', count: stats.accepted },
+    { id: 'paid', label: 'Paid', count: stats.paid },
+    { id: 'rejected', label: 'Rejected', count: stats.rejected },
+    { id: 'cancelled', label: 'Cancelled', count: stats.cancelled },
   ];
 
   if (loading) {
@@ -345,18 +345,18 @@ const MyBookings = () => {
         </div>
 
         {/* ── Filters ── */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 mb-6 bg-white rounded-2xl border border-gray-100 p-1.5">
+        <div className="flex gap-2 flex-wrap mb-6 bg-white rounded-2xl border border-gray-100 p-1.5">
           {FILTERS.map(f => (
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
-              className={`py-2 px-2 rounded-xl text-xs sm:text-sm font-semibold transition-all text-center ${
-                filter === f.id
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-              }`}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 ${filter === f.id ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:text-gray-800'
+                }`}
             >
               {f.label}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filter === f.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                {f.count}
+              </span>
             </button>
           ))}
         </div>
