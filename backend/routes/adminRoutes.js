@@ -20,6 +20,8 @@ const {
   updateReport,
   getBlogsList,
   updateBlog,
+  getUpcomingRides,
+  runReminderCheck,
 } = require('../controllers/adminController');
 
 // ── Auth ────────────────────────────────────────────────────────────────────
@@ -59,5 +61,9 @@ router.put('/reports/:id', protectAdmin, updateReport);
 // ── Blogs ─────────────────────────────────────────────────────────────────────
 router.get('/blogs', protectAdmin, getBlogsList);
 router.put('/blogs/:id', protectAdmin, updateBlog);
+
+// ── Upcoming Rides & Reminder Scheduler ──────────────────────────────────────
+router.get('/upcoming-rides', protectAdmin, getUpcomingRides);
+router.post('/run-reminder-check', protectAdmin, runReminderCheck);
 
 module.exports = router;

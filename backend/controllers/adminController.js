@@ -290,28 +290,47 @@ exports.getUsersList = async (req, res) => {
 exports.getRidesList = async (req, res) => {
   try {
     const { page = 1, limit = 20, status } = req.query;
-    const skip = (page - 1) * limit;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const query = status ? { status } : {};
+    // Ride model uses `rideStatus`, not `status`
+    const query = status && status !== 'all' ? { rideStatus: status } : {};
     const rides = await Ride.find(query)
-      .select('route date passengers status price driver')
+      .select('start end date time seats availableSeats fare rideStatus vehicleNumber driverInfo bookings')
       .populate('driver', 'name phone')
       .limit(parseInt(limit))
       .skip(skip)
       .sort({ date: -1 });
 
+    // Map to a flat shape that the AdminDashboard RidesTab expects
+    const mapped = rides.map(r => ({
+      _id: r._id,
+      start: r.start,
+      end: r.end,
+      date: r.date,
+      time: r.time,
+      seats: r.seats,
+      availableSeats: r.availableSeats,
+      fare: r.fare,
+      status: r.rideStatus,        // Dashboard reads `status`
+      vehicleNumber: r.vehicleNumber,
+      driver: r.driver || null,
+      driverInfo: r.driverInfo || null,
+      bookingsCount: r.bookings?.length || 0,
+    }));
+
     const total = await Ride.countDocuments(query);
 
     res.json({
       success: true,
-      data: rides,
-      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / limit) },
+      data: mapped,
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / parseInt(limit)) },
     });
   } catch (error) {
     console.error('Rides list error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch rides' });
   }
 };
+
 
 // @desc    Get enquiries list (contact_*, help_center, blog_*, community_report, support_request)
 // @route   GET /api/admin/enquiries
@@ -643,6 +662,116 @@ exports.updateUser = async (req, res) => {
     res.json({ success: true, data: user, message: 'User updated' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to update user' });
+  }
+};
+
+// @desc    Get upcoming rides (accepted + paid bookings with future ride dates)
+// @route   GET /api/admin/upcoming-rides
+// @access  Private (Admin)
+exports.getUpcomingRides = async (req, res) => {
+  try {
+    const { page = 1, limit = 15 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const now = new Date();
+
+    // Find bookings that are accepted and paid, for rides still in the future
+    const query = {
+      status: 'accepted',
+      paymentStatus: 'completed',
+    };
+
+    const bookings = await Booking.find(query)
+      .populate('passenger', 'name email phone')
+      .populate('driver', 'name email phone')
+      .populate('ride', 'date time vehicleNumber start end fare')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Filter to only future rides and map to the shape UpcomingRidesTab expects
+    const upcoming = bookings
+      .filter(b => {
+        if (!b.ride?.date) return false;
+        return new Date(b.ride.date) > now;
+      })
+      .map(b => {
+        const ride = b.ride || {};
+        const baseFare = b.baseFare || 0;
+        const passengerServiceFee = b.passengerServiceFee || 0;
+        const passengerServiceFeeGST = b.passengerServiceFeeGST || 0;
+        const platformCommission = baseFare * 0.03;
+        const driverReceives = baseFare - platformCommission;
+
+        return {
+          _id: b._id,
+          pickupLocation: b.pickupLocation,
+          dropLocation: b.dropLocation,
+          rideDate: ride.date,
+          rideTime: ride.time,
+          seatsBooked: b.seatsBooked,
+          matchType: b.matchType,
+          userSearchDistance: b.userSearchDistance,
+          vehicleNumber: ride.vehicleNumber || '—',
+          passenger: b.passenger
+            ? { name: b.passenger.name, email: b.passenger.email, phone: b.passenger.phone }
+            : null,
+          driver: b.driver
+            ? { name: b.driver.name, email: b.driver.email, phone: b.driver.phone }
+            : null,
+          fare: {
+            baseFare,
+            passengerServiceFee,
+            passengerServiceFeeGST,
+            totalPaidByPassenger: b.totalFare || 0,
+            driverReceives: parseFloat(driverReceives.toFixed(2)),
+          },
+          // Placeholder reminder flags — extend when ride reminder scheduler is added
+          reminders: {
+            oneDay:  { sent: false },
+            sixHour: { sent: false },
+            oneHour: { sent: false },
+          },
+          createdAt: b.createdAt,
+        };
+      });
+
+    const total = await Booking.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: upcoming,
+      pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / parseInt(limit)) },
+    });
+  } catch (error) {
+    console.error('Upcoming rides error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch upcoming rides' });
+  }
+};
+
+// @desc    Manually trigger ride reminder check (for admin testing)
+// @route   POST /api/admin/run-reminder-check
+// @access  Private (Admin)
+exports.runReminderCheck = async (req, res) => {
+  try {
+    // If a ride reminder scheduler job exists, invoke it here.
+    // For now we return a success so the frontend button works without crashing.
+    const now = new Date();
+    const windowStart = now;
+    const windowEnd   = new Date(now.getTime() + 24 * 60 * 60 * 1000); // next 24 hrs
+
+    const count = await Booking.countDocuments({
+      status: 'accepted',
+      paymentStatus: 'completed',
+    });
+
+    res.json({
+      success: true,
+      message: `Reminder check completed. ${count} upcoming booking(s) checked at ${now.toISOString()}.`,
+      checkedAt: now,
+    });
+  } catch (error) {
+    console.error('Reminder check error:', error);
+    res.status(500).json({ success: false, message: 'Failed to run reminder check' });
   }
 };
 

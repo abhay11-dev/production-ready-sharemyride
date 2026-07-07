@@ -43,6 +43,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); // ← Required to read HttpOnly refresh-token cookie
 
+// Allow browser features required by Razorpay checkout.js (suppresses the
+// "Unrecognized feature: 'web-share'" Permissions-Policy console warning).
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'web-share=*, payment=*');
+  next();
+});
+
 // MongoDB connection with better error handling
 let isConnected = false;
 

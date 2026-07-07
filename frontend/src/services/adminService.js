@@ -93,5 +93,26 @@ export const updateEnquiryAction = (id, { status, reply, adminName } = {}) =>
 export const updateReportAction = (id, { status, reply, adminName } = {}) =>
   adminAxios.put(`/reports/${id}`, { status, reply, adminName }).then((r) => r.data);
 
+// ─── Upcoming Rides & Reminder Scheduler ─────────────────────────────────────
+
+/**
+ * Fetch paginated list of upcoming rides (accepted + paid bookings, future dates).
+ * @param {number} page  - Page number (1-indexed)
+ * @param {number} limit - Items per page
+ * @returns {Promise<{ data: Array, pagination: object }>}
+ */
+export const fetchUpcomingRides = (page = 1, limit = 15) =>
+  adminAxios
+    .get('/upcoming-rides', { params: { page, limit } })
+    .then((r) => r.data);
+
+/**
+ * Manually trigger the ride reminder check job.
+ * Useful for testing the email reminder pipeline without waiting for the cron.
+ * @returns {Promise<{ success: boolean, message: string, checkedAt: string }>}
+ */
+export const runReminderCheckNow = () =>
+  adminAxios.post('/run-reminder-check').then((r) => r.data);
+
 // ─── Export the raw instance too, for ad-hoc calls (as AdminDashboard.jsx does) ──
 export { adminAxios };

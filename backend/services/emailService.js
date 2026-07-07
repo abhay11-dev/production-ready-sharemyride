@@ -5,10 +5,18 @@ const crypto = require('crypto');
 /**
  * SHAREMYRIDE EMAIL SERVICE — EmailJS payload mode
  *
- * No server-side email sending. Every function builds and returns an
- * { emailAction: { template, payload } } object (or, for combined flows,
- * { emailActions: { user, admin } }). The frontend caller is responsible
- * for firing emailjs.send(serviceId, templateId, payload).
+ * No server-side email sending for USER-TRIGGERED flows. Every function in
+ * this file builds and returns an { emailAction: { template, payload } }
+ * object (or, for combined flows, { emailActions: { user, admin } }). The
+ * frontend caller fires emailjs.send(serviceId, templateId, payload).
+ *
+ * EXCEPTION — buildRideReminderPayload() below. Ride reminders (1 day / 6 hr
+ * / 1 hr before departure) have no frontend session to fire them from — they
+ * are triggered by a server cron job (see jobs/rideReminderScheduler.js),
+ * which calls EmailJS's REST API directly using a PRIVATE key that must
+ * never reach the browser. buildRideReminderPayload() only builds the
+ * `template_params` object; the actual HTTP call lives in
+ * services/emailjsServerClient.js.
  *
  * EmailJS templates required (configure in your EmailJS dashboard, see
  * /emailjs-templates/*.html in this delivery for ready-to-paste HTML):
@@ -36,6 +44,16 @@ const crypto = require('crypto');
  *   VITE_EMAILJS_TEMPLATE_BOOKING_CONFIRMATION (passenger + driver)
  *     Variables: to_email, to_name, bookingId, pickupLocation,
  *                dropLocation, seatsBooked, rideDate, rideTime, ...
+ *
+ *   EMAILJS_TEMPLATE_RIDE_REMINDER  ← NOT VITE_-prefixed — used ONLY by the
+ *     server cron job (jobs/rideReminderScheduler.js), never by the browser.
+ *     One shared template covers all 3 stages; copy differs via
+ *     `reminderLabel` / `reminderStage`. Variables:
+ *     to_email, to_name, recipientRole, reminderStage, reminderLabel,
+ *     bookingId, pickupLocation, dropLocation, seatsBooked, rideDate,
+ *     rideTime, timeUntilRide, vehicleModel, vehicleNumber,
+ *     counterpartyRole, counterpartyName, counterpartyPhone, fareLabel,
+ *     fareAmount, bookingUrl
  */
 
 const requiredEnvVars = ['FRONTEND_URL', 'NODE_ENV'];
@@ -96,6 +114,12 @@ const generateCalendarEvent = (booking, ride, driver) => {
 };
 
 // ─── Booking Confirmation ─────────────────────────────────────────────────────
+// NOTE: driver receives the FULL base fare — no deduction. Platform fee (3%)
+// + GST (5% on fare+fee) are charged to the PASSENGER only, on top of the
+// base fare. See Transaction.calculateAmounts / utils/paymentCalculator.js
+// (driverNetAmount === baseFare, platformFee/gstOnPlatformFee always 0 for
+// the driver side). This was previously miscalculated here too
+// (`driverGets = baseFare - platformFee - gst`) — fixed below.
 
 const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) => {
   const cid = getCorrelationId();
@@ -104,10 +128,10 @@ const sendBookingConfirmationEmails = async (booking, ride, driver, passenger) =
     const icsBase64 = Buffer.from(calendarContent).toString('base64');
 
     const baseFare = booking.baseFare || 0;
-    const platformFee = baseFare * 0.08;
-    const gst = platformFee * 0.18;
-    const totalAmount = baseFare + platformFee + gst;
-    const driverGets = baseFare - platformFee - gst;
+    const platformFee = booking.passengerServiceFee ?? baseFare * 0.03;
+    const gst = booking.passengerServiceFeeGST ?? (baseFare + platformFee) * 0.05;
+    const totalAmount = booking.totalFare || (baseFare + platformFee + gst);
+    const driverGets = baseFare; // FIXED — driver keeps the full fare, always
 
     const shared = {
       bookingId: String(booking._id),
@@ -222,10 +246,6 @@ const sendWelcomeEmail = async (email, name) => {
 
 // ─── Inquiry: User Confirmation ───────────────────────────────────────────────
 
-/**
- * Returns emailAction for the user-facing ticket acknowledgment.
- * Template: VITE_EMAILJS_TEMPLATE_USER_CONFIRMATION
- */
 const sendUserConfirmationEmail = async (inquiry) => {
   const cid = getCorrelationId();
   try {
@@ -267,9 +287,6 @@ const sendUserConfirmationEmail = async (inquiry) => {
 
 // ─── Inquiry: Admin Alert (NEW inquiry notification to admin) ─────────────────
 
-/**
- * Template: VITE_EMAILJS_TEMPLATE_ADMIN_ALERT
- */
 const sendAdminNotificationEmail = async ({
   to,
   ticketNumber,
@@ -335,9 +352,6 @@ const sendBusinessNotificationToAdmin = async (inquiry) => {
 
 // ─── Inquiry: Admin Reply to User ─────────────────────────────────────────────
 
-/**
- * Template: VITE_EMAILJS_TEMPLATE_ADMIN_REPLY
- */
 const sendInquiryReplyEmail = async (inquiry, replyMessage, adminName) => {
   const cid = getCorrelationId();
   try {
@@ -362,9 +376,6 @@ const sendInquiryReplyEmail = async (inquiry, replyMessage, adminName) => {
 
 // ─── Inquiry/Report: Admin Sync Confirmation ──────────────────────────────────
 
-/**
- * Template: VITE_EMAILJS_TEMPLATE_ADMIN_SYNC
- */
 const sendAdminSyncNotification = async (inquiry, { oldStatus, newStatus, replyMessage, adminName } = {}) => {
   const cid = getCorrelationId();
   try {
@@ -393,24 +404,8 @@ const sendAdminSyncNotification = async (inquiry, { oldStatus, newStatus, replyM
   }
 };
 
-// ─── Inquiry/Report: Combined Status + Reply Update ───────────────────────────  // NEW — fixes the missing export
+// ─── Inquiry/Report: Combined Status + Reply Update ───────────────────────────
 
-/**
- * THIS IS THE FUNCTION adminController.updateEnquiry() calls. It previously
- * did not exist in this file, which meant every admin reply/status-change
- * silently threw inside the controller's try/catch — the inquiry saved to
- * the DB, but NO email ever fired (to user or admin), and no error surfaced
- * to the dashboard.
- *
- * It composes:
- *   - a user-facing reply email  (only if replyMessage was provided)  → 'admin-reply' template
- *   - an admin sync confirmation (always)                             → 'admin-sync' template
- *
- * Returns emailActions in the SHAPE the admin dashboard already expects:
- *   { emailActions: { user, admin } }
- * The controller maps these to { userNotification, adminSync } for the
- * frontend's fireEmailActions() helper.
- */
 const sendStatusReplyUpdate = async (inquiry, { oldStatus, newStatus, replyMessage, adminName } = {}) => {
   const cid = getCorrelationId();
   try {
@@ -439,6 +434,59 @@ const sendStatusReplyUpdate = async (inquiry, { oldStatus, newStatus, replyMessa
     console.error(`[${cid}] sendStatusReplyUpdate failed:`, error);
     return { success: false, emailActions: { user: null, admin: null } };
   }
+};
+
+// ─── Ride Reminders (1 day / 6 hr / 1 hr before departure) ────────────────────
+// NEW. Only builds `template_params` — sending happens server-side via
+// services/emailjsServerClient.js, triggered by jobs/rideReminderScheduler.js.
+// One shared EmailJS template ("EMAILJS_TEMPLATE_RIDE_REMINDER") is reused
+// for all three stages and both recipient roles; copy differs by the
+// `reminderLabel` / `recipientRole` / `counterpartyRole` variables.
+
+const REMINDER_STAGES = {
+  oneDay: { key: 'oneDay', label: '1 day before', hoursBefore: 24 },
+  sixHour: { key: 'sixHour', label: '6 hours before', hoursBefore: 6 },
+  oneHour: { key: 'oneHour', label: '1 hour before', hoursBefore: 1 },
+};
+
+/**
+ * @param {'oneDay'|'sixHour'|'oneHour'} stage
+ * @param {object} booking - Booking doc (needs pickupLocation, dropLocation,
+ *   seatsBooked, baseFare, totalFare, _id)
+ * @param {object} ride - Ride doc (needs date, time, vehicleModel, vehicleNumber)
+ * @param {object} recipient - { name, email } of who's getting this email
+ * @param {'passenger'|'driver'} recipientRole
+ * @param {object} counterparty - { name, phone } of the other party on this booking
+ * @returns {object} template_params for EmailJS
+ */
+const buildRideReminderPayload = (stage, booking, ride, recipient, recipientRole, counterparty) => {
+  const stageMeta = REMINDER_STAGES[stage];
+  const rideDateTime = moment(`${moment(ride.date).format('YYYY-MM-DD')} ${ride.time}`, 'YYYY-MM-DD HH:mm');
+  const isDriver = recipientRole === 'driver';
+
+  return {
+    to_email: recipient.email,
+    to_name: recipient.name,
+    recipientRole,
+    reminderStage: stage,
+    reminderLabel: stageMeta.label,
+    bookingId: String(booking._id),
+    pickupLocation: booking.pickupLocation,
+    dropLocation: booking.dropLocation,
+    seatsBooked: booking.seatsBooked,
+    rideDate: rideDateTime.format('dddd, D MMMM YYYY'),
+    rideTime: ride.time,
+    timeUntilRide: rideDateTime.fromNow(),
+    vehicleModel: ride.vehicleModel || 'N/A',
+    vehicleNumber: ride.vehicleNumber || 'N/A',
+    counterpartyRole: isDriver ? 'passenger' : 'driver',
+    counterpartyName: counterparty?.name || 'N/A',
+    counterpartyPhone: counterparty?.phone || 'Not provided',
+    // Driver always receives the full base fare — no deduction (see note above).
+    fareLabel: isDriver ? "You'll receive" : 'Total paid',
+    fareAmount: (isDriver ? (booking.baseFare || 0) : (booking.totalFare || 0)).toFixed(2),
+    bookingUrl: `${process.env.FRONTEND_URL || 'https://sharemyride.in'}/upcoming-rides`,
+  };
 };
 
 // ─── Blog Status ──────────────────────────────────────────────────────────────
@@ -499,7 +547,11 @@ module.exports = {
   // Inquiry — admin action flow
   sendInquiryReplyEmail,
   sendAdminSyncNotification,
-  sendStatusReplyUpdate,       // NEW — required by adminController.updateEnquiry
+  sendStatusReplyUpdate,
+
+  // Ride reminders — NEW (server cron only, see jobs/rideReminderScheduler.js)
+  buildRideReminderPayload,
+  REMINDER_STAGES,
 
   // Blog
   sendBlogStatusNotification,

@@ -15,8 +15,7 @@ import api from '../../config/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DEBOUNCE_MS = 300; // As requested
-const MIN_QUERY_LENGTH = 2; // As requeconst MIN_QUERY_LENGTH = 2; // As requested
-sted
+const MIN_QUERY_LENGTH = 2; // As requested
 
 // ─── Highlight matching text ──────────────────────────────────────────────────
 function HighlightMatch({ text, query }) {

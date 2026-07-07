@@ -22,9 +22,9 @@ function NotificationsPage() {
     try {
       const response = await getDriverBookings();
       console.log('📬 Bookings response:', response);
-      
+
       let bookingsArray = [];
-      
+
       if (Array.isArray(response)) {
         bookingsArray = response;
       } else if (response.data && Array.isArray(response.data)) {
@@ -35,10 +35,10 @@ function NotificationsPage() {
         console.warn('⚠️ Unexpected response format:', response);
         bookingsArray = [];
       }
-      
+
       console.log('📋 Bookings array:', bookingsArray);
       console.log('🔔 Pending notifications:', bookingsArray.filter(b => b.status === 'pending').length);
-      
+
       setNotifications(bookingsArray);
     } catch (err) {
       setError('Failed to load notifications');
@@ -53,13 +53,13 @@ function NotificationsPage() {
     setProcessingId(bookingId);
     try {
       await updateBookingStatus(bookingId, 'accepted');
-      
-      setNotifications(notifications.map(n => 
+
+      setNotifications(notifications.map(n =>
         n._id === bookingId ? { ...n, status: 'accepted', confirmedAt: new Date() } : n
       ));
-      
+
       alert('✅ Booking accepted successfully!');
-      
+
     } catch (error) {
       console.error('Error accepting booking:', error);
       alert('Failed to accept booking: ' + (error.response?.data?.message || error.message));
@@ -71,17 +71,17 @@ function NotificationsPage() {
   const handleReject = async (bookingId) => {
     const reason = prompt('Please provide a reason for rejection (optional):');
     if (reason === null) return;
-    
+
     setProcessingId(bookingId);
     try {
       await updateBookingStatus(bookingId, 'rejected', reason);
-      
-      setNotifications(notifications.map(n => 
+
+      setNotifications(notifications.map(n =>
         n._id === bookingId ? { ...n, status: 'rejected', rejectedAt: new Date(), rejectionReason: reason } : n
       ));
-      
+
       alert('❌ Booking rejected');
-      
+
     } catch (error) {
       console.error('Error rejecting booking:', error);
       alert('Failed to reject booking: ' + (error.response?.data?.message || error.message));
@@ -91,66 +91,118 @@ function NotificationsPage() {
   };
 
   // ✅ FIXED PAYMENT CALCULATION - Matches RideCard Logic Exactly
- // ✅ ENHANCED PAYMENT CALCULATION - Fixed to Handle Backend Data Issues
-const calculatePaymentDetails = (notification) => {
-  const ride = notification.ride || notification.rideId || {};
-  const seatsBooked = notification.seatsBooked || 1;
-  const fareMode = ride.fareMode || notification.fareMode || 'fixed';
-  const perKmRate = ride.perKmRate || notification.perKmRate || 0;
-  const matchType = ride.matchType || notification.matchType;
-  const segmentFare = ride.segmentFare || notification.segmentFare;
-  const userSearchDistance = ride.userSearchDistance || notification.userSearchDistance;
-  const totalDistance = ride.totalDistance || notification.totalDistance || 0;
-  
-  // 🔍 DEBUG: Log all available data
-  console.log('🔍 Payment Calculation Debug:', {
-    matchType,
-    userSearchDistance,
-    perKmRate,
-    segmentFare,
-    fareMode,
-    'notification.baseFare': notification.baseFare,
-    'ride.fare': ride.fare,
-    totalDistance,
-    seatsBooked
-  });
-  
-  let baseFare = 0;
-  let platformFee = 0;
-  let gst = 0;
-  let totalPassengerPays = 0;
-  let driverReceives = 0;
-  let fareType = 'Fixed';
+  // ✅ ENHANCED PAYMENT CALCULATION - Fixed to Handle Backend Data Issues
+  const calculatePaymentDetails = (notification) => {
+    const ride = notification.ride || notification.rideId || {};
+    const seatsBooked = notification.seatsBooked || 1;
+    const fareMode = ride.fareMode || notification.fareMode || 'fixed';
+    const perKmRate = ride.perKmRate || notification.perKmRate || 0;
+    const matchType = ride.matchType || notification.matchType;
+    const segmentFare = ride.segmentFare || notification.segmentFare;
+    const userSearchDistance = ride.userSearchDistance || notification.userSearchDistance;
+    const totalDistance = ride.totalDistance || notification.totalDistance || 0;
 
-  // 🎯 PRIORITY 1: SEGMENT FARE (Route-Matched Ride)
-  // Check for segment booking indicators
-  if (matchType === 'on_route' || userSearchDistance) {
-    // We have a segment booking - need to calculate from per km rate
-    if (perKmRate && userSearchDistance) {
-      fareType = 'Segment';
-      
-      // ✅ CORRECT: Calculate base fare from per km rate × user's segment distance
-     baseFare = perKmRate * userSearchDistance * seatsBooked;
+    // 🔍 DEBUG: Log all available data
+    console.log('🔍 Payment Calculation Debug:', {
+      matchType,
+      userSearchDistance,
+      perKmRate,
+      segmentFare,
+      fareMode,
+      'notification.baseFare': notification.baseFare,
+      'ride.fare': ride.fare,
+      totalDistance,
+      seatsBooked
+    });
+
+    let baseFare = 0;
+    let platformFee = 0;
+    let gst = 0;
+    let totalPassengerPays = 0;
+    let driverReceives = 0;
+    let fareType = 'Fixed';
+
+    // 🎯 PRIORITY 1: SEGMENT FARE (Route-Matched Ride)
+    // Check for segment booking indicators
+    if (matchType === 'on_route' || userSearchDistance) {
+      // We have a segment booking - need to calculate from per km rate
+      if (perKmRate && userSearchDistance) {
+        fareType = 'Segment';
+
+        // ✅ CORRECT: Calculate base fare from per km rate × user's segment distance
+        baseFare = perKmRate * userSearchDistance * seatsBooked;
+        platformFee = baseFare * 0.08;
+        gst = platformFee * 0.18;
+
+        // Total passenger pays = base + platform fee + GST
+        totalPassengerPays = baseFare + platformFee + gst;
+
+        // Driver receives the full base fare for their segment service
+        driverReceives = baseFare;
+
+        console.log('✅ Segment Pricing Calculated:', {
+          perKmRate,
+          userSearchDistance,
+          seatsBooked,
+          baseFare,
+          platformFee,
+          gst,
+          totalPassengerPays,
+          driverReceives
+        });
+
+        return {
+          fareType,
+          baseFare,
+          platformFee,
+          gst,
+          totalPassengerPays,
+          driverReceives,
+          perKmRate,
+          distance: userSearchDistance,
+          seatsBooked,
+          isSegment: true
+        };
+      } else {
+        // Segment booking but missing data - try to extract from segmentFare
+        console.warn('⚠️ Segment booking detected but missing perKmRate or userSearchDistance');
+
+        if (segmentFare) {
+          // Reverse calculate from segmentFare (which includes all fees)
+          // segmentFare = base + (base * 0.08) + (base * 0.08 * 0.18)
+          // segmentFare = base * (1 + 0.08 + 0.0144) = base * 1.0944
+          baseFare = segmentFare / 1.0944 * seatsBooked;
+          platformFee = baseFare * 0.08;
+          gst = platformFee * 0.18;
+          totalPassengerPays = segmentFare * seatsBooked;
+          driverReceives = baseFare;
+
+          return {
+            fareType: 'Segment',
+            baseFare,
+            platformFee,
+            gst,
+            totalPassengerPays,
+            driverReceives,
+            perKmRate: perKmRate || 0,
+            distance: userSearchDistance || 0,
+            seatsBooked,
+            isSegment: true
+          };
+        }
+      }
+    }
+
+    // 📏 PRIORITY 2: PER KM PRICING (Full Route)
+    if (fareMode === 'per_km' && perKmRate > 0 && totalDistance > 0) {
+      fareType = 'Per KM';
+
+      baseFare = perKmRate * totalDistance * seatsBooked;
       platformFee = baseFare * 0.08;
       gst = platformFee * 0.18;
-      
-      // Total passenger pays = base + platform fee + GST
       totalPassengerPays = baseFare + platformFee + gst;
-      
-      // Driver receives the full base fare for their segment service
       driverReceives = baseFare;
-      
-      console.log('✅ Segment Pricing Calculated:', {
-        perKmRate,
-        userSearchDistance,
-        seatsBooked,
-        baseFare,
-        platformFee,
-        gst,
-        totalPassengerPays,
-        driverReceives
-      });
-      
+
       return {
         fareType,
         baseFare,
@@ -159,118 +211,66 @@ const calculatePaymentDetails = (notification) => {
         totalPassengerPays,
         driverReceives,
         perKmRate,
-        distance: userSearchDistance,
+        distance: totalDistance,
         seatsBooked,
-        isSegment: true
+        isSegment: false
       };
-    } else {
-      // Segment booking but missing data - try to extract from segmentFare
-      console.warn('⚠️ Segment booking detected but missing perKmRate or userSearchDistance');
-      
-      if (segmentFare) {
-        // Reverse calculate from segmentFare (which includes all fees)
-        // segmentFare = base + (base * 0.08) + (base * 0.08 * 0.18)
-        // segmentFare = base * (1 + 0.08 + 0.0144) = base * 1.0944
-        baseFare = segmentFare / 1.0944 * seatsBooked;
-        platformFee = baseFare * 0.08;
-        gst = platformFee * 0.18;
-        totalPassengerPays = segmentFare * seatsBooked;
-        driverReceives = baseFare;
-        
-        return {
-          fareType: 'Segment',
-          baseFare,
-          platformFee,
-          gst,
-          totalPassengerPays,
-          driverReceives,
-          perKmRate: perKmRate || 0,
-          distance: userSearchDistance || 0,
-          seatsBooked,
-          isSegment: true
-        };
-      }
     }
-  }
-  
-  // 📏 PRIORITY 2: PER KM PRICING (Full Route)
-  if (fareMode === 'per_km' && perKmRate > 0 && totalDistance > 0) {
-    fareType = 'Per KM';
-    
-    baseFare = perKmRate * totalDistance * seatsBooked;
-    platformFee = baseFare * 0.08;
-    gst = platformFee * 0.18;
-    totalPassengerPays = baseFare + platformFee + gst;
-    driverReceives = baseFare;
-    
+
+    // 💵 PRIORITY 3: FIXED FARE (Fallback)
+    // Only use this if we're sure it's NOT a segment booking
+    if (!matchType || matchType !== 'on_route') {
+      const fixedFarePerSeat = notification.baseFare
+        ? notification.baseFare / (notification.seatsBooked || 1)
+        : (ride.fare || 0);
+
+      baseFare = fixedFarePerSeat * seatsBooked;
+      platformFee = baseFare * 0.08;
+      gst = platformFee * 0.18;
+      totalPassengerPays = baseFare + platformFee + gst;
+      driverReceives = baseFare;
+
+      return {
+        fareType: 'Fixed',
+        baseFare,
+        platformFee,
+        gst,
+        totalPassengerPays,
+        driverReceives,
+        perKmRate: 0,
+        distance: totalDistance,
+        seatsBooked,
+        isSegment: false
+      };
+    }
+
+    // 🚨 FALLBACK: If we get here, something is wrong - return safe defaults
+    console.error('❌ Could not determine payment calculation method', {
+      notification,
+      ride
+    });
+
     return {
-      fareType,
-      baseFare,
-      platformFee,
-      gst,
-      totalPassengerPays,
-      driverReceives,
-      perKmRate,
-      distance: totalDistance,
-      seatsBooked,
-      isSegment: false
-    };
-  }
-  
-  // 💵 PRIORITY 3: FIXED FARE (Fallback)
-  // Only use this if we're sure it's NOT a segment booking
-  if (!matchType || matchType !== 'on_route') {
-    const fixedFarePerSeat = notification.baseFare 
-      ? notification.baseFare / (notification.seatsBooked || 1) 
-      : (ride.fare || 0);
-      
-    baseFare = fixedFarePerSeat * seatsBooked;
-    platformFee = baseFare * 0.08;
-    gst = platformFee * 0.18;
-    totalPassengerPays = baseFare + platformFee + gst;
-    driverReceives = baseFare;
-    
-    return {
-      fareType: 'Fixed',
-      baseFare,
-      platformFee,
-      gst,
-      totalPassengerPays,
-      driverReceives,
+      fareType: 'Unknown',
+      baseFare: 0,
+      platformFee: 0,
+      gst: 0,
+      totalPassengerPays: 0,
+      driverReceives: 0,
       perKmRate: 0,
-      distance: totalDistance,
+      distance: 0,
       seatsBooked,
       isSegment: false
     };
-  }
-  
-  // 🚨 FALLBACK: If we get here, something is wrong - return safe defaults
-  console.error('❌ Could not determine payment calculation method', {
-    notification,
-    ride
-  });
-  
-  return {
-    fareType: 'Unknown',
-    baseFare: 0,
-    platformFee: 0,
-    gst: 0,
-    totalPassengerPays: 0,
-    driverReceives: 0,
-    perKmRate: 0,
-    distance: 0,
-    seatsBooked,
-    isSegment: false
   };
-};
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   };
 
@@ -286,30 +286,30 @@ const calculatePaymentDetails = (notification) => {
   const getTimeAgo = (date) => {
     if (!date) return '';
     const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    
+
     let interval = seconds / 31536000;
     if (interval > 1) return Math.floor(interval) + ' years ago';
-    
+
     interval = seconds / 2592000;
     if (interval > 1) return Math.floor(interval) + ' months ago';
-    
+
     interval = seconds / 86400;
     if (interval > 1) return Math.floor(interval) + ' days ago';
-    
+
     interval = seconds / 3600;
     if (interval > 1) return Math.floor(interval) + ' hours ago';
-    
+
     interval = seconds / 60;
     if (interval > 1) return Math.floor(interval) + ' minutes ago';
-    
+
     return 'Just now';
   };
 
   const getStatusBadge = (notification) => {
     const isCompleted = notification.paymentStatus === 'completed' || notification.status === 'completed';
-    
+
     if (isCompleted) return 'bg-blue-100 text-blue-700 border-blue-300';
-    
+
     const badges = {
       pending: 'bg-yellow-100 text-yellow-700 border-yellow-300',
       accepted: 'bg-green-100 text-green-700 border-green-300',
@@ -328,11 +328,11 @@ const calculatePaymentDetails = (notification) => {
 
   const safeNotifications = Array.isArray(notifications) ? notifications : [];
 
-  const filteredNotifications = filter === 'all' 
-    ? safeNotifications 
+  const filteredNotifications = filter === 'all'
+    ? safeNotifications
     : filter === 'completed'
-    ? safeNotifications.filter(n => n.paymentStatus === 'completed' || n.status === 'completed')
-    : safeNotifications.filter(n => n.status === filter && n.paymentStatus !== 'completed');
+      ? safeNotifications.filter(n => n.paymentStatus === 'completed' || n.status === 'completed')
+      : safeNotifications.filter(n => n.status === filter && n.paymentStatus !== 'completed');
 
   const pendingCount = safeNotifications.filter(n => n.status === 'pending').length;
   const acceptedCount = safeNotifications.filter(n => n.status === 'accepted' && n.paymentStatus !== 'completed').length;
@@ -348,7 +348,7 @@ const calculatePaymentDetails = (notification) => {
             <svg className="w-10 h-10 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
             </svg>
-            Ride Request Notifications 
+            Ride Request Notifications
           </h1>
           <p className="text-gray-600 text-base md:text-lg">
             Manage booking requests for your posted rides
@@ -431,11 +431,10 @@ const calculatePaymentDetails = (notification) => {
               <button
                 key={tab.value}
                 onClick={() => setFilter(tab.value)}
-                className={`px-3 py-2.5 md:px-4 md:py-3 rounded-lg font-semibold transition-all text-sm md:text-base ${
-                  filter === tab.value
-                    ? 'bg-blue-600 text-white shadow-lg transform scale-105'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md'
-                }`}
+                className={`px-3 py-2.5 md:px-4 md:py-3 rounded-lg font-semibold transition-all text-sm md:text-base ${filter === tab.value
+                  ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:shadow-md'
+                  }`}
               >
                 {tab.label}
               </button>
@@ -466,11 +465,11 @@ const calculatePaymentDetails = (notification) => {
             {filteredNotifications.map((notification) => {
               const displayStatus = getDisplayStatus(notification);
               const isCompleted = displayStatus === 'completed';
-              
+
               const passenger = notification.passenger || notification.passengerId || {};
               const driver = notification.driver || notification.driverId || {};
               const ride = notification.ride || notification.rideId || {};
-              
+
               // ✅ CALCULATE PAYMENT DETAILS WITH FIXED LOGIC
               const payment = calculatePaymentDetails(notification);
 
@@ -513,7 +512,7 @@ const calculatePaymentDetails = (notification) => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           <div>
-<p className="text-blue-800 font-bold text-base">Payment Completed Successfully! 🎉</p>
+                            <p className="text-blue-800 font-bold text-base">Payment Completed Successfully! 🎉</p>
                             <p className="text-blue-600 text-sm mt-1">
                               You Received: ₹{payment.driverReceives.toFixed(2)}
                             </p>
@@ -562,34 +561,33 @@ const calculatePaymentDetails = (notification) => {
                       </div>
                       {ride.date && (
                         <div className="mt-3 pt-3 border-t border-blue-200">
-                           <div className="flex items-center gap-2">
-                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <p className="text-sm text-gray-600">
-                            {formatDate(ride.date)} {ride.time && `at ${formatTime(ride.time)}`}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <p className="text-sm text-gray-600">
+                              {formatDate(ride.date)} {ride.time && `at ${formatTime(ride.time)}`}
+                            </p>
+                          </div>
                         </div>
-                      </div>
                       )}
                     </div>
 
                     {/* ✅ ENHANCED BOOKING DETAILS - PAYMENT BREAKDOWN */}
                     <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-xl p-5 mb-4 border-2 border-green-200">
                       <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                       
+
                         💰 Payment Breakdown ({payment.fareType})
                       </h4>
 
                       {/* Fare Type Badge */}
                       <div className="mb-4">
-                        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${
-                          payment.isSegment 
-                            ? 'bg-green-100 text-green-700 border-2 border-green-300'
-                            : payment.fareType === 'Per KM'
+                        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${payment.isSegment
+                          ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                          : payment.fareType === 'Per KM'
                             ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
                             : 'bg-purple-100 text-purple-700 border-2 border-purple-300'
-                        }`}>
+                          }`}>
                           {payment.isSegment ? ' Segment Pricing' : payment.fareType === 'Per KM' ? '📏 Per KM Pricing' : '💵 Fixed Fare'}
                         </span>
                       </div>
@@ -662,9 +660,9 @@ const calculatePaymentDetails = (notification) => {
                           </div>
                           <div className="flex justify-between items-center pt-2 border-t-2 border-gray-300">
                             <span className="text-gray-600">Driver Receives:</span>
-<span className="font-bold text-blue-600">
-  ₹{(payment.baseFare - payment.platformFee - payment.gst).toFixed(2)}
-</span>
+                            <span className="font-bold text-blue-600">
+                              ₹{(payment.baseFare - payment.platformFee - payment.gst).toFixed(2)}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -676,8 +674,8 @@ const calculatePaymentDetails = (notification) => {
                             <div className="text-xs opacity-90 mb-1">💰 You Receive</div>
                             <div className="text-2xl font-bold"> ₹{(payment.baseFare - payment.platformFee - payment.gst).toFixed(2)}</div>
                             <div className="text-xs opacity-80 mt-1">
-                              {payment.isSegment 
-                                ? `(Fare for ${payment.distance} km segment)` 
+                              {payment.isSegment
+                                ? `(Fare for ${payment.distance} km segment)`
                                 : '(Fare for your service)'}
                             </div>
                           </div>
@@ -712,8 +710,8 @@ const calculatePaymentDetails = (notification) => {
                           <div className="mb-2">
                             <p className="text-xs text-gray-500 mb-1">📍 Pickup Location</p>
                             <p className="text-sm font-semibold text-gray-900">
-                              {typeof notification.pickupLocation === 'object' 
-                                ? notification.pickupLocation.address 
+                              {typeof notification.pickupLocation === 'object'
+                                ? notification.pickupLocation.address
                                 : notification.pickupLocation}
                             </p>
                           </div>
@@ -722,8 +720,8 @@ const calculatePaymentDetails = (notification) => {
                           <div>
                             <p className="text-xs text-gray-500 mb-1"> 🎯 Drop Location</p>
                             <p className="text-sm font-semibold text-gray-900">
-                              {typeof notification.dropLocation === 'object' 
-                                ? notification.dropLocation.address 
+                              {typeof notification.dropLocation === 'object'
+                                ? notification.dropLocation.address
                                 : notification.dropLocation}
                             </p>
                           </div>
@@ -796,7 +794,7 @@ const calculatePaymentDetails = (notification) => {
                           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                           </svg>
-                           Booking Accepted - Awaiting Payment
+                          Booking Accepted - Awaiting Payment
                         </p>
                         <p className="text-green-600 text-sm mt-2">
                           You'll receive your earning once passenger completes payment
@@ -869,13 +867,13 @@ const calculatePaymentDetails = (notification) => {
               No {filter !== 'all' ? filter : ''} notifications
             </h3>
             <p className="text-gray-600 text-sm md:text-lg">
-              {filter === 'pending' 
+              {filter === 'pending'
                 ? "You don't have any pending ride requests at the moment"
                 : filter === 'completed'
-                ? "No completed bookings yet. Accepted bookings will appear here once payment is received."
-                : filter === 'accepted'
-                ? "No accepted bookings awaiting payment"
-                : `No ${filter} notifications to display`}
+                  ? "No completed bookings yet. Accepted bookings will appear here once payment is received."
+                  : filter === 'accepted'
+                    ? "No accepted bookings awaiting payment"
+                    : `No ${filter} notifications to display`}
             </p>
             {filter === 'pending' && (
               <div className="mt-6 inline-flex items-center gap-2 text-blue-600 font-semibold">

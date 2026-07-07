@@ -5,8 +5,10 @@ import emailjs from '@emailjs/browser';
 import {
   fetchRequests,
   updateRequestStatus,
-  updateEnquiryAction,   // NEW
-  updateReportAction,    // NEW
+  updateEnquiryAction,
+  updateReportAction,
+  fetchUpcomingRides,   // NEW
+  runReminderCheckNow,  // NEW
 } from '../../services/adminService.js';
 import RequestDetailsModal from './RequestDetailsModal.jsx';
 import UserDetailModal from './UserDetailModal.jsx';
@@ -14,34 +16,28 @@ import RideDetailModal from './RideDetailModal.jsx';
 import BookingDetailModal from './BookingDetailModal.jsx';
 
 // ─── FIX #1: Use adminAxios (sends adminToken) not the user api instance ──────
-// Make sure adminService.js exports adminAxios:
-//   export { adminAxios };
-// Then import it here as the drop-in replacement for api:
 import { adminAxios as api } from '../../services/adminService.js';
 
 /* ─── EmailJS config + firing helpers ───────────────────────────────────
-   The backend never sends email itself — every admin action (status change
-   and/or reply) on an enquiry/report returns an `emailActions` object with
-   pre-built { template, payload } actions. This dashboard is responsible for
-   actually firing them via emailjs.send(), same pattern as ContactUs.jsx /
+   The backend never sends email itself for USER-TRIGGERED actions — every
+   admin action (status change and/or reply) on an enquiry/report returns an
+   `emailActions` object with pre-built { template, payload } actions. This
+   dashboard fires them via emailjs.send(), same pattern as ContactUs.jsx /
    Report.jsx use for the user-facing confirmation email.
 
-   Two possible actions come back from updateEnquiryAction / updateReportAction:
-     - emailActions.userNotification → only present if admin wrote a reply;
-       goes to the ORIGINAL SUBMITTER's inbox.
-     - emailActions.adminSync        → always present; goes to the ADMIN
-       inbox, confirming the status/reply was saved and the user was (or
-       wasn't) notified. This is what keeps portal ↔ email ↔ admin in sync.
+   Ride reminders (1 day / 6 hr / 1 hr before departure) are DIFFERENT — they
+   have no admin/user session to fire from, so they're sent by a backend
+   cron job (jobs/rideReminderScheduler.js) calling EmailJS's REST API
+   directly with a private key. Nothing below fires those; the "Upcoming
+   Rides" tab only displays their sent/not-sent status and offers a manual
+   "run now" trigger for testing.
 ─────────────────────────────────────────────────────────────────────── */
 const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID;
 const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
 
-// Map each backend `template` key to its EmailJS template ID env var.
-// Add VITE_EMAILJS_TEMPLATE_ADMIN_REPLY and VITE_EMAILJS_TEMPLATE_ADMIN_SYNC
-// to frontend/.env (see setup notes at the bottom of this file).
 const EMAILJS_TEMPLATES = {
   'admin-reply': import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_REPLY,
-  'admin-sync':  import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_SYNC,
+  'admin-sync': import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_SYNC,
 };
 
 async function fireEmailAction(action) {
@@ -60,12 +56,6 @@ async function fireEmailAction(action) {
   }
 }
 
-/**
- * Fires whichever emailActions are present on an updateEnquiryAction /
- * updateReportAction response, and returns a small summary so the caller
- * can show an accurate toast (e.g. "Reply sent" vs "Status updated —
- * admin sync sent").
- */
 async function fireEmailActions(emailActions) {
   if (!emailActions) return { userNotified: false, adminSynced: false };
   const [userRes, syncRes] = await Promise.all([
@@ -75,11 +65,7 @@ async function fireEmailActions(emailActions) {
   return { userNotified: userRes.fired, adminSynced: syncRes.fired };
 }
 
-/* ─── Icon set ────────────────────────────────────────────────────────────
-   Single, consistent stroke-icon system (Heroicons-style outline, 1.8-2px
-   stroke) used across every tab, stat, and empty state. Replaces emoji so
-   the dashboard reads as a real product surface, not a prototype.
-─────────────────────────────────────────────────────────────────────── */
+/* ─── Icon set ─────────────────────────────────────────────────────────── */
 const Icon = {
   overview: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 13h4v7H3v-7zM10 8h4v12h-4V8zM17 4h4v16h-4V4z" /></svg>),
   users: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-1a4 4 0 10-3-6.65" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 20v-2a4 4 0 014-4h0a4 4 0 014 4v2" /></svg>),
@@ -94,6 +80,7 @@ const Icon = {
   wallet: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 12V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2v-2m-4-2h.01" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 8V6a2 2 0 012-2h11" /></svg>),
   pin: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>),
   clock: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="9" strokeWidth={1.8} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 7v5l3 3" /></svg>),
+  calendar: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>),
   star: (p) => (<svg {...p} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>),
   check: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.5 12.75l6 6 9-13.5" /></svg>),
   checkCircle: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12.75l1.5 1.5 4.5-4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>),
@@ -106,36 +93,37 @@ const Icon = {
 
 /* ─── Constants ─────────────────────────────────────────── */
 const TABS = [
-  { id: 'overview',      label: 'Overview',            icon: Icon.overview },
-  { id: 'users',         label: 'Users',               icon: Icon.users    },
-  { id: 'rides',         label: 'Rides',               icon: Icon.ride     },
-  { id: 'bookings',      label: 'Bookings',            icon: Icon.booking  },
-  { id: 'payments',      label: 'Payments',            icon: Icon.payment  },
-  { id: 'verification',  label: 'Driver Verification', icon: Icon.shield   },
-  { id: 'enquiries',     label: 'Enquiries',           icon: Icon.chat     },
-  { id: 'reports',       label: 'Reports',             icon: Icon.alert    },
-  { id: 'blogs',         label: 'Blogs',               icon: Icon.document },
+  { id: 'overview', label: 'Overview', icon: Icon.overview },
+  { id: 'users', label: 'Users', icon: Icon.users },
+  { id: 'rides', label: 'Rides', icon: Icon.ride },
+  { id: 'bookings', label: 'Bookings', icon: Icon.booking },
+  { id: 'upcoming', label: 'Upcoming Rides', icon: Icon.calendar }, // NEW
+  { id: 'payments', label: 'Payments', icon: Icon.payment },
+  { id: 'verification', label: 'Driver Verification', icon: Icon.shield },
+  { id: 'enquiries', label: 'Enquiries', icon: Icon.chat },
+  { id: 'reports', label: 'Reports', icon: Icon.alert },
+  { id: 'blogs', label: 'Blogs', icon: Icon.document },
 ];
 
 /* ─── Helpers ───────────────────────────────────────────── */
 function fmt(n) {
   if (n === undefined || n === null) return '0';
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
   return Number(n).toLocaleString('en-IN');
 }
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const fmtTime = d => d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
-const fmtDT   = d => d ? `${fmtDate(d)}, ${fmtTime(d)}` : '—';
+const fmtDT = d => d ? `${fmtDate(d)}, ${fmtTime(d)}` : '—';
 
 /* ─── Shared UI ─────────────────────────────────────────── */
 const BADGE_CLS = {
-  green:  'bg-green-50  text-green-700  border-green-200',
-  red:    'bg-red-50    text-red-700    border-red-200',
-  amber:  'bg-amber-50  text-amber-700  border-amber-200',
-  blue:   'bg-blue-50   text-blue-700   border-blue-200',
+  green: 'bg-green-50  text-green-700  border-green-200',
+  red: 'bg-red-50    text-red-700    border-red-200',
+  amber: 'bg-amber-50  text-amber-700  border-amber-200',
+  blue: 'bg-blue-50   text-blue-700   border-blue-200',
   purple: 'bg-purple-50 text-purple-700 border-purple-200',
-  gray:   'bg-gray-100  text-gray-600   border-gray-200',
+  gray: 'bg-gray-100  text-gray-600   border-gray-200',
 };
 
 const Badge = ({ label, color = 'gray' }) => (
@@ -145,35 +133,36 @@ const Badge = ({ label, color = 'gray' }) => (
 );
 
 const STATUS_MAP = {
-  submitted:    { label: 'Pending',     color: 'blue'   },
-  under_review: { label: 'Reviewing',   color: 'purple' },
-  approved:     { label: 'Approved',    color: 'green'  },
-  rejected:     { label: 'Rejected',    color: 'red'    },
-  needs_info:   { label: 'Needs Info',  color: 'amber'  },
-  completed:    { label: 'Completed',   color: 'green'  },
-  pending:      { label: 'Pending',     color: 'amber'  },
-  confirmed:    { label: 'Confirmed',   color: 'blue'   },
-  cancelled:    { label: 'Cancelled',   color: 'red'    },
-  active:       { label: 'Active',      color: 'green'  },
-  open:         { label: 'Open',        color: 'blue'   },
-  in_progress:  { label: 'In Progress', color: 'purple' },
+  submitted: { label: 'Pending', color: 'blue' },
+  under_review: { label: 'Reviewing', color: 'purple' },
+  approved: { label: 'Approved', color: 'green' },
+  rejected: { label: 'Rejected', color: 'red' },
+  needs_info: { label: 'Needs Info', color: 'amber' },
+  completed: { label: 'Completed', color: 'green' },
+  pending: { label: 'Pending', color: 'amber' },
+  accepted: { label: 'Accepted', color: 'blue' },
+  cancelled: { label: 'Cancelled', color: 'red' },
+  no_show: { label: 'No Show', color: 'amber' },
+  active: { label: 'Active', color: 'green' },
+  open: { label: 'Open', color: 'blue' },
+  in_progress: { label: 'In Progress', color: 'purple' },
   waiting_on_user: { label: 'Waiting on User', color: 'amber' },
-  replied:      { label: 'Replied',     color: 'purple' },
-  resolved:     { label: 'Resolved',    color: 'green'  },
-  closed:       { label: 'Closed',      color: 'gray'   },
-  archived:     { label: 'Archived',    color: 'gray'   },
-  seen:         { label: 'Seen',        color: 'blue'   },
-  critical:     { label: 'Critical',    color: 'red'    },
-  high:         { label: 'High',        color: 'amber'  },
-  urgent:       { label: 'Urgent',      color: 'red'    },
-  medium:       { label: 'Medium',      color: 'blue'   },
-  low:          { label: 'Low',         color: 'gray'   },
-  published:    { label: 'Published',   color: 'green'  },
-  draft:        { label: 'Draft',       color: 'gray'   },
-  not_started:  { label: 'Not Started', color: 'gray'   },
-  paid:         { label: 'Paid',        color: 'green'  },
-  failed:       { label: 'Failed',      color: 'red'    },
-  refunded:     { label: 'Refunded',    color: 'amber'  },
+  replied: { label: 'Replied', color: 'purple' },
+  resolved: { label: 'Resolved', color: 'green' },
+  closed: { label: 'Closed', color: 'gray' },
+  archived: { label: 'Archived', color: 'gray' },
+  seen: { label: 'Seen', color: 'blue' },
+  critical: { label: 'Critical', color: 'red' },
+  high: { label: 'High', color: 'amber' },
+  urgent: { label: 'Urgent', color: 'red' },
+  medium: { label: 'Medium', color: 'blue' },
+  low: { label: 'Low', color: 'gray' },
+  published: { label: 'Published', color: 'green' },
+  draft: { label: 'Draft', color: 'gray' },
+  not_started: { label: 'Not Started', color: 'gray' },
+  paid: { label: 'Paid', color: 'green' },
+  failed: { label: 'Failed', color: 'red' },
+  refunded: { label: 'Refunded', color: 'amber' },
 };
 const StatusBadge = ({ status }) => {
   const { label, color } = STATUS_MAP[status] || { label: status || '—', color: 'gray' };
@@ -257,14 +246,10 @@ function TableSkeleton({ cols = 6, rows = 8 }) {
   ));
 }
 
-/* ─── Reply composer (shared by Enquiries + Reports) ────────────────────
-   Renders: status selector, reply textarea, "Send" button. Calls
-   `onSubmit({ status, reply })` and expects the caller to handle the API
-   call + email firing + toast. Kept dumb/presentational on purpose so
-   both tabs can reuse it with different backend calls. ────────────────*/
+/* ─── Reply composer (shared by Enquiries + Reports) ────────────────────── */
 function ReplyComposer({ currentStatus, statusOptions, onSubmit, submitting }) {
   const [status, setStatus] = useState(currentStatus || '');
-  const [reply, setReply]   = useState('');
+  const [reply, setReply] = useState('');
 
   const handleSend = () => {
     if (!reply.trim() && status === currentStatus) {
@@ -317,35 +302,31 @@ function ReplyComposer({ currentStatus, statusOptions, onSubmit, submitting }) {
 
 /* ─── Overview Tab ──────────────────────────────────────── */
 function OverviewTab({ analytics, enquiries, reports, verRequests }) {
-  const urgent  = reports.filter(r => (r.meta?.severity || r.severity) === 'critical' || (r.meta?.severity || r.severity) === 'high');
+  const urgent = reports.filter(r => (r.meta?.severity || r.severity) === 'critical' || (r.meta?.severity || r.severity) === 'high');
   const pending = verRequests.filter(r => r.status === 'submitted' || r.status === 'under_review');
 
   return (
     <div className="space-y-8">
-      {/* KPIs */}
       <div>
         <h2 className="text-base font-bold text-gray-900 mb-4">Platform at a glance</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatCard label="Total Users"  value={analytics.totalUsers   || 0} icon={Icon.users}  color="blue"   />
-          <StatCard label="Active 7d"    value={analytics.activeUsers  || 0} icon={Icon.pulse}  color="green"  />
-          <StatCard label="Total Rides"  value={analytics.totalRides   || 0} icon={Icon.ride}   color="purple" />
-          <StatCard label="Bookings"     value={analytics.totalBookings|| 0} icon={Icon.booking} color="amber"  />
-          <StatCard label="Revenue"      value={Math.floor((analytics.totalRevenue || 0) / 1000)} unit="K" icon={Icon.wallet} color="green" />
-          <StatCard label="Cities"       value={analytics.totalCities  || 0} icon={Icon.pin}    color="amber"  />
+          <StatCard label="Total Users" value={analytics.totalUsers || 0} icon={Icon.users} color="blue" />
+          <StatCard label="Active 7d" value={analytics.activeUsers || 0} icon={Icon.pulse} color="green" />
+          <StatCard label="Total Rides" value={analytics.totalRides || 0} icon={Icon.ride} color="purple" />
+          <StatCard label="Bookings" value={analytics.totalBookings || 0} icon={Icon.booking} color="amber" />
+          <StatCard label="Revenue" value={Math.floor((analytics.totalRevenue || 0) / 1000)} unit="K" icon={Icon.wallet} color="green" />
+          <StatCard label="Cities" value={analytics.totalCities || 0} icon={Icon.pin} color="amber" />
         </div>
       </div>
 
-      {/* Secondary KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Pending Verifications" value={pending.length}                                          icon={Icon.clock} color="blue"  />
-        <StatCard label="Open Enquiries"        value={enquiries.filter(e => !['resolved','closed'].includes(e.status)).length}   icon={Icon.chat} color="amber" />
-        <StatCard label="Urgent Reports"        value={urgent.length}                                           icon={Icon.alert} color="red"   />
-        <StatCard label="Avg Rating"            value={(analytics.averageRating || 4.8)} unit=""              icon={Icon.star} color="amber" />
+        <StatCard label="Pending Verifications" value={pending.length} icon={Icon.clock} color="blue" />
+        <StatCard label="Open Enquiries" value={enquiries.filter(e => !['resolved', 'closed'].includes(e.status)).length} icon={Icon.chat} color="amber" />
+        <StatCard label="Urgent Reports" value={urgent.length} icon={Icon.alert} color="red" />
+        <StatCard label="Avg Rating" value={(analytics.averageRating || 4.8)} unit="" icon={Icon.star} color="amber" />
       </div>
 
-      {/* Activity panels */}
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* Pending verifications */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-sm text-gray-900">Pending Verifications</h3>
@@ -367,7 +348,6 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
           </div>
         </div>
 
-        {/* Recent enquiries */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5">
           <h3 className="font-bold text-sm text-gray-900 mb-4">Recent Enquiries</h3>
           <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -386,7 +366,6 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
           </div>
         </div>
 
-        {/* Urgent reports */}
         <div className="bg-white rounded-2xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-sm text-gray-900">Urgent Reports</h3>
@@ -409,7 +388,6 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
         </div>
       </div>
 
-      {/* Revenue summary */}
       <div className="bg-white rounded-2xl border border-gray-200 p-5">
         <h3 className="font-bold text-sm text-gray-900 mb-1">Revenue Summary</h3>
         <p className="text-xs text-gray-400 mb-5">From completed payments</p>
@@ -436,11 +414,11 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
 
 /* ─── Users Tab ─────────────────────────────────────────── */
 function UsersTab() {
-  const [users, setUsers]     = useState([]);
-  const [total, setTotal]     = useState(0);
+  const [users, setUsers] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
-  const [page, setPage]       = useState(1);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const LIMIT = 20;
 
@@ -513,11 +491,11 @@ function UsersTab() {
 
 /* ─── Rides Tab ─────────────────────────────────────────── */
 function RidesTab() {
-  const [rides, setRides]     = useState([]);
-  const [total, setTotal]     = useState(0);
+  const [rides, setRides] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusF, setStatusF] = useState('all');
-  const [page, setPage]       = useState(1);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const LIMIT = 20;
 
@@ -592,13 +570,18 @@ function RidesTab() {
   );
 }
 
-/* ─── Bookings Tab ──────────────────────────────────────── */
+/* ─── Bookings Tab ──────────────────────────────────────────────────────
+   FIXED: status filter options previously included "confirmed", which is
+   not a valid Booking.status enum value (real values are pending / accepted
+   / rejected / cancelled / completed / no_show). Filtering on "confirmed"
+   silently returned zero rows every time it was selected.
+─────────────────────────────────────────────────────────────────────── */
 function BookingsTab() {
   const [bookings, setBookings] = useState([]);
-  const [total, setTotal]       = useState(0);
-  const [loading, setLoading]   = useState(true);
-  const [statusF, setStatusF]   = useState('all');
-  const [page, setPage]         = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [statusF, setStatusF] = useState('all');
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const LIMIT = 20;
 
@@ -618,9 +601,13 @@ function BookingsTab() {
   useEffect(() => { setPage(1); }, [statusF]);
 
   const STATUS_OPTS = [
-    { value: 'all', label: 'All' }, { value: 'pending', label: 'Pending' },
-    { value: 'confirmed', label: 'Confirmed' }, { value: 'completed', label: 'Completed' },
+    { value: 'all', label: 'All' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'accepted', label: 'Accepted' },
+    { value: 'completed', label: 'Completed' },
     { value: 'cancelled', label: 'Cancelled' },
+    { value: 'rejected', label: 'Rejected' },
+    { value: 'no_show', label: 'No Show' },
   ];
 
   return (
@@ -672,13 +659,141 @@ function BookingsTab() {
   );
 }
 
+/* ─── Upcoming Rides Tab — NEW ──────────────────────────────────────────────
+   Every accepted + paid booking whose ride is still ahead of us: full route,
+   passenger + driver contact info, fare breakdown (base fare / passenger's
+   total / driver's payout / platform's cut), and the send status of each of
+   the 3 reminder emails (1 day / 6 hr / 1 hr before departure). The "Run
+   reminder check now" button manually fires the same job the cron runs
+   every 10 minutes — useful for verifying EmailJS wiring without waiting.
+─────────────────────────────────────────────────────────────────────── */
+function ReminderPill({ label, sent }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${sent ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+      {sent ? <Icon.check className="w-3 h-3" /> : <Icon.clock className="w-3 h-3" />}
+      {label}
+    </span>
+  );
+}
+
+function UpcomingRidesTab() {
+  const [rides, setRides] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [running, setRunning] = useState(false);
+  const LIMIT = 15;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetchUpcomingRides(page, LIMIT);
+      setRides(res.data || []);
+      setTotal(res.pagination?.total || 0);
+    } catch { toast.error('Failed to load upcoming rides'); }
+    finally { setLoading(false); }
+  }, [page]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleRunNow = async () => {
+    setRunning(true);
+    try {
+      const res = await runReminderCheckNow();
+      toast.success(res.message || 'Reminder check triggered');
+      setTimeout(load, 1500);
+    } catch { toast.error('Failed to trigger reminder check'); }
+    finally { setRunning(false); }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div>
+          <h2 className="text-base font-bold text-gray-900">Upcoming Rides</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{fmt(total)} scheduled · reminders fire at 1 day / 6 hr / 1 hr before departure</p>
+        </div>
+        <button onClick={handleRunNow} disabled={running}
+          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5">
+          <Icon.sync className={`w-3.5 h-3.5 ${running ? 'animate-spin' : ''}`} />
+          {running ? 'Running…' : 'Run reminder check now'}
+        </button>
+      </div>
+
+      {loading
+        ? <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-40 bg-white rounded-2xl border border-gray-100 animate-pulse" />)}</div>
+        : rides.length === 0
+          ? <div className="bg-white rounded-2xl border border-gray-200 p-12"><EmptyState message="No upcoming rides" /></div>
+          : (
+            <div className="space-y-3">
+              {rides.map(r => (
+                <div key={r._id} className="bg-white rounded-2xl border border-gray-200 p-5">
+                  <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+                    <div>
+                      <p className="text-sm font-bold text-gray-900 flex items-center gap-1.5 flex-wrap">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />{r.pickupLocation}
+                        <span className="text-gray-300 mx-1">→</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0" />{r.dropLocation}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {fmtDate(r.rideDate)} · {r.rideTime} · {r.seatsBooked} seat{r.seatsBooked === 1 ? '' : 's'}
+                        {r.matchType === 'on_route' && r.userSearchDistance ? ` · segment ${r.userSearchDistance.toFixed(1)} km` : ''}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <ReminderPill label="1 day" sent={r.reminders?.oneDay?.sent} />
+                      <ReminderPill label="6 hr" sent={r.reminders?.sixHour?.sent} />
+                      <ReminderPill label="1 hr" sent={r.reminders?.oneHour?.sent} />
+                    </div>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-4 mb-4">
+                    <div className="bg-blue-50 rounded-xl p-3.5">
+                      <p className="text-[11px] font-bold uppercase text-blue-600 mb-1.5">Passenger</p>
+                      <p className="text-sm font-semibold text-gray-900">{r.passenger?.name || '—'}</p>
+                      <p className="text-xs text-gray-500">{r.passenger?.phone || '—'} · {r.passenger?.email || '—'}</p>
+                    </div>
+                    <div className="bg-green-50 rounded-xl p-3.5">
+                      <p className="text-[11px] font-bold uppercase text-green-600 mb-1.5">Driver</p>
+                      <p className="text-sm font-semibold text-gray-900">{r.driver?.name || '—'}</p>
+                      <p className="text-xs text-gray-500">{r.driver?.phone || '—'} · {r.vehicleNumber || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <p className="text-gray-400">Base fare</p>
+                      <p className="font-bold text-gray-900">₹{r.fare.baseFare.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Passenger paid</p>
+                      <p className="font-bold text-blue-700">₹{r.fare.totalPaidByPassenger.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Driver receives</p>
+                      <p className="font-bold text-green-700">₹{r.fare.driverReceives.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Platform fee (passenger side)</p>
+                      <p className="font-bold text-gray-900">₹{(r.fare.passengerServiceFee + r.fare.passengerServiceFeeGST).toFixed(2)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <Pagination page={page} total={total} limit={LIMIT} onPage={setPage} />
+            </div>
+          )}
+    </div>
+  );
+}
+
 /* ─── Payments Tab ──────────────────────────────────────── */
 function PaymentsTab() {
   const [payments, setPayments] = useState([]);
-  const [total, setTotal]       = useState(0);
-  const [loading, setLoading]   = useState(true);
-  const [statusF, setStatusF]   = useState('all');
-  const [page, setPage]         = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [statusF, setStatusF] = useState('all');
+  const [page, setPage] = useState(1);
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -751,7 +866,7 @@ function PaymentsTab() {
 
 /* ─── Driver Verification Tab ───────────────────────────── */
 function VerificationTab({ requests, onUpdate, onRefresh }) {
-  const [search, setSearch]   = useState('');
+  const [search, setSearch] = useState('');
   const [statusF, setStatusF] = useState('all');
   const [selected, setSelected] = useState(null);
 
@@ -766,21 +881,21 @@ function VerificationTab({ requests, onUpdate, onRefresh }) {
   });
 
   const stats = {
-    total:    requests.length,
-    pending:  requests.filter(r => r.status === 'submitted').length,
-    review:   requests.filter(r => r.status === 'under_review').length,
+    total: requests.length,
+    pending: requests.filter(r => r.status === 'submitted').length,
+    review: requests.filter(r => r.status === 'under_review').length,
     approved: requests.filter(r => r.status === 'approved').length,
-    info:     requests.filter(r => r.status === 'needs_info').length,
+    info: requests.filter(r => r.status === 'needs_info').length,
     rejected: requests.filter(r => r.status === 'rejected').length,
   };
 
   const STATUS_OPTS = [
-    { value: 'all',          label: `All (${stats.total})`         },
-    { value: 'submitted',    label: `Pending (${stats.pending})`   },
-    { value: 'under_review', label: `Reviewing (${stats.review})`  },
-    { value: 'approved',     label: `Approved (${stats.approved})` },
-    { value: 'needs_info',   label: `Info (${stats.info})`         },
-    { value: 'rejected',     label: `Rejected (${stats.rejected})` },
+    { value: 'all', label: `All (${stats.total})` },
+    { value: 'submitted', label: `Pending (${stats.pending})` },
+    { value: 'under_review', label: `Reviewing (${stats.review})` },
+    { value: 'approved', label: `Approved (${stats.approved})` },
+    { value: 'needs_info', label: `Info (${stats.info})` },
+    { value: 'rejected', label: `Rejected (${stats.rejected})` },
   ];
 
   return (
@@ -789,15 +904,14 @@ function VerificationTab({ requests, onUpdate, onRefresh }) {
         <h2 className="text-base font-bold text-gray-900">Driver Verifications</h2>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-5">
         {[
-          { label: 'Total',    value: stats.total,    cls: 'text-gray-900'   },
-          { label: 'Pending',  value: stats.pending,  cls: 'text-blue-600'   },
-          { label: 'Review',   value: stats.review,   cls: 'text-purple-600' },
-          { label: 'Approved', value: stats.approved, cls: 'text-green-600'  },
-          { label: 'Info',     value: stats.info,     cls: 'text-amber-600'  },
-          { label: 'Rejected', value: stats.rejected, cls: 'text-red-600'    },
+          { label: 'Total', value: stats.total, cls: 'text-gray-900' },
+          { label: 'Pending', value: stats.pending, cls: 'text-blue-600' },
+          { label: 'Review', value: stats.review, cls: 'text-purple-600' },
+          { label: 'Approved', value: stats.approved, cls: 'text-green-600' },
+          { label: 'Info', value: stats.info, cls: 'text-amber-600' },
+          { label: 'Rejected', value: stats.rejected, cls: 'text-red-600' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-2xl border border-gray-100 p-4">
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">{s.label}</p>
@@ -806,7 +920,6 @@ function VerificationTab({ requests, onUpdate, onRefresh }) {
         ))}
       </div>
 
-      {/* Controls */}
       <div className="bg-white rounded-2xl border border-gray-100 p-3 mb-4 flex flex-col sm:flex-row gap-3">
         <div className="flex-1 max-w-xs">
           <SearchBar value={search} onChange={setSearch} placeholder="Name, email, or ID…" />
@@ -881,21 +994,14 @@ function VerificationTab({ requests, onUpdate, onRefresh }) {
   );
 }
 
-/* ─── Enquiries Tab ──────────────────────────────────────────────────────
-   Handles `contact_*` / general submissions from ContactUs.jsx. Fully
-   actionable: expand a row to see the full message, past admin replies,
-   and a composer to change status and/or send a reply. On save:
-     1. PUT /admin/enquiries/:id  → backend saves + builds emailActions
-     2. fireEmailActions()        → actually sends via emailjs
-     3. toast reflects what happened (reply sent / status only / sync sent)
-─────────────────────────────────────────────────────────────────────── */
+/* ─── Enquiries Tab ─────────────────────────────────────────────────────── */
 function EnquiriesTab() {
   const [enquiries, setEnquiries] = useState([]);
-  const [total, setTotal]         = useState(0);
-  const [loading, setLoading]     = useState(true);
-  const [statusF, setStatusF]     = useState('all');
-  const [page, setPage]           = useState(1);
-  const [expanded, setExpanded]   = useState(null);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [statusF, setStatusF] = useState('all');
+  const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState(null);
   const [submittingId, setSubmittingId] = useState(null);
   const LIMIT = 20;
 
@@ -1025,7 +1131,6 @@ function EnquiriesTab() {
                         <p className="text-gray-700 mt-1 text-sm leading-relaxed whitespace-pre-wrap">{e.message}</p>
                       </div>
 
-                      {/* Past admin replies */}
                       {Array.isArray(e.adminReplies) && e.adminReplies.length > 0 && (
                         <div>
                           <span className="text-xs font-bold uppercase text-gray-400">Reply history</span>
@@ -1046,7 +1151,6 @@ function EnquiriesTab() {
                         </div>
                       )}
 
-                      {/* Reply composer — the actionable bit */}
                       <div>
                         <span className="text-xs font-bold uppercase text-gray-400 mb-2 block">Reply / change status</span>
                         <ReplyComposer
@@ -1067,19 +1171,14 @@ function EnquiriesTab() {
   );
 }
 
-/* ─── Reports Tab ─────────────────────────────────────────────────────────
-   Handles `report_*` submissions from Report.jsx (technical / ride / safety /
-   account / payment / other). These are Inquiry documents — same shape as
-   enquiries, same reply/status/email-sync flow, just filtered + rendered
-   with the report-specific meta fields (affected page, repro steps, etc).
-─────────────────────────────────────────────────────────────────────── */
+/* ─── Reports Tab ───────────────────────────────────────────────────────── */
 function ReportsTab() {
-  const [reports, setReports]     = useState([]);
-  const [total, setTotal]         = useState(0);
-  const [loading, setLoading]     = useState(true);
+  const [reports, setReports] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [severityF, setSeverityF] = useState('all');
-  const [page, setPage]           = useState(1);
-  const [expanded, setExpanded]   = useState(null);
+  const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState(null);
   const [submittingId, setSubmittingId] = useState(null);
   const LIMIT = 20;
 
@@ -1224,7 +1323,6 @@ function ReportsTab() {
                           </div>
                         )}
 
-                        {/* Past admin replies */}
                         {Array.isArray(r.adminReplies) && r.adminReplies.length > 0 && (
                           <div>
                             <span className="text-xs font-bold uppercase text-gray-400">Reply history</span>
@@ -1245,7 +1343,6 @@ function ReportsTab() {
                           </div>
                         )}
 
-                        {/* Reply composer */}
                         <div>
                           <span className="text-xs font-bold uppercase text-gray-400 mb-2 block">Reply / change status</span>
                           <ReplyComposer
@@ -1269,11 +1366,11 @@ function ReportsTab() {
 
 /* ─── Blogs Tab ─────────────────────────────────────────── */
 function BlogsTab() {
-  const [blogs, setBlogs]     = useState([]);
-  const [total, setTotal]     = useState(0);
+  const [blogs, setBlogs] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusF, setStatusF] = useState('all');
-  const [page, setPage]       = useState(1);
+  const [page, setPage] = useState(1);
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -1363,11 +1460,11 @@ function BlogsTab() {
 /* ─── Root ──────────────────────────────────────────────── */
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab]   = useState('overview');
-  const [analytics, setAnalytics]   = useState({});
+  const [activeTab, setActiveTab] = useState('overview');
+  const [analytics, setAnalytics] = useState({});
   const [verRequests, setVerRequests] = useState([]);
-  const [enquiries, setEnquiries]   = useState([]);
-  const [reports, setReports]       = useState([]);
+  const [enquiries, setEnquiries] = useState([]);
+  const [reports, setReports] = useState([]);
 
   useEffect(() => {
     if (!localStorage.getItem('adminToken')) { navigate('/admin/login'); return; }
@@ -1388,9 +1485,9 @@ export default function AdminDashboard() {
           documents: {
             profilePhoto: docRef(v.profilePhoto?.url),
             aadhaarFront: docRef(v.aadhaar?.frontImageUrl),
-            aadhaarBack:  docRef(v.aadhaar?.backImageUrl),
-            dlFront:      docRef(v.drivingLicense?.frontImageUrl),
-            dlBack:       docRef(v.drivingLicense?.backImageUrl),
+            aadhaarBack: docRef(v.aadhaar?.backImageUrl),
+            dlFront: docRef(v.drivingLicense?.frontImageUrl),
+            dlBack: docRef(v.drivingLicense?.backImageUrl),
           },
           avatarFallback: `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'Driver')}&background=1a56db&color=fff`,
           details: {
@@ -1406,17 +1503,17 @@ export default function AdminDashboard() {
     try {
       const res = await api.get('/analytics/summary');
       setAnalytics(res.data?.data || {});
-    } catch {}
+    } catch { }
 
     try {
       const res = await api.get('/enquiries', { params: { limit: 50 } });
       setEnquiries(res.data?.data || []);
-    } catch {}
+    } catch { }
 
     try {
       const res = await api.get('/reports', { params: { limit: 50 } });
       setReports(res.data?.data || []);
-    } catch {}
+    } catch { }
   };
 
   const handleUpdateVerification = async (id, status, remark) => {
@@ -1430,7 +1527,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar — same blue gradient identity as the public site header */}
       <nav className="bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -1452,7 +1548,6 @@ export default function AdminDashboard() {
         </div>
       </nav>
 
-      {/* Tab bar */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex overflow-x-auto scrollbar-hide">
@@ -1460,11 +1555,10 @@ export default function AdminDashboard() {
               const TabIcon = tab.icon;
               return (
                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    activeTab === tab.id
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-400 hover:text-gray-700 hover:border-gray-200'
-                  }`}>
+                  className={`px-4 py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-all flex items-center gap-1.5 ${activeTab === tab.id
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-400 hover:text-gray-700 hover:border-gray-200'
+                    }`}>
                   <TabIcon className="w-4 h-4" />
                   {tab.label}
                   {tab.id === 'verification' && pendingCount > 0 && (
@@ -1479,17 +1573,17 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Page content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7">
-        {activeTab === 'overview'      && <OverviewTab analytics={analytics} enquiries={enquiries} reports={reports} verRequests={verRequests} />}
-        {activeTab === 'users'         && <UsersTab />}
-        {activeTab === 'rides'         && <RidesTab />}
-        {activeTab === 'bookings'      && <BookingsTab />}
-        {activeTab === 'payments'      && <PaymentsTab />}
-        {activeTab === 'verification'  && <VerificationTab requests={verRequests} onUpdate={handleUpdateVerification} onRefresh={loadCore} />}
-        {activeTab === 'enquiries'     && <EnquiriesTab />}
-        {activeTab === 'reports'       && <ReportsTab />}
-        {activeTab === 'blogs'         && <BlogsTab />}
+        {activeTab === 'overview' && <OverviewTab analytics={analytics} enquiries={enquiries} reports={reports} verRequests={verRequests} />}
+        {activeTab === 'users' && <UsersTab />}
+        {activeTab === 'rides' && <RidesTab />}
+        {activeTab === 'bookings' && <BookingsTab />}
+        {activeTab === 'upcoming' && <UpcomingRidesTab />}
+        {activeTab === 'payments' && <PaymentsTab />}
+        {activeTab === 'verification' && <VerificationTab requests={verRequests} onUpdate={handleUpdateVerification} onRefresh={loadCore} />}
+        {activeTab === 'enquiries' && <EnquiriesTab />}
+        {activeTab === 'reports' && <ReportsTab />}
+        {activeTab === 'blogs' && <BlogsTab />}
       </main>
     </div>
   );

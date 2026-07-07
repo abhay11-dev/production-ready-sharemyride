@@ -9,7 +9,7 @@ import { createBooking } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 import PaymentCalculator from '../../utils/paymentCalculator';
-import NegotiationActions from '../../utils/negotiationActions';
+import NegotiationActions from '../../pages/rides/NegotiationActions';
 
 // ─── Shared verified badge ────────────────────────────────────────────────────
 function VerifiedBadge() {

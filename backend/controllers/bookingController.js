@@ -37,7 +37,7 @@ exports.createBooking = async (req, res) => {
       passengerNotes,
       specialRequirements,
       paymentMethod,
-      
+
       // 🎯 SEGMENT BOOKING DATA
       matchType,
       userSearchDistance,
@@ -115,16 +115,16 @@ exports.createBooking = async (req, res) => {
 
     if (!canBookResult || canBookResult.canBook === undefined) {
       console.log('⚠️ canBook returned invalid result, doing manual check');
-      
+
       const currentAvailable = ride.availableSeats !== undefined ? ride.availableSeats : ride.seats;
       const totalSeats = ride.seats || 0;
-      
+
       console.log('💺 Manual seat check:', {
         requested: seatsBooked,
         available: currentAvailable,
         total: totalSeats
       });
-      
+
       if (currentAvailable < seatsBooked) {
         canBookResult = {
           canBook: false,
@@ -161,7 +161,7 @@ exports.createBooking = async (req, res) => {
       ride: rideId,
       status: { $in: ['pending', 'confirmed', 'accepted'] }
     });
-    
+
     if (existingBooking) {
       console.log('❌ User already has booking for this ride');
       return res.status(400).json({
@@ -175,10 +175,10 @@ exports.createBooking = async (req, res) => {
     // ========================================
     // 5️⃣ EXTRACT LOCATION DATA
     // ========================================
-    const pickupAddr = typeof pickupLocation === 'string' 
-      ? pickupLocation 
+    const pickupAddr = typeof pickupLocation === 'string'
+      ? pickupLocation
       : pickupLocation?.address || '';
-    
+
     const dropAddr = typeof dropLocation === 'string'
       ? dropLocation
       : dropLocation?.address || '';
@@ -198,171 +198,171 @@ exports.createBooking = async (req, res) => {
       dropCoords
     });
 
-  // ========================================
-// 6️⃣ CALCULATE FARE (FIXED FOR SEGMENTS)
-// ========================================
-let baseFare = 0;
-let serviceFee = 0;
-let gst = 0;
-let totalFare = 0;
-let calculatedSegmentFare = null;
-const previousPassengerBookings = await Booking.countDocuments({ passenger: userId });
-const isFirstRideFree = previousPassengerBookings === 0;
+    // ========================================
+    // 6️⃣ CALCULATE FARE (FIXED FOR SEGMENTS)
+    // ========================================
+    let baseFare = 0;
+    let serviceFee = 0;
+    let gst = 0;
+    let totalFare = 0;
+    let calculatedSegmentFare = null;
+    const previousPassengerBookings = await Booking.countDocuments({ passenger: userId });
+    const isFirstRideFree = previousPassengerBookings === 0;
 
-// 🎯 CRITICAL: Check if this is a SEGMENT booking first
-const isSegmentBooking = matchType === 'on_route' && userSearchDistance && userSearchDistance > 0;
+    // 🎯 CRITICAL: Check if this is a SEGMENT booking first
+    const isSegmentBooking = matchType === 'on_route' && userSearchDistance && userSearchDistance > 0;
 
-if (isSegmentBooking && ride.perKmRate) {
-  console.log('🎯 SEGMENT BOOKING DETECTED - Calculating segment fare...');
-  console.log('📊 Segment data:', {
-    matchType,
-    userSearchDistance,
-    perKmRate: ride.perKmRate,
-    seatsBooked,
-    segmentFare: segmentFare // from frontend
-  });
-  
-  // ✅ USE USER'S SEGMENT DISTANCE, NOT TOTAL DISTANCE
-  baseFare = ride.perKmRate * userSearchDistance * seatsBooked;
-  const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
-  serviceFee = fareDetails.serviceFee;
-  gst = fareDetails.gst;
-  totalFare = fareDetails.totalFare;
-  
-  // Store the segment fare per seat (for reference)
-  calculatedSegmentFare = segmentFare || calculatePassengerFare(ride.perKmRate * userSearchDistance, isFirstRideFree).totalFare;
-  
-  console.log('✅ Segment fare calculated:', {
-    userSearchDistance,
-    perKmRate: ride.perKmRate,
-    seatsBooked,
-    baseFare: baseFare.toFixed(2),
-    serviceFee: serviceFee.toFixed(2),
-    gst: gst.toFixed(2),
-    totalFare: totalFare.toFixed(2),
-    segmentFarePerSeat: calculatedSegmentFare.toFixed(2)
-  });
-}
-// 📏 PER KM PRICING (Full Route)
-else if (ride.fareMode === 'per_km' && ride.perKmRate && ride.totalDistance) {
-  console.log('📏 FULL ROUTE PER KM - Calculating full route fare...');
-  
-  baseFare = ride.perKmRate * ride.totalDistance * seatsBooked;
-  const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
-  serviceFee = fareDetails.serviceFee;
-  gst = fareDetails.gst;
-  totalFare = fareDetails.totalFare;
-  
-  console.log('✅ Full route fare calculated:', {
-    totalDistance: ride.totalDistance,
-    perKmRate: ride.perKmRate,
-    baseFare: baseFare.toFixed(2),
-    totalFare: totalFare.toFixed(2)
-  });
-}
-// 💵 FIXED FARE
-else {
-  console.log('💵 FIXED FARE - Using ride.fare...');
-  
-  baseFare = (ride.fare || 0) * seatsBooked;
-  const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
-  serviceFee = fareDetails.serviceFee;
-  gst = fareDetails.gst;
-  totalFare = fareDetails.totalFare;
-  
-  console.log('✅ Fixed fare calculated:', {
-    fare: ride.fare,
-    baseFare: baseFare.toFixed(2),
-    totalFare: totalFare.toFixed(2)
-  });
-}
+    if (isSegmentBooking && ride.perKmRate) {
+      console.log('🎯 SEGMENT BOOKING DETECTED - Calculating segment fare...');
+      console.log('📊 Segment data:', {
+        matchType,
+        userSearchDistance,
+        perKmRate: ride.perKmRate,
+        seatsBooked,
+        segmentFare: segmentFare // from frontend
+      });
 
-console.log('\n💰 FINAL FARE CALCULATION:', {
-  isSegmentBooking,
-  baseFare: baseFare.toFixed(2),
-  serviceFee: serviceFee.toFixed(2),
-  gst: gst.toFixed(2),
-  totalFare: totalFare.toFixed(2),
-  isFirstRideFree,
-  userSearchDistance,
-  matchType,
-  segmentFare: calculatedSegmentFare?.toFixed(2) || 'N/A'
-});
+      // ✅ USE USER'S SEGMENT DISTANCE, NOT TOTAL DISTANCE
+      baseFare = ride.perKmRate * userSearchDistance * seatsBooked;
+      const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
+      serviceFee = fareDetails.serviceFee;
+      gst = fareDetails.gst;
+      totalFare = fareDetails.totalFare;
 
-// ========================================
-// 7️⃣ CREATE BOOKING WITH SEGMENT DATA
-// ========================================
-const bookingData = {
-  ride: rideId,
-  passenger: userId,
-  driver: ride.driverId?._id || ride.driver,
-  seatsBooked,
-  
-  // Location data
-  pickupLocation: pickupAddr,
-  dropLocation: dropAddr,
-  pickupCoordinates: pickupCoords,
-  dropCoordinates: dropCoords,
-  
-  // Notes
-  passengerNotes: passengerNotes || '',
-  
-  // 🎯 SEGMENT BOOKING DATA (CRITICAL!)
-  matchType: matchType || null,
-  userSearchDistance: userSearchDistance || null,
-  perKmRate: ride.perKmRate || null,
-  segmentFare: calculatedSegmentFare || segmentFare || null,
-  matchQuality: matchQuality || null,
-  
-  // Fare breakdown - THIS IS THE KEY!
-  // For segment bookings, baseFare should be for the SEGMENT only
-  baseFare: baseFare, // ✅ This is now calculated from userSearchDistance
-  passengerServiceFee: serviceFee,
-  passengerServiceFeeGST: gst,
-  totalFare: totalFare,
-  finalAmount: totalFare,
-  platformFee: serviceFee,
-  gst: gst,
-  isFirstRideFree,
-  
-  // Status
-  status: 'pending',
-  paymentStatus: 'pending',
-  paymentMethod: paymentMethod || 'cash',
-  
-  // Special requests
-  specialRequests: specialRequirements ? 
-    (Array.isArray(specialRequirements) ? specialRequirements : []) : [],
-  
-  // Metadata
-  bookingSource: req.headers['user-agent']?.includes('Mobile') ? 'mobile_app' : 'web',
-  ipAddress: req.ip,
-  userAgent: req.headers['user-agent']
-};
+      // Store the segment fare per seat (for reference)
+      calculatedSegmentFare = segmentFare || calculatePassengerFare(ride.perKmRate * userSearchDistance, isFirstRideFree).totalFare;
 
-console.log('\n📦 BOOKING DATA TO SAVE:', {
-  ride: bookingData.ride,
-  passenger: bookingData.passenger,
-  seatsBooked: bookingData.seatsBooked,
-  matchType: bookingData.matchType,
-  userSearchDistance: bookingData.userSearchDistance,
-  segmentFare: bookingData.segmentFare,
-  baseFare: bookingData.baseFare,
-  totalFare: bookingData.totalFare,
-  pickupLocation: bookingData.pickupLocation,
-  dropLocation: bookingData.dropLocation
-});
+      console.log('✅ Segment fare calculated:', {
+        userSearchDistance,
+        perKmRate: ride.perKmRate,
+        seatsBooked,
+        baseFare: baseFare.toFixed(2),
+        serviceFee: serviceFee.toFixed(2),
+        gst: gst.toFixed(2),
+        totalFare: totalFare.toFixed(2),
+        segmentFarePerSeat: calculatedSegmentFare.toFixed(2)
+      });
+    }
+    // 📏 PER KM PRICING (Full Route)
+    else if (ride.fareMode === 'per_km' && ride.perKmRate && ride.totalDistance) {
+      console.log('📏 FULL ROUTE PER KM - Calculating full route fare...');
 
-const booking = new Booking(bookingData);
-await booking.save();
+      baseFare = ride.perKmRate * ride.totalDistance * seatsBooked;
+      const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
+      serviceFee = fareDetails.serviceFee;
+      gst = fareDetails.gst;
+      totalFare = fareDetails.totalFare;
 
-console.log('✅ Booking created with ID:', booking._id);
-console.log('✅ Booking stored segment data:', {
-  matchType: booking.matchType,
-  userSearchDistance: booking.userSearchDistance,
-  segmentFare: booking.segmentFare,
-  baseFare: booking.baseFare
-});
+      console.log('✅ Full route fare calculated:', {
+        totalDistance: ride.totalDistance,
+        perKmRate: ride.perKmRate,
+        baseFare: baseFare.toFixed(2),
+        totalFare: totalFare.toFixed(2)
+      });
+    }
+    // 💵 FIXED FARE
+    else {
+      console.log('💵 FIXED FARE - Using ride.fare...');
+
+      baseFare = (ride.fare || 0) * seatsBooked;
+      const fareDetails = calculatePassengerFare(baseFare, isFirstRideFree);
+      serviceFee = fareDetails.serviceFee;
+      gst = fareDetails.gst;
+      totalFare = fareDetails.totalFare;
+
+      console.log('✅ Fixed fare calculated:', {
+        fare: ride.fare,
+        baseFare: baseFare.toFixed(2),
+        totalFare: totalFare.toFixed(2)
+      });
+    }
+
+    console.log('\n💰 FINAL FARE CALCULATION:', {
+      isSegmentBooking,
+      baseFare: baseFare.toFixed(2),
+      serviceFee: serviceFee.toFixed(2),
+      gst: gst.toFixed(2),
+      totalFare: totalFare.toFixed(2),
+      isFirstRideFree,
+      userSearchDistance,
+      matchType,
+      segmentFare: calculatedSegmentFare?.toFixed(2) || 'N/A'
+    });
+
+    // ========================================
+    // 7️⃣ CREATE BOOKING WITH SEGMENT DATA
+    // ========================================
+    const bookingData = {
+      ride: rideId,
+      passenger: userId,
+      driver: ride.driverId?._id || ride.driver,
+      seatsBooked,
+
+      // Location data
+      pickupLocation: pickupAddr,
+      dropLocation: dropAddr,
+      pickupCoordinates: pickupCoords,
+      dropCoordinates: dropCoords,
+
+      // Notes
+      passengerNotes: passengerNotes || '',
+
+      // 🎯 SEGMENT BOOKING DATA (CRITICAL!)
+      matchType: matchType || null,
+      userSearchDistance: userSearchDistance || null,
+      perKmRate: ride.perKmRate || null,
+      segmentFare: calculatedSegmentFare || segmentFare || null,
+      matchQuality: matchQuality || null,
+
+      // Fare breakdown - THIS IS THE KEY!
+      // For segment bookings, baseFare should be for the SEGMENT only
+      baseFare: baseFare, // ✅ This is now calculated from userSearchDistance
+      passengerServiceFee: serviceFee,
+      passengerServiceFeeGST: gst,
+      totalFare: totalFare,
+      finalAmount: totalFare,
+      platformFee: serviceFee,
+      gst: gst,
+      isFirstRideFree,
+
+      // Status
+      status: 'pending',
+      paymentStatus: 'pending',
+      paymentMethod: paymentMethod || 'cash',
+
+      // Special requests
+      specialRequests: specialRequirements ?
+        (Array.isArray(specialRequirements) ? specialRequirements : []) : [],
+
+      // Metadata
+      bookingSource: req.headers['user-agent']?.includes('Mobile') ? 'mobile_app' : 'web',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    };
+
+    console.log('\n📦 BOOKING DATA TO SAVE:', {
+      ride: bookingData.ride,
+      passenger: bookingData.passenger,
+      seatsBooked: bookingData.seatsBooked,
+      matchType: bookingData.matchType,
+      userSearchDistance: bookingData.userSearchDistance,
+      segmentFare: bookingData.segmentFare,
+      baseFare: bookingData.baseFare,
+      totalFare: bookingData.totalFare,
+      pickupLocation: bookingData.pickupLocation,
+      dropLocation: bookingData.dropLocation
+    });
+
+    const booking = new Booking(bookingData);
+    await booking.save();
+
+    console.log('✅ Booking created with ID:', booking._id);
+    console.log('✅ Booking stored segment data:', {
+      matchType: booking.matchType,
+      userSearchDistance: booking.userSearchDistance,
+      segmentFare: booking.segmentFare,
+      baseFare: booking.baseFare
+    });
     // ========================================
     // 8️⃣ ADD BOOKING TO RIDE
     // ========================================
@@ -370,17 +370,17 @@ console.log('✅ Booking stored segment data:', {
       if (!ride.bookings) {
         ride.bookings = [];
       }
-      
+
       ride.bookings.push(booking._id);
       ride.bookingAttempts = (ride.bookingAttempts || 0) + 1;
-      
+
       if (ride.availableSeats !== undefined) {
         ride.availableSeats = Math.max(0, ride.availableSeats - seatsBooked);
       }
-      
+
       await ride.save();
       console.log('✅ Booking reference added to ride');
-      
+
     } catch (rideUpdateError) {
       console.error('⚠️ Could not update ride:', rideUpdateError.message);
     }
@@ -420,7 +420,7 @@ console.log('✅ Booking stored segment data:', {
       message: error.message,
       stack: error.stack
     });
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to create booking',
@@ -440,7 +440,7 @@ exports.getMyBookings = async (req, res) => {
     console.log('📋 Fetching bookings for user:', userId);
 
     const query = { passenger: userId };
-    
+
     if (status) {
       query.status = status;
     }
@@ -464,7 +464,7 @@ exports.getMyBookings = async (req, res) => {
     const totalBookings = await Booking.countDocuments(query);
 
     console.log(`✅ Found ${bookings.length} bookings`);
-    
+
     // ✅ Add debug log to check population
     bookings.forEach(booking => {
       console.log('Booking:', booking._id, 'has ride:', !!booking.ride);
@@ -508,7 +508,7 @@ exports.getDriverBookings = async (req, res) => {
     console.log('🚗 Fetching bookings for driver:', driverId);
 
     const query = { driver: driverId };
-    
+
     if (status) {
       query.status = status;
     }
@@ -576,7 +576,7 @@ exports.getBookingById = async (req, res) => {
     // Check authorization
     const passengerId = booking.passenger?._id?.toString() || booking.passenger?.toString();
     const driverId = booking.driver?._id?.toString() || booking.driver?.toString();
-    
+
     if (passengerId !== userId.toString() && driverId !== userId.toString()) {
       return res.status(403).json({
         success: false,
@@ -608,12 +608,12 @@ exports.updateBookingStatus = async (req, res) => {
   console.log('📍 Request params:', req.params);
   console.log('📍 Request body:', req.body);
   console.log('📍 Request user:', req.user ? 'EXISTS' : 'MISSING');
-  
+
   try {
     // STEP 1: Extract parameters
     const { id } = req.params;
     const { status, reason, message } = req.body;
-    
+
     console.log('✅ Step 1: Parameters extracted');
 
     // STEP 2: Validate user authentication
@@ -682,7 +682,7 @@ exports.updateBookingStatus = async (req, res) => {
 
     // STEP 6: Authorization check with EXTREME safety
     console.log('🔍 Step 6: Checking authorization...');
-    
+
     let isDriver = false;
     let isPassenger = false;
 
@@ -695,7 +695,7 @@ exports.updateBookingStatus = async (req, res) => {
         } else if (typeof booking.driver.toString === 'function') {
           driverId = booking.driver.toString();
         }
-        
+
         if (driverId) {
           isDriver = driverId === userId.toString();
           console.log('✅ Driver check:', { driverId, userId: userId.toString(), isDriver });
@@ -714,7 +714,7 @@ exports.updateBookingStatus = async (req, res) => {
         } else if (typeof booking.passenger.toString === 'function') {
           passengerId = booking.passenger.toString();
         }
-        
+
         if (passengerId) {
           isPassenger = passengerId === userId.toString();
           console.log('✅ Passenger check:', { passengerId, userId: userId.toString(), isPassenger });
@@ -768,7 +768,7 @@ exports.updateBookingStatus = async (req, res) => {
       booking.rejectionReason = reason || 'No reason provided';
       booking.rejectedBy = isDriver ? 'driver' : 'admin';
       console.log('✅ Booking rejected');
-      
+
       // Return seats to ride
       if (booking.ride) {
         try {
@@ -789,7 +789,7 @@ exports.updateBookingStatus = async (req, res) => {
       booking.cancelledAt = new Date();
       booking.cancellationReason = reason || 'No reason provided';
       booking.cancelledBy = isDriver ? 'driver' : 'passenger';
-      
+
       if (booking.paymentStatus === 'completed') {
         booking.refundAmount = booking.totalFare;
         booking.refundStatus = 'initiated';
@@ -814,7 +814,7 @@ exports.updateBookingStatus = async (req, res) => {
 
     if (status === 'completed') {
       booking.completedAt = new Date();
-      
+
       // Update user stats
       try {
         if (booking.passenger) {
@@ -823,11 +823,11 @@ exports.updateBookingStatus = async (req, res) => {
             $inc: { 'stats.completedBookings': 1 }
           });
         }
-        
+
         if (booking.driver) {
           let driverId = booking.driver._id || booking.driver;
           await User.findByIdAndUpdate(driverId, {
-            $inc: { 
+            $inc: {
               'stats.completedBookings': 1,
               'driverProfile.completedRides': 1
             }
@@ -873,7 +873,7 @@ exports.updateBookingStatus = async (req, res) => {
     console.error('User ID:', req.user?._id?.toString());
     console.error('Has req.user:', !!req.user);
     console.error('============================================\n');
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to update booking status',
@@ -926,7 +926,7 @@ exports.cancelBooking = async (req, res) => {
     booking.cancelledAt = new Date();
     booking.cancellationReason = reason || '';
     booking.cancelledBy = 'passenger';
-    
+
     if (booking.paymentStatus === 'completed') {
       booking.refundAmount = refundAmount;
       booking.refundStatus = 'initiated';
@@ -1126,7 +1126,7 @@ exports.addRating = async (req, res) => {
           const currentRating = driver.ratings?.average || 0;
           const totalRatings = driver.ratings?.total || 0;
           const newAverage = ((currentRating * totalRatings) + rating) / (totalRatings + 1);
-          
+
           await User.findByIdAndUpdate(booking.driver, {
             'ratings.average': newAverage,
             'ratings.total': totalRatings + 1
@@ -1149,7 +1149,7 @@ exports.addRating = async (req, res) => {
           const currentRating = passenger.ratings?.average || 0;
           const totalRatings = passenger.ratings?.total || 0;
           const newAverage = ((currentRating * totalRatings) + rating) / (totalRatings + 1);
-          
+
           await User.findByIdAndUpdate(booking.passenger, {
             'ratings.average': newAverage,
             'ratings.total': totalRatings + 1
