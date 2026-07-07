@@ -9,6 +9,7 @@ import { createBooking } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 import PaymentCalculator from '../../utils/paymentCalculator';
+import NegotiationActions from '../../utils/negotiationActions';
 
 // ─── Shared verified badge ────────────────────────────────────────────────────
 function VerifiedBadge() {
@@ -68,7 +69,7 @@ function WaivedBadge() {
 }
 
 const formatMoneyLocal = (value) => {
-  const amount  = Number(value || 0);
+  const amount = Number(value || 0);
   const rounded = Math.round(amount * 100) / 100;
   return `₹${rounded.toLocaleString('en-IN', {
     maximumFractionDigits: rounded % 1 === 0 ? 0 : 2,
@@ -82,8 +83,8 @@ function FirstBookingCelebration({ baseFare, seats }) {
 
   // Platform fee (3%) is waived. GST (5%) still applies on base.
   const platformFee = Math.round(base * 0.03 * 100) / 100;
-  const gstFee      = Math.round(base * 0.05 * 100) / 100;
-  const totalPays   = base + gstFee;
+  const gstFee = Math.round(base * 0.05 * 100) / 100;
+  const totalPays = base + gstFee;
 
   const confettiRef = React.useRef(null);
   const styleInjected = React.useRef(false);
@@ -141,26 +142,26 @@ function FirstBookingCelebration({ baseFare, seats }) {
 
   React.useEffect(() => {
     if (!confettiRef.current || base <= 0) return;
-    const stage  = confettiRef.current;
-    const colors = ['#22c55e','#16a34a','#86efac','#fbbf24','#60a5fa','#a78bfa','#f472b6','#fb923c'];
+    const stage = confettiRef.current;
+    const colors = ['#22c55e', '#16a34a', '#86efac', '#fbbf24', '#60a5fa', '#a78bfa', '#f472b6', '#fb923c'];
 
     function burst(delay = 0) {
       setTimeout(() => {
         Array.from({ length: 32 }).forEach(() => {
-          const el  = document.createElement('div');
+          const el = document.createElement('div');
           const dur = 1.1 + Math.random() * 1.3;
           const del = Math.random() * 0.5;
           Object.assign(el.style, {
-            position:        'absolute',
-            left:            (8 + Math.random() * 84) + '%',
-            top:             '0px',
-            width:           (5 + Math.random() * 8) + 'px',
-            height:          (5 + Math.random() * 8) + 'px',
-            borderRadius:    Math.random() > 0.5 ? '50%' : '2px',
-            background:      colors[Math.floor(Math.random() * colors.length)],
-            opacity:         '0',
-            pointerEvents:   'none',
-            animation:       `smr-confetti-fall ${dur}s linear ${del}s forwards`,
+            position: 'absolute',
+            left: (8 + Math.random() * 84) + '%',
+            top: '0px',
+            width: (5 + Math.random() * 8) + 'px',
+            height: (5 + Math.random() * 8) + 'px',
+            borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+            background: colors[Math.floor(Math.random() * colors.length)],
+            opacity: '0',
+            pointerEvents: 'none',
+            animation: `smr-confetti-fall ${dur}s linear ${del}s forwards`,
           });
           stage.appendChild(el);
           setTimeout(() => el.remove(), (dur + del + 0.1) * 1000);
@@ -291,16 +292,16 @@ function FirstBookingCelebration({ baseFare, seats }) {
 }
 
 function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
-  const [seats, setSeats]       = useState(1);
-  const [pickup, setPickup]     = useState(ride.start || '');
-  const [drop, setDrop]         = useState(ride.end   || '');
-  const [notes, setNotes]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [seats, setSeats] = useState(1);
+  const [pickup, setPickup] = useState(ride.start || '');
+  const [drop, setDrop] = useState(ride.end || '');
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const availableSeats = ride.availableSeats ?? ride.seats ?? 1;
-  const isSegment      = ride.matchType === 'on_route' && ride.userSearchDistance;
-  const perKmRate      = ride.perKmRate || 0;
-  const fareMode       = ride.fareMode || 'fixed';
+  const isSegment = ride.matchType === 'on_route' && ride.userSearchDistance;
+  const perKmRate = ride.perKmRate || 0;
+  const fareMode = ride.fareMode || 'fixed';
 
   // Compute fare for current seat selection
   let fareDisplay;
@@ -329,13 +330,13 @@ function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {
         rideId: ride._id,
         seatsBooked: seats,
         pickupLocation: { address: isSegment ? (ride.userPickup || pickup) : pickup },
-        dropLocation:   { address: isSegment ? (ride.userDrop   || drop)   : drop   },
+        dropLocation: { address: isSegment ? (ride.userDrop || drop) : drop },
         passengerNotes: notes,
         paymentMethod: 'cash',
-        matchType:          ride.matchType       || null,
+        matchType: ride.matchType || null,
         userSearchDistance: ride.userSearchDistance || null,
-        segmentFare:        ride.segmentFare     || null,
-        matchQuality:       ride.matchQuality    || null,
+        segmentFare: ride.segmentFare || null,
+        matchQuality: ride.matchQuality || null,
       });
 
       const waived = response?.isFirstRideFree || isFirstRideFree;
@@ -632,10 +633,10 @@ function DetailsModal({ ride, onClose, isFirstRideFree = false }) {
           {tab === 'vehicle' && (
             <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 space-y-2">
               {[
-                { label: 'Type',    val: vehicle.type },
-                { label: 'Model',   val: vehicle.model },
-                { label: 'Color',   val: vehicle.color },
-                { label: 'AC',      val: vehicle.acAvailable ? 'Available' : 'Not available' },
+                { label: 'Type', val: vehicle.type },
+                { label: 'Model', val: vehicle.model },
+                { label: 'Color', val: vehicle.color },
+                { label: 'AC', val: vehicle.acAvailable ? 'Available' : 'Not available' },
                 { label: 'Luggage', val: vehicle.luggageSpace },
               ].filter(r => r.val).map(({ label, val }) => (
                 <div key={label} className="flex justify-between text-sm">
@@ -650,13 +651,13 @@ function DetailsModal({ ride, onClose, isFirstRideFree = false }) {
             <div className="grid grid-cols-2 gap-2">
               {[
                 { key: 'smokingAllowed', label: '🚬 Smoking' },
-                { key: 'musicAllowed',   label: '🎵 Music' },
-                { key: 'petFriendly',    label: '🐾 Pets' },
+                { key: 'musicAllowed', label: '🎵 Music' },
+                { key: 'petFriendly', label: '🐾 Pets' },
                 { key: 'luggageAllowed', label: '🧳 Luggage' },
-                { key: 'womenOnly',      label: '👩 Women only' },
-                { key: 'talkative',      label: '💬 Talkative' },
+                { key: 'womenOnly', label: '👩 Women only' },
+                { key: 'talkative', label: '💬 Talkative' },
                 { key: 'childSeatAvailable', label: '👶 Child seat' },
-                { key: 'pickupFlexibility',  label: '📍 Flex pickup' },
+                { key: 'pickupFlexibility', label: '📍 Flex pickup' },
               ].map(({ key, label }) => (
                 <div key={key} className={`rounded-xl p-3 border text-sm font-semibold flex items-center gap-2 ${prefs[key] ? 'bg-green-50 border-green-100 text-green-800' : 'bg-red-50 border-red-100 text-red-700'}`}>
                   <span>{prefs[key] ? '✓' : '✗'}</span>
@@ -676,7 +677,7 @@ function ContactModal({ ride, onClose }) {
   const driver = ride.driverId || ride.driver || {};
   const driverInfo = ride.driverInfo || {};
   const vehicle = ride.vehicle || {};
-  const name  = driverInfo.name  || driver.name  || 'Driver';
+  const name = driverInfo.name || driver.name || 'Driver';
   const phone = driverInfo.phone || driver.phone || ride.phoneNumber || 'Not provided';
 
   return (
@@ -690,9 +691,9 @@ function ContactModal({ ride, onClose }) {
         </div>
         <div className="p-6 space-y-3">
           {[
-            { label: 'Driver',   val: name },
-            { label: 'Phone',    val: phone },
-            { label: 'Vehicle',  val: [vehicle.color, vehicle.model, vehicle.type].filter(Boolean).join(' ') || 'N/A' },
+            { label: 'Driver', val: name },
+            { label: 'Phone', val: phone },
+            { label: 'Vehicle', val: [vehicle.color, vehicle.model, vehicle.type].filter(Boolean).join(' ') || 'N/A' },
             { label: 'Reg. No.', val: vehicle.number || ride.vehicleNumber || 'N/A' },
           ].map(({ label, val }) => (
             <div key={label} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
@@ -713,35 +714,35 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
   const { user } = useAuth();
   const [modal, setModal] = useState(null); // 'book' | 'details' | 'contact' | null
 
-  const driver       = ride.driverId || ride.driver || {};
-  const driverInfo   = ride.driverInfo || {};
-  const vehicle      = ride.vehicle || {};
-  const prefs        = ride.preferences || {};
-  const isVerified   = driverInfo.verified || driver.isDriverVerified || false;
-  const driverName   = driverInfo.name || driver.name || 'Driver';
+  const driver = ride.driverId || ride.driver || {};
+  const driverInfo = ride.driverInfo || {};
+  const vehicle = ride.vehicle || {};
+  const prefs = ride.preferences || {};
+  const isVerified = driverInfo.verified || driver.isDriverVerified || false;
+  const driverName = driverInfo.name || driver.name || 'Driver';
   const driverRating = driver.ratingSummary || 0;
-  const fareMode     = ride.fareMode || 'fixed';
-  const perKmRate    = ride.perKmRate || 0;
-  const isSegment    = ride.matchType === 'on_route' && ride.userSearchDistance;
+  const fareMode = ride.fareMode || 'fixed';
+  const perKmRate = ride.perKmRate || 0;
+  const isSegment = ride.matchType === 'on_route' && ride.userSearchDistance;
 
   const availableSeats = ride.availableSeats ?? ride.seats ?? 0;
-  const totalSeats     = ride.seats ?? 0;
-  const bookedSeats    = Math.max(0, totalSeats - availableSeats);
-  const isFull         = availableSeats === 0;
+  const totalSeats = ride.seats ?? 0;
+  const bookedSeats = Math.max(0, totalSeats - availableSeats);
+  const isFull = availableSeats === 0;
 
   // Passenger-facing price to show on card
   let displayPrice;
   let displayPriceLabel;
   if (isSegment && perKmRate) {
     const f = calcSegmentFare(perKmRate, ride.userSearchDistance, 1, isFirstRideFree);
-    displayPrice      = `₹${f.total.toFixed(0)}`;
+    displayPrice = `₹${f.total.toFixed(0)}`;
     displayPriceLabel = 'your segment';
   } else if (fareMode === 'per_km') {
-    displayPrice      = `₹${perKmRate}/km`;
+    displayPrice = `₹${perKmRate}/km`;
     displayPriceLabel = 'rate';
   } else {
     const f = calcPassengerFare(ride.fare || 0, 1, isFirstRideFree);
-    displayPrice      = `₹${f.perSeat.toFixed(0)}`;
+    displayPrice = `₹${f.perSeat.toFixed(0)}`;
     displayPriceLabel = 'per seat';
   }
 
@@ -767,21 +768,21 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
 
   // Preference pills to show
   const prefPills = [
-    vehicle.acAvailable                && { label: 'AC',       color: 'blue'   },
-    prefs.musicAllowed                 && { label: '🎵 Music', color: 'purple' },
-    prefs.petFriendly                  && { label: '🐾 Pets',  color: 'green'  },
-    prefs.womenOnly                    && { label: '👩 Women', color: 'pink'   },
-    ride.tollIncluded                  && { label: 'Tolls ✓',  color: 'indigo' },
-    ride.negotiableFare                && { label: 'Negotiable', color: 'amber' },
+    vehicle.acAvailable && { label: 'AC', color: 'blue' },
+    prefs.musicAllowed && { label: '🎵 Music', color: 'purple' },
+    prefs.petFriendly && { label: '🐾 Pets', color: 'green' },
+    prefs.womenOnly && { label: '👩 Women', color: 'pink' },
+    ride.tollIncluded && { label: 'Tolls ✓', color: 'indigo' },
+    ride.negotiableFare && { label: 'Negotiable', color: 'amber' },
   ].filter(Boolean);
 
   const pillColors = {
-    blue:   'bg-blue-50 text-blue-700',
+    blue: 'bg-blue-50 text-blue-700',
     purple: 'bg-purple-50 text-purple-700',
-    green:  'bg-green-50 text-green-700',
-    pink:   'bg-pink-50 text-pink-700',
+    green: 'bg-green-50 text-green-700',
+    pink: 'bg-pink-50 text-pink-700',
     indigo: 'bg-indigo-50 text-indigo-700',
-    amber:  'bg-amber-50 text-amber-700',
+    amber: 'bg-amber-50 text-amber-700',
   };
 
   return (
@@ -857,9 +858,8 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
 
             {/* Seats + date */}
             <div className="flex flex-col items-end gap-1 flex-shrink-0">
-              <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
-                isFull ? 'bg-orange-50 text-orange-600' : availableSeats <= 1 ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-700'
-              }`}>
+              <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${isFull ? 'bg-orange-50 text-orange-600' : availableSeats <= 1 ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-700'
+                }`}>
                 {isFull ? 'Full' : `${availableSeats} seat${availableSeats !== 1 ? 's' : ''}`}
               </span>
               <span className="text-xs text-gray-400">
@@ -876,6 +876,10 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
               ))}
             </div>
           )}
+
+          {/* Negotiation Cards (Milestone 2) — only rendered when at least
+              one action applies to this ride; see utils/negotiationActions.js */}
+          <NegotiationActions ride={ride} />
 
           {/* Action buttons */}
           <div className="flex gap-2 mt-4">
@@ -902,9 +906,9 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
         </div>
       </div>
 
-      {modal === 'book'    && <BookingModal  ride={ride} onClose={() => setModal(null)} onSuccess={onBookingSuccess} isFirstRideFree={isFirstRideFree} />}
-      {modal === 'details' && <DetailsModal  ride={ride} onClose={() => setModal(null)} isFirstRideFree={isFirstRideFree} />}
-      {modal === 'contact' && <ContactModal  ride={ride} onClose={() => setModal(null)} />}
+      {modal === 'book' && <BookingModal ride={ride} onClose={() => setModal(null)} onSuccess={onBookingSuccess} isFirstRideFree={isFirstRideFree} />}
+      {modal === 'details' && <DetailsModal ride={ride} onClose={() => setModal(null)} isFirstRideFree={isFirstRideFree} />}
+      {modal === 'contact' && <ContactModal ride={ride} onClose={() => setModal(null)} />}
     </>
   );
 }

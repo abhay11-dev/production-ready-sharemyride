@@ -90,6 +90,7 @@ function SectionHeader({ eyebrow, title, subtitle, badge, badgeColor = 'blue', c
     blue: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100', eyebrow: 'text-blue-600' },
     purple: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-100', eyebrow: 'text-purple-600' },
     gray: { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-100', eyebrow: 'text-gray-400' },
+    amber: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', eyebrow: 'text-amber-600' },
   };
   const c = colors[badgeColor] || colors.blue;
 
@@ -170,11 +171,18 @@ export default function RideSearch() {
   const [startPlace, setStartPlace] = useState(null);
   const [endPlace, setEndPlace] = useState(null);
 
-  // Results — three tiers
-  const [exactRides, setExactRides] = useState([]); // matchType === 'exact' or 'on_route'
-  const [onWayRides, setOnWayRides] = useState([]); // partial overlap
-  const [nearbyRides, setNearbyRides] = useState([]); // same city/region but different route
+  // Results — Smart Search tiers (Milestone 1: 7-tier ranking collapsed into
+  // 4 display buckets so the existing UI sections stay unchanged)
+  //   exactRides       <- matchTier 1-2 (exact match, same destination)
+  //   nearbyRides      <- matchTier 3-5 (same state / nearby pickup / nearby drop)
+  //   onWayRides       <- matchTier 6   (partial route match)
+  //   negotiableRides  <- matchTier 7   (negotiation possible, last resort)
+  const [exactRides, setExactRides] = useState([]);
+  const [onWayRides, setOnWayRides] = useState([]);
+  const [nearbyRides, setNearbyRides] = useState([]);
+  const [negotiableRides, setNegotiableRides] = useState([]);
   const [allRides, setAllRides] = useState([]); // all combined for map
+  const [searchMeta, setSearchMeta] = useState(null); // pagination + tier counts from backend
 
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -238,25 +246,38 @@ export default function RideSearch() {
 
   const activeFilterCount = [minSeats, maxFare, vehicleType, acOnly, womenOnly, verifiedOnly].filter(Boolean).length;
 
-  // ── Categorize results into three tiers ───────────────────────────────────
+  // ── Categorize results into display buckets ───────────────────────────────
+  // Prefers the new `matchTier` (1-7, Smart Search Milestone 1). Falls back
+  // to the legacy `matchType` string for any older cached response shape.
   function categorizeResults(results) {
     const exact = [];
     const onWay = [];
     const nearby = [];
+    const negotiable = [];
 
     results.forEach(ride => {
+      const tier = ride.matchTier;
+      if (typeof tier === 'number') {
+        if (tier <= 2) exact.push(ride);
+        else if (tier >= 3 && tier <= 5) nearby.push(ride);
+        else if (tier === 6) onWay.push(ride);
+        else negotiable.push(ride);
+        return;
+      }
+      // Legacy fallback (no matchTier present)
       const mt = ride.matchType;
       if (mt === 'exact' || mt === 'on_route') {
         exact.push(ride);
       } else if (mt === 'partial' || mt === 'waypoint' || mt === 'nearby_route') {
         onWay.push(ride);
+      } else if (mt === 'negotiation') {
+        negotiable.push(ride);
       } else {
-        // Fallback: if ride has routeCoordinates that overlap our region → onWay, else nearby
         nearby.push(ride);
       }
     });
 
-    return { exact, onWay, nearby };
+    return { exact, onWay, nearby, negotiable };
   }
 
   // ── Build map data from rides ─────────────────────────────────────────────
@@ -293,18 +314,29 @@ export default function RideSearch() {
 
     setIsLoading(true);
     setHasSearched(true);
-    setExactRides([]); setOnWayRides([]); setNearbyRides([]); setAllRides([]);
+    setExactRides([]); setOnWayRides([]); setNearbyRides([]); setNegotiableRides([]); setAllRides([]);
     setRideRoutes([]);
+    setSearchMeta(null);
 
     const loadingId = silent ? null : toast.loading('Searching rides…', {
       style: { background: '#2563eb', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
     });
 
     try {
-      const results = await searchRides(
+      const { rides: results, meta } = await searchRides(
         normalizeIndiaLocation(start),
         normalizeIndiaLocation(end),
         date || null,
+        {
+          pickupLat: startPlace?.lat,
+          pickupLng: startPlace?.lng || startPlace?.lon,
+          destLat: endPlace?.lat,
+          destLng: endPlace?.lng || endPlace?.lon,
+          // Same-state tier (Milestone 1) — pass through state hints when
+          // the Geoapify autocomplete supplied them
+          originState: startPlace?.state,
+          destState: endPlace?.state,
+        }
       );
 
       if (loadingId) toast.dismiss(loadingId);
@@ -316,12 +348,14 @@ export default function RideSearch() {
       }
 
       const filtered = applyFilters(results);
-      const { exact, onWay, nearby } = categorizeResults(filtered);
+      const { exact, onWay, nearby, negotiable } = categorizeResults(filtered);
 
       setExactRides(exact);
       setOnWayRides(onWay);
       setNearbyRides(nearby);
+      setNegotiableRides(negotiable);
       setAllRides(filtered);
+      setSearchMeta(meta || null);
 
       const connectedIds = new Set(exact.map(r => r._id));
       setRideRoutes(buildMapData(filtered, connectedIds));
@@ -739,6 +773,52 @@ export default function RideSearch() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* ── TIER 4: Negotiation-possible rides (Smart Search Milestone 1) ── */}
+          {!isLoading && negotiableRides.length > 0 && (
+            <div className="mb-8">
+              <SectionHeader
+                eyebrow="Worth asking"
+                title="Fare is negotiable on these rides"
+                subtitle={`${negotiableRides.length} ride${negotiableRides.length !== 1 ? 's' : ''} don't match your route directly, but the driver accepts fare/pickup/drop negotiation`}
+                badge="Negotiable"
+                badgeColor="amber"
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {negotiableRides.map(ride => (
+                  <div
+                    key={ride._id}
+                    id={`ride-card-${ride._id}`}
+                    className={`relative transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-amber-400 ring-offset-2 rounded-2xl' : ''}`}
+                  >
+                    <div className="absolute -top-2.5 -right-1 z-10 bg-amber-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+                      Negotiable
+                    </div>
+                    <RideCard
+                      ride={ride}
+                      isFirstRideFree={isFirstRideFree}
+                      onBookingSuccess={() => {
+                        setIsFirstRideFree(false);
+                        handleSearch(null, { silent: true });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-400 text-center mt-4">
+                💬 These rides don't cover your route today — chat with the driver to see if they can accommodate you.
+              </p>
+            </div>
+          )}
+
+          {/* Pagination footer (Smart Search Milestone 1) */}
+          {!isLoading && searchMeta?.totalPages > 1 && (
+            <p className="text-xs text-gray-400 text-center mt-2 mb-4">
+              Showing page {searchMeta.page} of {searchMeta.totalPages} ({searchMeta.total} total matching rides)
+            </p>
           )}
         </div>
 

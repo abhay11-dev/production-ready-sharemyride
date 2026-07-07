@@ -22,15 +22,24 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import PaymentCalculator from '../../utils/paymentCalculator';
 import LocationAutocomplete from '../common/LocationAutocomplete';
-import toast from 'react-hot-toast';
+import toastService from '../../services/toastService';
+import { Route, CalendarDays, Car, SlidersHorizontal, ClipboardCheck, MapPin, Clock, MessageSquare, CheckCircle2, Coins } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+const STEP_ICONS = [
+  <Route size={14} strokeWidth={2} aria-hidden="true" />,
+  <CalendarDays size={14} strokeWidth={2} aria-hidden="true" />,
+  <Car size={14} strokeWidth={2} aria-hidden="true" />,
+  <SlidersHorizontal size={14} strokeWidth={2} aria-hidden="true" />,
+  <ClipboardCheck size={14} strokeWidth={2} aria-hidden="true" />,
+];
+
 const STEPS = [
-  { id: 1, label: 'Route', icon: '🗺️' },
-  { id: 2, label: 'Schedule', icon: '📅' },
-  { id: 3, label: 'Vehicle', icon: '🚗' },
-  { id: 4, label: 'Preferences', icon: '⚙️' },
-  { id: 5, label: 'Review', icon: '✅' },
+  { id: 1, label: 'Route' },
+  { id: 2, label: 'Schedule' },
+  { id: 3, label: 'Vehicle' },
+  { id: 4, label: 'Preferences' },
+  { id: 5, label: 'Review' },
 ];
 
 const VEHICLE_TYPES = ['Hatchback', 'Sedan', 'SUV', 'MUV', 'Bike'];
@@ -55,14 +64,40 @@ const clampDateInput = (value) => {
 
 const isValidRideDate = (value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  const [y, m, d] = value.split('-').map(Number);
+  // Use local date parts — avoids UTC drift in IST (+05:30) where
+  // new Date('2026-11-11T00:00:00').toISOString() returns '2026-11-10T...'
+  const parsed = new Date(y, m - 1, d);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.getFullYear() === y &&
+    parsed.getMonth() === m - 1 &&
+    parsed.getDate() === d
+  );
 };
 
 const normalizeIndiaLocation = (value) => {
   const cleaned = value.trim().replace(/\s+/g, ' ');
   if (!cleaned) return '';
   return /\bindia\b/i.test(cleaned) ? cleaned : `${cleaned}, India`;
+};
+
+// ─── Location object helpers ──────────────────────────────────────────────────
+// `start` / `end` / each waypoint's `location` are now stored as the full
+// LocationAutocomplete selection object: { name, formatted, latitude,
+// longitude, placeId, city, state, country } — or null when empty.
+// These helpers pull a plain display string out of that shape wherever the
+// rest of the form (or the API payload) needs one.
+const locationLabel = (loc) => {
+  if (!loc) return '';
+  if (typeof loc === 'string') return loc; // defensive, shouldn't happen post-fix
+  return loc.name || loc.formatted || '';
+};
+
+const locationCoords = (loc) => {
+  if (!loc || typeof loc === 'string') return undefined;
+  if (loc.latitude == null || loc.longitude == null) return undefined;
+  return { lat: loc.latitude, lng: loc.longitude };
 };
 
 // ─── CSS animations — injected once ──────────────────────────────────────────
@@ -147,7 +182,7 @@ function Field({ label, required, hint, error, children }) {
       )}
       {children}
       {hint && !error && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
-      {error && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><span>⚠</span>{error}</p>}
+      {error && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>{error}</p>}
     </div>
   );
 }
@@ -187,7 +222,10 @@ function StepBar({ current, total }) {
                   active ? 'bg-blue-600 text-white ring-4 ring-blue-100' :
                     'bg-gray-100 text-gray-400'
                   }`}>
-                  {done ? '✓' : s.icon}
+                  {done
+                    ? <CheckCircle2 size={16} strokeWidth={2.5} aria-hidden="true" />
+                    : STEP_ICONS[i]
+                  }
                 </div>
                 <span className={`text-xs hidden sm:block ${active ? 'text-blue-600 font-semibold' : 'text-gray-400'}`}>
                   {s.label}
@@ -216,27 +254,15 @@ function FarePreview({ fare, seats }) {
   return (
     <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 mt-3">
       <p className="text-xs font-bold text-green-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-        <span>💰</span> Your earnings breakdown
+        <Coins size={14} strokeWidth={2} aria-hidden="true" /> Your earnings
       </p>
       <div className="space-y-1.5 text-sm">
-        <div className="flex justify-between text-gray-600">
-          <span>Fare you set</span>
-          <span className="font-medium">{formatMoney(base)}</span>
-        </div>
-        <div className="flex justify-between text-gray-500">
-          <span>Platform fee (3%)</span>
-          <span>+{formatMoney(d.platformFee)}</span>
-        </div>
-        <div className="flex justify-between text-gray-500">
-          <span>GST (5% on fare + platform fee)</span>
-          <span>+{formatMoney(d.gstOnPlatformFee)}</span>
-        </div>
-        <div className="flex justify-between font-bold text-green-700 border-t border-green-200 pt-1.5 mt-1.5">
+        <div className="flex justify-between font-bold text-green-700">
           <span>You receive / seat</span>
           <span className="text-base">{formatMoney(netPerSeat)}</span>
         </div>
         {parseInt(seats) > 1 && (
-          <div className="flex justify-between text-xs text-green-600">
+          <div className="flex justify-between text-xs text-green-600 mt-2">
             <span>If all {seats} seats filled</span>
             <span className="font-semibold">{formatMoney(totalFull)}</span>
           </div>
@@ -247,25 +273,12 @@ function FarePreview({ fare, seats }) {
 }
 
 // ─── First Ride Posting Celebration ──────────────────────────────────────────
-//
-// Identical visual system to FirstBookingCelebration in RideCard.jsx.
-// Fee rule: platform fee (3%) WAIVED, GST (5% on base fare only) still applies.
-// Driver receives 100% of fare they set.
-// Passenger pays: fare + 5% GST on fare (no platform fee).
-//
 function FirstRideCelebration({ fare, seats }) {
   const base = parseFloat(fare) || 0;
   const seatsNum = Math.max(1, parseInt(seats) || 1);
 
-  // Fee math
-  const platformFee = Math.round(base * PaymentCalculator.PLATFORM_FEE_PERCENTAGE * 100) / 100;
-  // GST on fare only (platform fee waived so not added to GST base)
-  const gstFee = Math.round(base * PaymentCalculator.GST_PERCENTAGE * 100) / 100;
-  // Driver receives full fare they set (platform doesn't deduct from driver)
   const netPerSeat = base;
   const totalFull = netPerSeat * seatsNum;
-  // Passenger pays: fare + GST on fare (platform fee waived)
-  const passengerPays = base + gstFee;
 
   const confettiRef = useRef(null);
   const styleInjected = useRef(false);
@@ -371,10 +384,6 @@ function FirstRideCelebration({ fare, seats }) {
           }}>
             Your first posting is free
           </h3>
-
-          <p style={{ fontSize: 12, color: '#166534', margin: 0, opacity: 0.85, lineHeight: 1.5 }}>
-            Platform fee waived on your first confirmed booking — passengers pay fare + GST only
-          </p>
         </div>
 
         {/* Divider */}
@@ -383,33 +392,9 @@ function FirstRideCelebration({ fare, seats }) {
         {/* Fare breakdown */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 13 }}>
 
-          {/* Fare set */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#374151' }}>
-            <span>Fare you set</span>
-            <span style={{ fontWeight: 600 }}>{formatMoney(base)}</span>
-          </div>
-
-          {/* Platform fee — waived */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: '#9ca3af' }}>Platform fee (3%)</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ textDecoration: 'line-through', color: '#9ca3af' }}>
-                +{formatMoney(platformFee)}
-              </span>
-              <WaivedPill />
-            </span>
-          </div>
-
-          {/* GST on base fare only (platform fee waived so not in GST base) */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: '#374151' }}>
-            <span style={{ color: '#6b7280' }}>GST (5% on base fare)</span>
-            <span style={{ fontWeight: 500 }}>+{formatMoney(gstFee)}</span>
-          </div>
-
           {/* Driver net */}
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-            borderTop: '1px solid #bbf7d0', paddingTop: 10, marginTop: 3,
           }}>
             <span style={{ fontWeight: 600, color: '#111827', fontSize: 14 }}>
               You receive / seat
@@ -429,21 +414,6 @@ function FirstRideCelebration({ fare, seats }) {
               <span style={{ fontWeight: 600, color: '#16a34a' }}>{formatMoney(totalFull)}</span>
             </div>
           )}
-
-          {/* Passenger info box */}
-          <div style={{
-            marginTop: 4,
-            background: 'rgba(255,255,255,0.7)',
-            borderRadius: 8, border: '1px solid #bbf7d0',
-            padding: '7px 11px',
-            display: 'flex', alignItems: 'flex-start', gap: 8,
-          }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>🎁</span>
-            <p style={{ fontSize: 11.5, color: '#166534', margin: 0, lineHeight: 1.5 }}>
-              Passengers pay <strong>{formatMoney(passengerPays)}</strong> per seat (fare + GST only) —
-              no platform add-ons. A rare offer they'll trust immediately.
-            </p>
-          </div>
         </div>
       </div>
     </div>
@@ -571,10 +541,10 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
   const [errors, setErrors] = useState({});
 
   // Step 1: Route
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
-  const [startPlace, setStartPlace] = useState(null);
-  const [endPlace, setEndPlace] = useState(null);
+  // `start` / `end` are the full LocationAutocomplete selection object (or null).
+  const [start, setStart] = useState(null);
+  const [end, setEnd] = useState(null);
+  // Each waypoint holds { location: <selection object|null>, order }
   const [waypoints, setWaypoints] = useState([]);
   const [allowPartialRoute, setAllowPartial] = useState(true);
 
@@ -626,21 +596,25 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
 
   // Waypoint helpers
   const addWaypoint = () =>
-    setWaypoints(p => [...p, { location: '', order: p.length + 1 }]);
+    setWaypoints(p => [...p, { location: null, order: p.length + 1 }]);
 
   const removeWaypoint = (i) =>
     setWaypoints(p => p.filter((_, idx) => idx !== i).map((w, idx) => ({ ...w, order: idx + 1 })));
 
-  const updateWaypoint = (i, val) =>
-    setWaypoints(p => p.map((w, idx) => idx === i ? { ...w, location: val } : w));
+  const updateWaypoint = (i, locationObj) =>
+    setWaypoints(p => p.map((w, idx) => idx === i ? { ...w, location: locationObj } : w));
 
   const formData = {
-    start, end, date, time,
+    start: locationLabel(start),
+    end: locationLabel(end),
+    date, time,
     seats: parseInt(seats) || 1,
     fare: parseFloat(fare) || 0,
     tollIncluded, negotiableFare,
     isRoundTrip, returnDate, returnTime, reusePreviousTripOptions,
-    waypoints: waypoints.filter(w => w.location.trim()),
+    waypoints: waypoints
+      .filter(w => locationLabel(w.location).trim())
+      .map(w => ({ location: locationLabel(w.location) })),
     allowPartialRoute,
     vehicle: {
       number: vehicleNumber.replace(/\s/g, '').toUpperCase(),
@@ -657,10 +631,12 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
     const errs = {};
 
     if (s === 1) {
-      if (!start.trim()) errs.start = 'Starting location is required';
-      else if (start.trim().length < 3) errs.start = 'Enter a more specific location';
-      if (!end.trim()) errs.end = 'Destination is required';
-      else if (end.trim().toLowerCase() === start.trim().toLowerCase())
+      const startLabel = locationLabel(start).trim();
+      const endLabel = locationLabel(end).trim();
+      if (!startLabel) errs.start = 'Starting location is required';
+      else if (startLabel.length < 3) errs.start = 'Enter a more specific location';
+      if (!endLabel) errs.end = 'Destination is required';
+      else if (endLabel.toLowerCase() === startLabel.toLowerCase())
         errs.end = 'Start and destination cannot be the same';
     }
 
@@ -706,7 +682,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
     const errs = validateStep(step);
     if (Object.keys(errs).length) {
       setErrors(errs);
-      toast.error(Object.values(errs)[0], { position: 'top-center' });
+      toastService.error(Object.values(errs)[0], { position: 'top-center' });
       return;
     }
     setErrors({});
@@ -725,16 +701,21 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
     const allErrors = { ...validateStep(1), ...validateStep(2), ...validateStep(3) };
     if (Object.keys(allErrors).length) {
       setErrors(allErrors);
-      toast.error('Please fix all errors before posting', { position: 'top-center' });
+      toastService.error('Please fix all errors before posting', { position: 'top-center' });
       return;
     }
 
+    const startLabel = normalizeIndiaLocation(locationLabel(start));
+    const endLabel = normalizeIndiaLocation(locationLabel(end));
+    const startCoords = locationCoords(start);
+    const endCoords = locationCoords(end);
+
     const payload = {
-      start: normalizeIndiaLocation(start),
-      end: normalizeIndiaLocation(end),
+      start: startLabel,
+      end: endLabel,
       // Pass resolved coordinates if available from autocomplete
-      startCoordinates: startPlace?.lat ? { lat: startPlace.lat, lng: startPlace.lng } : undefined,
-      endCoordinates: endPlace?.lat ? { lat: endPlace.lat, lng: endPlace.lng } : undefined,
+      startCoordinates: startCoords,
+      endCoordinates: endCoords,
       date, time,
       seats: parseInt(seats),
       fareMode: 'fixed',
@@ -752,9 +733,12 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
       phoneNumber: phoneNumber.replace(/\s/g, ''),
       address: address.trim(),
       pickupInstructions: pickupInstructions.trim(),
-      waypoints: waypoints.filter(w => w.location.trim()).map((w, i) => ({
-        location: normalizeIndiaLocation(w.location), order: i + 1,
-      })),
+      waypoints: waypoints
+        .filter(w => locationLabel(w.location).trim())
+        .map((w, i) => ({
+          location: normalizeIndiaLocation(locationLabel(w.location)),
+          order: i + 1,
+        })),
       allowPartialRoute,
       preferences: {
         smokingAllowed, musicAllowed, petFriendly, luggageAllowed, womenOnly,
@@ -769,7 +753,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
 
   const resetForm = () => {
     setStep(1); setErrors({});
-    setStart(''); setEnd(''); setStartPlace(null); setEndPlace(null);
+    setStart(null); setEnd(null);
     setWaypoints([]); setAllowPartial(true);
     setDate(''); setTime(''); setSeats(1);
     setFare(''); setTollIncluded(false); setNegotiable(false);
@@ -802,13 +786,9 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
               <LocationAutocomplete
                 label="From"
                 required
-                icon="origin"
+                icon="pickup"
                 value={start}
-                onChange={(val) => { setStart(val); setErrors(p => ({ ...p, start: '' })); }}
-                onPlaceSelect={(place) => {
-                  setStart(place.address);
-                  setStartPlace(place);
-                }}
+                onChange={(locationObj) => { setStart(locationObj); setErrors(p => ({ ...p, start: '' })); }}
                 placeholder="e.g. Phagwara, Punjab"
                 error={errors.start}
               />
@@ -820,9 +800,9 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
                     <div key={i} className="flex items-center gap-2">
                       <span className="text-xs text-gray-300 w-5 text-center flex-shrink-0">{i + 1}</span>
                       <LocationAutocomplete
-                        icon="waypoint"
+                        icon="search"
                         value={wp.location}
-                        onChange={(val) => updateWaypoint(i, val)}
+                        onChange={(locationObj) => updateWaypoint(i, locationObj)}
                         placeholder={`Stop ${i + 1}`}
                         className="flex-1"
                       />
@@ -851,11 +831,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
                 required
                 icon="destination"
                 value={end}
-                onChange={(val) => { setEnd(val); setErrors(p => ({ ...p, end: '' })); }}
-                onPlaceSelect={(place) => {
-                  setEnd(place.address);
-                  setEndPlace(place);
-                }}
+                onChange={(locationObj) => { setEnd(locationObj); setErrors(p => ({ ...p, end: '' })); }}
                 placeholder="e.g. Chandigarh"
                 error={errors.end}
               />
@@ -929,15 +905,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
                 }
               </Field>
 
-              {/* Policy notice */}
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm font-semibold text-amber-800">Posting policy</p>
-                <ul className="mt-2 space-y-1 text-xs text-amber-700">
-                  <li>• First offer is free to post. On the first eligible booking, platform fee is waived. Passengers pay fare + GST only.</li>
-                  <li>• Standard: passenger pays fare + 3% platform fee + 5% GST on fare plus platform fee.</li>
-                  <li>• Cancellations 24+ hours before departure are free. Later cancellations incur a 3% charge.</li>
-                </ul>
-              </div>
+              {/* Policy notice removed */}
 
               {/* Round-trip */}
               <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
@@ -1112,7 +1080,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Summary</p>
                 <div className="space-y-2 text-sm">
                   {[
-                    { label: 'Route', val: start && end ? `${start} → ${end}` : null },
+                    { label: 'Route', val: formData.start && formData.end ? `${formData.start} → ${formData.end}` : null },
                     { label: 'Date', val: date ? new Date(date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ` at ${time}` : null },
                     { label: 'Seats', val: `${seats} seat${seats > 1 ? 's' : ''} available` },
                     { label: 'Fare', val: fare ? `₹${fare} per seat · passenger pays ₹${PaymentCalculator.calculatePassengerTotal(parseFloat(fare), 1, { waivePlatformCharges: isFirstRideOffer }).totalPassengerPays.toFixed(0)} incl. fees${isFirstRideOffer ? ' (platform fee waived)' : ''}` : null },

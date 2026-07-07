@@ -22,6 +22,11 @@ const auditLogSchema = new mongoose.Schema(
                 'user.role_change', 'user.view',
                 // Ride actions
                 'ride.feature', 'ride.delete', 'ride.view',
+                // Negotiation actions (Milestone 3)
+                'negotiation.initiate', 'negotiation.counter', 'negotiation.accept',
+                'negotiation.reject', 'negotiation.cancel', 'negotiation.finalize',
+                // Moderation actions (Milestone 5)
+                'moderation.flag',
                 // System
                 'export.data', 'admin.login',
             ],

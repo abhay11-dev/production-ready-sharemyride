@@ -367,11 +367,23 @@ const checkRouteMatch = async (driverRoute, passengerPickup, passengerDrop, tole
     console.log(`   ✓ Route has ${routeCoordinates.length} points`);
 
     // Get passenger coordinates
-    console.log(`   Geocoding pickup: "${passengerPickup}"`);
-    const pickupCoords = await geocodeAddress(passengerPickup);
+    let pickupCoords;
+    if (typeof passengerPickup === 'object' && passengerPickup.lat !== undefined && passengerPickup.lng !== undefined) {
+      pickupCoords = passengerPickup;
+      console.log(`   Pickup (provided): ${pickupCoords.lat.toFixed(4)}, ${pickupCoords.lng.toFixed(4)}`);
+    } else {
+      console.log(`   Geocoding pickup: "${passengerPickup}"`);
+      pickupCoords = await geocodeAddress(passengerPickup);
+    }
     
-    console.log(`   Geocoding drop: "${passengerDrop}"`);
-    const dropCoords = await geocodeAddress(passengerDrop);
+    let dropCoords;
+    if (typeof passengerDrop === 'object' && passengerDrop.lat !== undefined && passengerDrop.lng !== undefined) {
+      dropCoords = passengerDrop;
+      console.log(`   Drop (provided): ${dropCoords.lat.toFixed(4)}, ${dropCoords.lng.toFixed(4)}`);
+    } else {
+      console.log(`   Geocoding drop: "${passengerDrop}"`);
+      dropCoords = await geocodeAddress(passengerDrop);
+    }
 
     // Check distances from route
     const pickupMatch = isPointNearRoute(pickupCoords, routeCoordinates, tolerance);

@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const cors = require("cors");
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const http = require('http'); // ✅ NEW: Milestone 4 — needed to attach Socket.IO
+const { initSocket } = require('./services/socket'); // ✅ NEW: Milestone 4 — chat websocket
 
 const app = express();
 
@@ -20,13 +22,13 @@ app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin) || 
-        (origin.includes('share-my-ride') && origin.includes('vercel.app')) ||
-        (origin.includes('sharemyride') && origin.includes('onrender.com'))) {
+
+    if (allowedOrigins.includes(origin) ||
+      (origin.includes('share-my-ride') && origin.includes('vercel.app')) ||
+      (origin.includes('sharemyride') && origin.includes('onrender.com'))) {
       return callback(null, true);
     }
-    
+
     // Fallback for development or specific cases
     callback(null, true);
   },
@@ -51,15 +53,15 @@ const connectDB = async () => {
   }
 
   console.log(
-  "Mongo URI:",
-  process.env.MONGO_URI?.replace(/\/\/([^:]+):([^@]+)@/, "//$1:***@")
+    "Mongo URI:",
+    process.env.MONGO_URI?.replace(/\/\/([^:]+):([^@]+)@/, "//$1:***@")
   );
 
   try {
     const db = await mongoose.connect(process.env.MONGO_URI, {
       serverSelectionTimeoutMS: 5000,
     });
-    
+
     isConnected = db.connections[0].readyState === 1;
     console.log('✅ MongoDB Connected');
   } catch (err) {
@@ -83,6 +85,10 @@ const driverVerificationRoutes = require('./routes/driverVerificationRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // ✅ NEW: Admin routes
 const inquiryRoutes = require('./routes/inquiryRoutes'); // ✅ NEW: Inquiry/Support routes
 const blogRoutes = require('./routes/blogRoutes'); // ✅ NEW: Blog routes
+const locationRoutes = require('./routes/locationRoutes'); // ✅ NEW: Location routes
+const negotiationRoutes = require('./routes/negotiationRoutes'); // ✅ NEW: Milestone 3 — Negotiation routes
+const chatRoutes = require('./routes/chatRoutes'); // ✅ NEW: Milestone 4 — Chat routes
+const moderationRoutes = require('./routes/moderationRoutes'); // ✅ NEW: Milestone 5 — Moderation admin routes
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -90,9 +96,9 @@ app.use(async (req, res, next) => {
     await connectDB();
     next();
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Database connection failed',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -112,9 +118,13 @@ app.use('/api/driver-verification', driverVerificationRoutes);
 app.use('/api/admin', adminRoutes);     // ✅ NEW: Admin endpoints
 app.use('/api/inquiries', inquiryRoutes); // ✅ NEW: Inquiry/Support endpoints
 app.use('/api/blogs', blogRoutes);       // ✅ NEW: Blog endpoints
+app.use('/api/negotiations', negotiationRoutes); // ✅ NEW: Milestone 3 — Negotiation endpoints
+app.use('/api/chat', chatRoutes); // ✅ NEW: Milestone 4 — Chat endpoints
+app.use('/api/moderation', moderationRoutes); // ✅ NEW: Milestone 5 — Moderation admin endpoints
+app.use('/api/location', locationRoutes); // ✅ NEW: Location endpoints
 
 app.get('/api', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'API is working',
     status: 'ok'
   });
@@ -125,7 +135,7 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // Root endpoint (for API info)
 app.get('/api-info', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'RideShare API is running',
     version: '1.0.0',
     endpoints: {
@@ -140,7 +150,8 @@ app.get('/api-info', (req, res) => {
       ratings: '/api/ratings',  // ✅ NEW
       stats: '/api/stats',      // ✅ NEW
       driverVerification: '/api/driver-verification',
-      admin: '/api/admin'       // ✅ NEW
+      admin: '/api/admin',       // ✅ NEW
+      location: '/api/location'  // ✅ NEW
     }
   });
 });
@@ -150,13 +161,13 @@ app.get('/api-info', (req, res) => {
 app.use((req, res, next) => {
   // If request is for API and not found, send 404 JSON
   if (req.path.startsWith('/api')) {
-    return res.status(404).json({ 
+    return res.status(404).json({
       message: 'API route not found',
       requestedUrl: req.originalUrl,
       method: req.method
     });
   }
-  
+
   // For all other routes, serve the React app
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'), (err) => {
     if (err) {
@@ -168,26 +179,33 @@ app.use((req, res, next) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('Server Error:', err.stack);
-  res.status(err.status || 500).json({ 
+  res.status(err.status || 500).json({
     message: err.message || 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.stack : err.message
   });
 });
 
+// ✅ NEW (Milestone 4): create an http.Server so Socket.IO can attach to it.
+// Express's app.listen() internally does exactly this, but doesn't expose
+// the server instance — we need it directly for chat's websocket layer.
+const server = http.createServer(app);
+initSocket(server);
+
 // For local development
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 5000;
   const baseUrl = `http://localhost:${PORT}`;
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Rating API: ${baseUrl}/api/ratings`);
     console.log(`📈 Stats API: ${baseUrl}/api/stats`);
     console.log(`🪪 Driver Verification API: ${baseUrl}/api/driver-verification`);
+    console.log(`💬 Chat/Socket.IO ready at: ${baseUrl}`);
   });
 } else {
   const PORT = process.env.PORT || 5000;
   const baseUrl = process.env.API_BASE_URL || `http://localhost:${PORT}`;
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`🚀 Production server running on port ${PORT}`);
     console.log(`🌐 API Base URL: ${baseUrl}`);
   });

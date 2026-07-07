@@ -4,14 +4,17 @@ import AppRoutes from './routes/AppRoutes';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
 import { UserProvider } from './contexts/UserContext';
-import { Toaster } from 'react-hot-toast';
+import { GoogleMapsProvider } from './contexts/GoogleMapsContext';
+import { Toaster, useToasterStore, toast as hotToast } from 'react-hot-toast';
 
 function App() {
   return (
     <Router>
-      <UserProvider>
-        <AppShell />
-      </UserProvider>
+      <GoogleMapsProvider>
+        <UserProvider>
+          <AppShell />
+        </UserProvider>
+      </GoogleMapsProvider>
     </Router>
   );
 }
@@ -64,15 +67,44 @@ function AppShell() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      <Toaster />
+      <Toaster
+          position="top-right"
+          reverseOrder={false}
+          containerStyle={{ top: 72, right: 16, zIndex: 9999 }}
+          toastOptions={{
+            duration: 4000,
+            // Disable default styles — toastService handles all styling
+            style: {},
+          }}
+        />
       <main className="flex-1">
         <AppRoutes />
       </main>
       <Footer />
       <ScrollToTop />
+      <ToastLimiter />
     </div>
   );
 }
+
+const ToastLimiter = () => {
+  const { toasts } = useToasterStore();
+
+  useEffect(() => {
+    const isMobile = window.innerWidth < 768;
+    const TOAST_LIMIT = isMobile ? 2 : 3;
+
+    const visibleToasts = toasts.filter((t) => t.visible);
+    if (visibleToasts.length > TOAST_LIMIT) {
+      // Dismiss oldest toasts if limit is exceeded.
+      // react-hot-toast puts newest toasts first in the array.
+      const toastsToDismiss = visibleToasts.slice(TOAST_LIMIT);
+      toastsToDismiss.forEach((t) => hotToast.dismiss(t.id));
+    }
+  }, [toasts]);
+
+  return null;
+};
 
 const ScrollToTop = () => {
   const [isVisible, setIsVisible] = useState(false);

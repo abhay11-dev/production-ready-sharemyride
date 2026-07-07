@@ -37,7 +37,11 @@ export const searchRides = async (start, end, date = null, additionalFilters = {
       rides = [];
     }
 
-    return rides;
+    // meta carries Smart Search tier info + pagination (Milestone 1).
+    // Safe default so older/partial responses don't break callers.
+    const meta = (!Array.isArray(response.data) && response.data?.meta) || {};
+
+    return { rides, meta };
   } catch (error) {
     throw error;
   }

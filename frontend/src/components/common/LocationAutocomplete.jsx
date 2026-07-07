@@ -1,20 +1,6 @@
 /**
  * LocationAutocomplete.jsx
- * Core reusable autocomplete component powered by Geoapify.
- * Covers: cities, towns, villages, roads, bus stops, railway stations,
- * airports, colleges, hospitals, hotels, shops, businesses, landmarks, POIs.
- *
- * Usage:
- *   <LocationAutocomplete
- *     value={location}          // { name, latitude, longitude, formatted, placeId, city, state, country }
- *     onChange={setLocation}    // receives full location object on select
- *     placeholder="Enter pickup"
- *     label="Pickup"
- *     icon="pickup"             // "pickup" | "destination" | "search"
- *     error={errorMsg}
- *     disabled={false}
- *     autoFocus={false}
- *   />
+ * Core reusable autocomplete component — now powered by our custom backend Nominatim endpoint
  */
 
 import React, {
@@ -25,67 +11,12 @@ import React, {
     forwardRef,
     useImperativeHandle,
 } from 'react';
+import api from '../../config/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const API_KEY = import.meta.env.VITE_GEOAPIFY_API_KEY;
-const GEOAPIFY_URL = 'https://api.geoapify.com/v1/geocode/autocomplete';
-const DEBOUNCE_MS = 300;
-const MAX_RESULTS = 10;
-
-// Types that cover the full range of Indian location types requested
-const RESULT_TYPES = [
-    'city', 'town', 'village', 'locality', 'suburb', 'district',
-    'street', 'amenity', 'building', 'postcode',
-].join(',');
-
-// ─── Category icon mapper ─────────────────────────────────────────────────────
-function getCategoryIcon(result) {
-    const cat = (result.properties?.categories || []).join(' ').toLowerCase();
-    const type = (result.properties?.result_type || '').toLowerCase();
-    const name = (result.properties?.name || '').toLowerCase();
-
-    if (cat.includes('airport') || name.includes('airport')) return '✈️';
-    if (cat.includes('railway') || cat.includes('train') || name.includes('railway') || name.includes('station')) return '🚉';
-    if (cat.includes('bus') || name.includes('bus stop') || name.includes('bus stand')) return '🚌';
-    if (cat.includes('hospital') || cat.includes('clinic') || name.includes('hospital')) return '🏥';
-    if (cat.includes('college') || cat.includes('university') || cat.includes('school')) return '🎓';
-    if (cat.includes('hotel') || name.includes('hotel') || name.includes('inn')) return '🏨';
-    if (cat.includes('shop') || cat.includes('mall') || cat.includes('market')) return '🛍️';
-    if (cat.includes('restaurant') || cat.includes('food')) return '🍽️';
-    if (type === 'city' || type === 'town') return '🏙️';
-    if (type === 'village' || type === 'locality' || type === 'suburb') return '🏘️';
-    if (type === 'street') return '🛣️';
-    if (cat.includes('tourism') || cat.includes('attraction')) return '🏛️';
-    return '📍';
-}
-
-// ─── Parse Geoapify feature → unified location object ─────────────────────────
-function parseFeature(feature) {
-    const p = feature.properties || {};
-    const parts = [];
-    if (p.name) parts.push(p.name);
-    if (p.street && p.name !== p.street) parts.push(p.street);
-    if (p.suburb && !parts.some(x => x === p.suburb)) parts.push(p.suburb);
-    if (p.city && !parts.some(x => x === p.city)) parts.push(p.city);
-    if (p.state) parts.push(p.state);
-
-    const displayName = parts.length ? parts.join(', ') : (p.formatted || 'Unknown location');
-
-    return {
-        name: displayName,
-        formatted: p.formatted || displayName,
-        latitude: feature.geometry?.coordinates?.[1] ?? null,
-        longitude: feature.geometry?.coordinates?.[0] ?? null,
-        placeId: p.place_id || '',
-        city: p.city || p.town || p.village || '',
-        state: p.state || '',
-        country: p.country || 'India',
-        // Keep secondary for display
-        _secondary: [p.city, p.state].filter(Boolean).join(', '),
-        _icon: getCategoryIcon(feature),
-        _type: p.result_type || '',
-    };
-}
+const DEBOUNCE_MS = 300; // As requested
+const MIN_QUERY_LENGTH = 2; // As requeconst MIN_QUERY_LENGTH = 2; // As requested
+sted
 
 // ─── Highlight matching text ──────────────────────────────────────────────────
 function HighlightMatch({ text, query }) {
@@ -135,11 +66,12 @@ function ClearButton({ onClear }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
             </svg>
         </button>
+
     );
 }
 
 // ─── Suggestion row ───────────────────────────────────────────────────────────
-function SuggestionRow({ suggestion, query, isActive, onSelect, onMouseEnter }) {
+function SuggestionRow({ suggestion, query, isActive, isResolving, onSelect, onMouseEnter }) {
     return (
         <li
             role="option"
@@ -159,7 +91,12 @@ function SuggestionRow({ suggestion, query, isActive, onSelect, onMouseEnter }) 
                     <p className="text-xs text-gray-500 truncate mt-0.5">{suggestion._secondary}</p>
                 )}
             </div>
-            {suggestion._type && (
+            {isResolving ? (
+                <svg className="w-3.5 h-3.5 text-blue-400 animate-spin flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+            ) : suggestion._type && (
                 <span className="flex-shrink-0 mt-0.5 text-[10px] font-medium text-gray-400 uppercase tracking-wide">
                     {suggestion._type}
                 </span>
@@ -197,8 +134,8 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
     const inputRef = useRef(null);
     const listRef = useRef(null);
     const debounceTimer = useRef(null);
-    const abortController = useRef(null);
     const containerRef = useRef(null);
+    const abortControllerRef = useRef(null);
 
     // Expose focus() to parent
     useImperativeHandle(ref, () => ({
@@ -215,7 +152,7 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
             setQuery('');
             setHasSelected(false);
         }
-    }, [value?.placeId]);
+    }, [value?.placeId, value?.id]);
 
     // Click-outside to close
     useEffect(() => {
@@ -235,48 +172,45 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
 
     // ── Fetch suggestions ─────────────────────────────────────────────────────
     const fetchSuggestions = useCallback(async (text) => {
-        if (!text || text.length < 2) {
+        if (!text || text.length < MIN_QUERY_LENGTH) {
             setSuggestions([]);
             setIsOpen(false);
             return;
         }
 
-        // Cancel previous request
-        if (abortController.current) abortController.current.abort();
-        abortController.current = new AbortController();
-
         setIsLoading(true);
         setApiError(null);
 
+        // Cancel previous request if typing quickly
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+
         try {
-            const params = new URLSearchParams({
-                text,
-                apiKey: API_KEY,
-                filter: 'countrycode:in',
-                limit: String(MAX_RESULTS),
-                type: RESULT_TYPES,
-                lang: 'en',
-                format: 'geojson',
+            const response = await api.get('/location/search', {
+                params: { q: text },
+                signal: abortControllerRef.current.signal
             });
 
-            const res = await fetch(`${GEOAPIFY_URL}?${params}`, {
-                signal: abortController.current.signal,
-            });
+            const uniqueParsed = [];
+            const seenNames = new Set();
+            for (const item of response.data) {
+                if (!seenNames.has(item.name)) {
+                    seenNames.add(item.name);
+                    uniqueParsed.push(item);
+                }
+            }
 
-            if (!res.ok) throw new Error(`Geoapify error: ${res.status}`);
-
-            const data = await res.json();
-            const features = data?.features || [];
-            const parsed = features.map(parseFeature);
-            setSuggestions(parsed);
-            setIsOpen(parsed.length > 0);
+            setSuggestions(uniqueParsed);
+            setIsOpen(uniqueParsed.length > 0);
             setActiveIndex(-1);
         } catch (err) {
-            if (err.name === 'AbortError') return;
-            console.error('[LocationAutocomplete] Fetch error:', err);
-            setApiError('Could not load suggestions. Check your connection.');
-            setSuggestions([]);
-            setIsOpen(false);
+            if (err.name !== 'CanceledError' && err.code !== 'ERR_CANCELED') {
+                setApiError('Could not load suggestions. Check your connection.');
+                setSuggestions([]);
+                setIsOpen(false);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -293,6 +227,10 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
             onChange(null);
             setSuggestions([]);
             setIsOpen(false);
+            clearTimeout(debounceTimer.current);
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
             return;
         }
 
@@ -306,8 +244,9 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
         setQuery(suggestion.name);
         setHasSelected(true);
         setIsOpen(false);
-        setSuggestions([]);
         setActiveIndex(-1);
+
+        // Directly pass suggestion as our new backend provides latitude/longitude in the search response
         onChange(suggestion);
     }, [onChange]);
 
@@ -318,6 +257,9 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
         setSuggestions([]);
         setIsOpen(false);
         onChange(null);
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
         inputRef.current?.focus();
     };
 
@@ -467,7 +409,7 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
                 </p>
             )}
 
-            {/* API error */}
+            {/* API / load error */}
             {apiError && !error && (
                 <p className="mt-1 text-xs text-amber-600 flex items-center gap-1">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -506,6 +448,7 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
                                     suggestion={s}
                                     query={query}
                                     isActive={i === activeIndex}
+                                    isResolving={false}
                                     onSelect={handleSelect}
                                     onMouseEnter={() => setActiveIndex(i)}
                                 />
@@ -519,7 +462,7 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
                             ↑↓ navigate · Enter select · Esc close
                         </span>
                         <span className="text-[10px] text-gray-400">
-                            Powered by Geoapify
+                            Search by OpenStreetMap
                         </span>
                     </div>
                 </div>

@@ -77,11 +77,11 @@ function Login() {
       if (result.success) {
         const userName = result.user?.name || result.user?.email?.split('@')[0] || 'User';
         toast.success(`Welcome back, ${userName}!`, {
-          duration: 3000, position: 'top-center',
+          duration: 1500, position: 'top-center',
           style: { background: '#10B981', color: '#fff', fontWeight: '600', padding: '14px 18px', borderRadius: '12px' },
           iconTheme: { primary: '#fff', secondary: '#10B981' },
         });
-        setTimeout(() => navigate('/'), 1000);
+        setTimeout(() => navigate('/'), 800);
       } else {
         handleLoginError(result);
       }

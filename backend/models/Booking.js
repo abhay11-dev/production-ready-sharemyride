@@ -11,20 +11,20 @@ const bookingSchema = new mongoose.Schema({
     required: [true, 'Ride is required'],
     index: true
   },
- 
+
   passenger: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: [true, 'Passenger is required'],
     index: true
   },
- 
+
   driver: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     index: true
   },
-  
+
   // ===========================
   // BOOKING DETAILS
   // ===========================
@@ -34,7 +34,7 @@ const bookingSchema = new mongoose.Schema({
     min: [1, 'Minimum 1 seat required'],
     max: [8, 'Maximum 8 seats allowed']
   },
-  
+
   pickupLocation: {
     type: String,
     required: [true, 'Pickup location is required'],
@@ -44,7 +44,7 @@ const bookingSchema = new mongoose.Schema({
     lat: Number,
     lng: Number
   },
-  
+
   dropLocation: {
     type: String,
     required: [true, 'Drop location is required'],
@@ -54,14 +54,14 @@ const bookingSchema = new mongoose.Schema({
     lat: Number,
     lng: Number
   },
-  
+
   // models/Booking.js
 
   dropCoordinates: {
     lat: Number,
     lng: Number
   },
-  
+
   // ===========================
   // 🎯 SEGMENT BOOKING DATA (Route-Matched Rides)
   // ===========================
@@ -71,28 +71,43 @@ const bookingSchema = new mongoose.Schema({
     default: null,
     index: true
   },
-  
+
+  // ===========================
+  // 🤝 NEGOTIATION DATA (Milestone 3 — additive, non-breaking)
+  // ===========================
+  negotiated: {
+    type: Boolean,
+    default: false,
+    comment: 'True if this booking was created via Negotiation.finalize()'
+  },
+  negotiationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Negotiation',
+    default: null,
+    index: true
+  },
+
   userSearchDistance: {
     type: Number,
     min: 0,
     default: null,
     comment: 'Passenger\'s segment distance in km (for route-matched bookings)'
   },
-  
+
   perKmRate: {
     type: Number,
     min: 0,
     default: null,
     comment: 'Driver\'s per km rate at time of booking'
   },
-  
+
   segmentFare: {
     type: Number,
     min: 0,
     default: null,
     comment: 'Calculated segment fare for passenger\'s journey (includes all fees)'
   },
-  
+
   matchQuality: {
     type: Number,
     min: 0,
@@ -100,7 +115,7 @@ const bookingSchema = new mongoose.Schema({
     default: null,
     comment: 'Route match percentage'
   },
-  
+
   // ===========================
   // PASSENGER NOTES
   // ===========================
@@ -116,7 +131,7 @@ const bookingSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, 'Notes cannot exceed 500 characters']
   },
-  
+
   // ===========================
   // FARE BREAKDOWN
   // ===========================
@@ -126,7 +141,7 @@ const bookingSchema = new mongoose.Schema({
     min: [0, 'Base fare cannot be negative'],
     default: 0
   },
-  
+
   // Passenger service fee (per seat)
   passengerServiceFee: {
     type: Number,
@@ -134,7 +149,7 @@ const bookingSchema = new mongoose.Schema({
     min: [0, 'Service fee cannot be negative'],
     default: 0
   },
-  
+
   // GST on passenger service fee
   passengerServiceFeeGST: {
     type: Number,
@@ -142,7 +157,7 @@ const bookingSchema = new mongoose.Schema({
     min: [0, 'GST cannot be negative'],
     default: 0
   },
-  
+
   // Legacy fields (keeping for backward compatibility)
   platformFee: {
     type: Number,
@@ -159,7 +174,7 @@ const bookingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
+
   // Total amount passenger pays
   totalFare: {
     type: Number,
@@ -167,7 +182,7 @@ const bookingSchema = new mongoose.Schema({
     min: [0, 'Total fare cannot be negative'],
     default: 0
   },
-  
+
   // Discount & offers
   discountAmount: {
     type: Number,
@@ -184,24 +199,24 @@ const bookingSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  
+
   // Final amount after discount
   finalAmount: {
     type: Number,
     min: 0
   },
-  
+
   // ===========================
   // BOOKING STATUS
   // ===========================
- status: {
-  type: String,
-  // FIXED: Match backend controller validation
-  enum: ['pending', 'accepted', 'rejected', 'cancelled', 'completed', 'no_show'],
-  default: 'pending',
-  index: true
-},
-  
+  status: {
+    type: String,
+    // FIXED: Match backend controller validation
+    enum: ['pending', 'accepted', 'rejected', 'cancelled', 'completed', 'no_show'],
+    default: 'pending',
+    index: true
+  },
+
   // ===========================
   // PAYMENT STATUS
   // ===========================
@@ -211,40 +226,40 @@ const bookingSchema = new mongoose.Schema({
     default: 'pending',
     index: true
   },
-  
+
   paymentMethod: {
     type: String,
     enum: ['cash', 'card', 'upi', 'wallet', 'netbanking', 'emi'],
     default: null
   },
-  
+
   paymentId: {
     type: String,
     default: null
   },
-  
+
   transactionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Transaction',
     default: null,
     index: true
   },
-  
+
   paymentDate: {
     type: Date,
     default: null
   },
-  
+
   paymentCompletedAt: {
     type: Date,
     default: null
   },
-  
+
   paymentFailedAt: {
     type: Date,
     default: null
   },
-  
+
   // ===========================
   // CONFIRMATION DETAILS
   // ===========================
@@ -252,13 +267,13 @@ const bookingSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  
+
   confirmationNotes: {
     type: String,
     trim: true,
     maxlength: 500
   },
-  
+
   // ===========================
   // REJECTION DETAILS
   // ===========================
@@ -266,19 +281,19 @@ const bookingSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  
+
   rejectionReason: {
     type: String,
     trim: true,
     maxlength: [500, 'Rejection reason cannot exceed 500 characters']
   },
-  
+
   rejectedBy: {
     type: String,
     enum: ['driver', 'admin', 'system'],
     default: null
   },
-  
+
   // ===========================
   // CANCELLATION DETAILS
   // ===========================
@@ -286,47 +301,47 @@ const bookingSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  
+
   cancellationReason: {
     type: String,
     trim: true,
     maxlength: [500, 'Cancellation reason cannot exceed 500 characters']
   },
-  
+
   cancelledBy: {
     type: String,
     enum: ['passenger', 'driver', 'admin', 'system'],
     default: null
   },
-  
+
   cancellationFee: {
     type: Number,
     default: 0,
     min: 0
   },
-  
+
   refundAmount: {
     type: Number,
     default: 0,
     min: 0
   },
-  
+
   refundStatus: {
     type: String,
     enum: ['none', 'initiated', 'processing', 'completed', 'failed'],
     default: 'none'
   },
-  
+
   refundInitiatedAt: {
     type: Date,
     default: null
   },
-  
+
   refundCompletedAt: {
     type: Date,
     default: null
   },
-  
+
   // ===========================
   // COMPLETION DETAILS
   // ===========================
@@ -334,27 +349,27 @@ const bookingSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-  
+
   actualPickupTime: {
     type: Date,
     default: null
   },
-  
+
   actualDropTime: {
     type: Date,
     default: null
   },
-  
+
   actualDistance: {
     type: Number,
     default: null
   },
-  
+
   actualDuration: {
     type: Number,
     default: null
   },
-  
+
   // ===========================
   // RATING & REVIEW
   // ===========================
@@ -364,19 +379,19 @@ const bookingSchema = new mongoose.Schema({
     max: 5,
     default: null
   },
-  
+
   review: {
     type: String,
     trim: true,
     maxlength: [1000, 'Review cannot exceed 1000 characters'],
     default: null
   },
-  
+
   reviewDate: {
     type: Date,
     default: null
   },
-  
+
   // Driver rating (passenger rates driver)
   driverRating: {
     type: Number,
@@ -384,19 +399,19 @@ const bookingSchema = new mongoose.Schema({
     max: 5,
     default: null
   },
-  
+
   driverReview: {
     type: String,
     trim: true,
     maxlength: [1000, 'Driver review cannot exceed 1000 characters'],
     default: null
   },
-  
+
   driverReviewDate: {
     type: Date,
     default: null
   },
-  
+
   // Passenger rating (driver rates passenger)
   passengerRating: {
     type: Number,
@@ -404,49 +419,49 @@ const bookingSchema = new mongoose.Schema({
     max: 5,
     default: null
   },
-  
+
   passengerReview: {
     type: String,
     trim: true,
     maxlength: [1000, 'Passenger review cannot exceed 1000 characters'],
     default: null
   },
-  
+
   passengerReviewDate: {
     type: Date,
     default: null
   },
-  
+
 
 
   razorpayPaymentId: {
     type: String,
     default: null
   },
-  
+
   razorpayOrderId: {
     type: String,
     default: null
   },
-  
+
   razorpaySignature: {
     type: String,
     default: null
   },
-  
+
   // ✅ Add these fields for email tracking (optional but recommended)
   emailSent: {
     type: Boolean,
     default: false
   },
-  
+
   emailSentAt: {
     type: Date,
     default: null
   },
 
 
-  
+
   // ===========================
   // COMMUNICATION
   // ===========================
@@ -455,7 +470,7 @@ const bookingSchema = new mongoose.Schema({
     ref: 'MessageThread',
     default: null
   },
-  
+
   notifications: [{
     type: {
       type: String,
@@ -468,7 +483,7 @@ const bookingSchema = new mongoose.Schema({
     },
     content: String
   }],
-  
+
   // ===========================
   // TRACKING & LOCATION
   // ===========================
@@ -476,18 +491,18 @@ const bookingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
+
   currentLocation: {
     lat: Number,
     lng: Number,
     updatedAt: Date
   },
-  
+
   estimatedArrival: {
     type: Date,
     default: null
   },
-  
+
   // ===========================
   // SPECIAL REQUESTS
   // ===========================
@@ -504,7 +519,7 @@ const bookingSchema = new mongoose.Schema({
       'quiet_ride'
     ]
   }],
-  
+
   stopPoints: [{
     location: String,
     coordinates: {
@@ -518,7 +533,7 @@ const bookingSchema = new mongoose.Schema({
     },
     reachedAt: Date
   }],
-  
+
   // ===========================
   // EMERGENCY
   // ===========================
@@ -526,7 +541,7 @@ const bookingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
+
   emergencyAlerts: [{
     triggeredAt: Date,
     triggeredBy: {
@@ -540,7 +555,7 @@ const bookingSchema = new mongoose.Schema({
     },
     notes: String
   }],
-  
+
   // ===========================
   // METADATA
   // ===========================
@@ -549,24 +564,24 @@ const bookingSchema = new mongoose.Schema({
     enum: ['web', 'mobile_app', 'api', 'admin'],
     default: 'web'
   },
-  
+
   deviceInfo: {
     platform: String,
     osVersion: String,
     appVersion: String,
     deviceModel: String
   },
-  
+
   ipAddress: {
     type: String,
     default: null
   },
-  
+
   userAgent: {
     type: String,
     default: null
   },
-  
+
   // ===========================
   // INTERNAL NOTES
   // ===========================
@@ -575,18 +590,18 @@ const bookingSchema = new mongoose.Schema({
     trim: true,
     maxlength: 1000
   },
-  
+
   adminNotes: {
     type: String,
     trim: true,
     maxlength: 1000
   },
-  
+
   flags: [{
     type: String,
     enum: ['suspicious', 'fraud', 'disputed', 'vip', 'priority']
   }],
-  
+
   // ===========================
   // TIMESTAMPS
   // ===========================
@@ -595,7 +610,7 @@ const bookingSchema = new mongoose.Schema({
     default: Date.now,
     index: true
   },
-  
+
   updatedAt: {
     type: Date,
     default: Date.now
@@ -655,12 +670,12 @@ bookingSchema.virtual('transactionDetails', {
 });
 
 // Virtual for booking age in days
-bookingSchema.virtual('bookingAge').get(function() {
+bookingSchema.virtual('bookingAge').get(function () {
   return Math.floor((Date.now() - this.createdAt) / (1000 * 60 * 60 * 24));
 });
 
 // Virtual for ride date
-bookingSchema.virtual('isUpcoming').get(function() {
+bookingSchema.virtual('isUpcoming').get(function () {
   return this.status === 'confirmed' && this.ride && new Date(this.ride.date) > new Date();
 });
 
@@ -669,7 +684,7 @@ bookingSchema.virtual('isUpcoming').get(function() {
 // ===========================
 
 // Confirm booking
-bookingSchema.methods.confirm = function(notes) {
+bookingSchema.methods.confirm = function (notes) {
   this.status = 'confirmed';
   this.confirmedAt = new Date();
   if (notes) this.confirmationNotes = notes;
@@ -677,7 +692,7 @@ bookingSchema.methods.confirm = function(notes) {
 };
 
 // Reject booking
-bookingSchema.methods.reject = function(reason, rejectedBy = 'driver') {
+bookingSchema.methods.reject = function (reason, rejectedBy = 'driver') {
   this.status = 'rejected';
   this.rejectionReason = reason;
   this.rejectedBy = rejectedBy;
@@ -686,32 +701,32 @@ bookingSchema.methods.reject = function(reason, rejectedBy = 'driver') {
 };
 
 // Cancel booking
-bookingSchema.methods.cancel = function(reason, cancelledBy = 'passenger', cancellationFee = 0) {
+bookingSchema.methods.cancel = function (reason, cancelledBy = 'passenger', cancellationFee = 0) {
   this.status = 'cancelled';
   this.cancellationReason = reason;
   this.cancelledBy = cancelledBy;
   this.cancelledAt = new Date();
   this.cancellationFee = cancellationFee;
-  
+
   // Calculate refund
   if (this.paymentStatus === 'completed') {
     this.refundAmount = this.totalFare - cancellationFee;
     this.refundStatus = 'initiated';
     this.refundInitiatedAt = new Date();
   }
-  
+
   return this.save();
 };
 
 // Complete booking
-bookingSchema.methods.complete = function() {
+bookingSchema.methods.complete = function () {
   this.status = 'completed';
   this.completedAt = new Date();
   return this.save();
 };
 
 // Mark payment as completed
-bookingSchema.methods.completePayment = function(paymentMethod, paymentId, transactionId) {
+bookingSchema.methods.completePayment = function (paymentMethod, paymentId, transactionId) {
   this.paymentStatus = 'completed';
   this.paymentMethod = paymentMethod;
   this.paymentId = paymentId;
@@ -722,7 +737,7 @@ bookingSchema.methods.completePayment = function(paymentMethod, paymentId, trans
 };
 
 // Mark payment as failed
-bookingSchema.methods.failPayment = function(reason) {
+bookingSchema.methods.failPayment = function (reason) {
   this.paymentStatus = 'failed';
   this.paymentFailedAt = new Date();
   this.internalNotes = `Payment failed: ${reason}`;
@@ -730,7 +745,7 @@ bookingSchema.methods.failPayment = function(reason) {
 };
 
 // Add driver rating
-bookingSchema.methods.addDriverRating = function(rating, review) {
+bookingSchema.methods.addDriverRating = function (rating, review) {
   this.driverRating = rating;
   this.driverReview = review;
   this.driverReviewDate = new Date();
@@ -738,7 +753,7 @@ bookingSchema.methods.addDriverRating = function(rating, review) {
 };
 
 // Add passenger rating
-bookingSchema.methods.addPassengerRating = function(rating, review) {
+bookingSchema.methods.addPassengerRating = function (rating, review) {
   this.passengerRating = rating;
   this.passengerReview = review;
   this.passengerReviewDate = new Date();
@@ -746,7 +761,7 @@ bookingSchema.methods.addPassengerRating = function(rating, review) {
 };
 
 // Trigger emergency alert
-bookingSchema.methods.triggerEmergency = function(triggeredBy) {
+bookingSchema.methods.triggerEmergency = function (triggeredBy) {
   this.emergencyAlertActive = true;
   this.emergencyAlerts.push({
     triggeredAt: new Date(),
@@ -757,7 +772,7 @@ bookingSchema.methods.triggerEmergency = function(triggeredBy) {
 };
 
 // Resolve emergency
-bookingSchema.methods.resolveEmergency = function(notes) {
+bookingSchema.methods.resolveEmergency = function (notes) {
   this.emergencyAlertActive = false;
   const lastAlert = this.emergencyAlerts[this.emergencyAlerts.length - 1];
   if (lastAlert) {
@@ -769,7 +784,7 @@ bookingSchema.methods.resolveEmergency = function(notes) {
 };
 
 // Calculate fare breakdown
-bookingSchema.methods.calculateFare = function(baseFarePerSeat, seatsBooked, waivePlatformCharges = false) {
+bookingSchema.methods.calculateFare = function (baseFarePerSeat, seatsBooked, waivePlatformCharges = false) {
   this.baseFare = baseFarePerSeat * seatsBooked;
   const platformFee = this.baseFare * 0.03;
   const gst = waivePlatformCharges
@@ -788,12 +803,12 @@ bookingSchema.methods.calculateFare = function(baseFarePerSeat, seatsBooked, wai
 // ===========================
 
 // Get passenger bookings with filters
-bookingSchema.statics.getPassengerBookings = function(passengerId, filters = {}) {
+bookingSchema.statics.getPassengerBookings = function (passengerId, filters = {}) {
   const query = { passengerId };
-  
+
   if (filters.status) query.status = filters.status;
   if (filters.paymentStatus) query.paymentStatus = filters.paymentStatus;
-  
+
   return this.find(query)
     .populate('ride')
     .populate('driver', 'name phone email verified')
@@ -801,12 +816,12 @@ bookingSchema.statics.getPassengerBookings = function(passengerId, filters = {})
 };
 
 // Get driver bookings
-bookingSchema.statics.getDriverBookings = function(driverId, filters = {}) {
+bookingSchema.statics.getDriverBookings = function (driverId, filters = {}) {
   const query = { driver: driverId };
-  
+
   if (filters.status) query.status = filters.status;
   if (filters.paymentStatus) query.paymentStatus = filters.paymentStatus;
-  
+
   return this.find(query)
     .populate('passenger', 'name phone email')
     .populate('ride')
@@ -814,16 +829,16 @@ bookingSchema.statics.getDriverBookings = function(driverId, filters = {}) {
 };
 
 // Get statistics
-bookingSchema.statics.getStatistics = function(filters = {}) {
+bookingSchema.statics.getStatistics = function (filters = {}) {
   const match = {};
-  
+
   if (filters.startDate && filters.endDate) {
     match.createdAt = {
       $gte: filters.startDate,
       $lte: filters.endDate
     };
   }
-  
+
   return this.aggregate([
     { $match: match },
     {
@@ -839,26 +854,26 @@ bookingSchema.statics.getStatistics = function(filters = {}) {
 // ===========================
 // PRE-SAVE MIDDLEWARE
 // ===========================
-bookingSchema.pre('save', function(next) {
+bookingSchema.pre('save', function (next) {
   this.updatedAt = new Date();
-  
+
   // Auto-calculate final amount if discount exists
   if (this.discountAmount > 0 && !this.finalAmount) {
     this.finalAmount = this.totalFare - this.discountAmount;
   }
-  
+
   // Set finalAmount to totalFare if no discount
   if (!this.finalAmount) {
     this.finalAmount = this.totalFare;
   }
-  
+
   next();
 });
 
 // ===========================
 // POST-SAVE MIDDLEWARE
 // ===========================
-bookingSchema.post('save', async function(doc) {
+bookingSchema.post('save', async function (doc) {
   // Check if this is a new document being confirmed
   if (doc.status === 'confirmed' && doc.isNew) {  // ✅ Use isNew
     try {

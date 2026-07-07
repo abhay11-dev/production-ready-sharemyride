@@ -4,10 +4,11 @@ import RideForm from '../../components/ride/RideForm';
 import { postRide, getMyRides, deleteRide } from '../../services/rideService';
 import { getVerificationStatus } from '../../services/driverVerificationService';
 import { useAuth } from '../../hooks/useAuth';
-import toast from 'react-hot-toast';
+import toastService from '../../services/toastService';
 import PaymentCalculator from '../../utils/paymentCalculator';
 import PaymentBreakdownCard from '../../components/PaymentBreakdownCard';
 import api from '../../config/api.js';
+import { MapPin, Clock, MessageSquare, CheckCheck, Bell, CalendarDays, Ticket, UserCircle2, BadgeCheck, TrendingUp, Handshake, IndianRupee } from 'lucide-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDate(dateStr) {
@@ -490,10 +491,10 @@ function VerificationGate({ verificationStatus }) {
   const c = CONFIG[verificationStatus] || CONFIG.not_started;
 
   const benefits = [
-    { icon: '🔵', text: 'Verified badge on every ride listing' },
-    { icon: '📈', text: 'Higher search ranking, more booking requests' },
-    { icon: '🤝', text: 'Passengers prefer and trust verified drivers' },
-    { icon: '💰', text: 'Transparent payouts after each completed ride' },
+    { icon: <BadgeCheck size={18} strokeWidth={2} className="text-blue-600" aria-hidden="true" />, text: 'Verified badge on every ride listing' },
+    { icon: <TrendingUp size={18} strokeWidth={2} className="text-blue-600" aria-hidden="true" />, text: 'Higher search ranking, more booking requests' },
+    { icon: <Handshake size={18} strokeWidth={2} className="text-blue-600" aria-hidden="true" />, text: 'Passengers prefer and trust verified drivers' },
+    { icon: <IndianRupee size={18} strokeWidth={2} className="text-blue-600" aria-hidden="true" />, text: 'Transparent payouts after each completed ride' },
   ];
 
   return (
@@ -579,7 +580,7 @@ function VerificationGate({ verificationStatus }) {
               <div className="space-y-3">
                 {benefits.map((b, i) => (
                   <div key={i} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                    <span className="text-lg flex-shrink-0">{b.icon}</span>
+                    <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50">{b.icon}</span>
                     <p className="text-sm text-gray-700 font-medium leading-snug">{b.text}</p>
                   </div>
                 ))}
@@ -713,34 +714,26 @@ function RidePost() {
   // ── Post ride handler ─────────────────────────────────────────────────────
   const handlePostRide = async (rideData) => {
     setIsPosting(true);
-    const postingToast = toast.loading('Publishing your ride…', {
-      style: { background: '#2563EB', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
-    });
+    const postingToast = toastService.loading('Publishing your ride…');
+
 
     try {
       const response = await postRide(rideData);
       const newRide = response?.data || response;
       setRides(prev => [newRide, ...prev]);
       setHasPostedAnyRide(true);
-      toast.dismiss(postingToast);
-      toast.success('Ride published! It is now visible to nearby passengers.', {
-        icon: '🚗',
-        duration: 4000,
-        style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
-      });
+      toastService.dismiss(postingToast);
+      toastService.success('Ride published!', 'It is now visible to nearby passengers.');
       setTimeout(() => {
         document.getElementById('my-rides-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 600);
     } catch (err) {
-      toast.dismiss(postingToast);
+      toastService.dismiss(postingToast);
       const rawMsg = err?.response?.data?.message || err?.message || '';
       const msg = /verified|verification|driver role|perform this action|permission/i.test(rawMsg)
         ? 'Could not publish ride. Please try again.'
         : (rawMsg || 'Failed to post ride');
-      toast.error(msg, {
-        duration: 4000,
-        style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
-      });
+      toastService.error(msg);
     } finally {
       setIsPosting(false);
     }
@@ -748,39 +741,14 @@ function RidePost() {
 
   // ── Delete ride ───────────────────────────────────────────────────────────
   const handleDeleteRide = (rideId) => {
-    toast((t) => (
-      <div className="flex flex-col gap-3 min-w-[260px]">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 text-sm">Cancel this ride?</p>
-            <p className="text-xs text-gray-500 mt-0.5">This cannot be undone. All bookings will be cancelled.</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => { toast.dismiss(t.id); performDelete(rideId); }}
-            className="flex-1 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-xl text-xs font-semibold transition-colors"
-          >
-            Yes, cancel
-          </button>
-          <button
-            onClick={() => toast.dismiss(t.id)}
-            className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl text-xs font-semibold transition-colors"
-          >
-            Keep it
-          </button>
-        </div>
-      </div>
-    ), {
-      duration: Infinity,
-      position: 'top-center',
-      style: { background: '#fff', padding: '16px', borderRadius: '16px', boxShadow: '0 10px 40px rgba(0,0,0,0.15)', maxWidth: '360px' },
-    });
+      toastService.confirm({
+        title: 'Cancel this ride?',
+        message: 'This cannot be undone. All bookings will be cancelled.',
+        confirmLabel: 'Yes, cancel',
+        cancelLabel: 'Keep it',
+        danger: true,
+        onConfirm: () => performDelete(rideId),
+      });
   };
 
   const performDelete = async (rideId) => {
@@ -788,15 +756,10 @@ function RidePost() {
     try {
       await deleteRide(rideId);
       setRides(prev => prev.filter(r => r._id !== rideId));
-      toast.success('Ride cancelled', {
-        icon: '✓',
-        style: { background: '#10B981', color: '#fff', fontWeight: '600', borderRadius: '12px' },
-      });
+      toastService.success('Ride cancelled successfully.');
       setTimeout(fetchRides, 600);
     } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to cancel ride', {
-        style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px' },
-      });
+      toastService.error(err?.response?.data?.message || 'Failed to cancel ride');
       fetchRides();
     } finally {
       setDeletingId(null);
@@ -932,13 +895,13 @@ function RidePost() {
               <p className="text-green-700 text-xs font-semibold uppercase tracking-widest mb-3">Tips for more bookings</p>
               <div className="space-y-3">
                 {[
-                  { icon: '📍', tip: 'Add a specific pickup landmark — passengers find you faster.' },
-                  { icon: '⏰', tip: 'Post rides at least a day in advance for maximum visibility.' },
-                  { icon: '💬', tip: 'Add clear pickup instructions — reduces no-shows.' },
-                  { icon: '✅', tip: 'Keep your preferences honest — sets the right expectations.' },
+                  { icon: <MapPin size={14} strokeWidth={2} className="text-green-600 flex-shrink-0 mt-0.5" aria-hidden="true" />, tip: 'Add a specific pickup landmark — passengers find you faster.' },
+                  { icon: <Clock size={14} strokeWidth={2} className="text-green-600 flex-shrink-0 mt-0.5" aria-hidden="true" />, tip: 'Post rides at least a day in advance for maximum visibility.' },
+                  { icon: <MessageSquare size={14} strokeWidth={2} className="text-green-600 flex-shrink-0 mt-0.5" aria-hidden="true" />, tip: 'Add clear pickup instructions — reduces no-shows.' },
+                  { icon: <CheckCheck size={14} strokeWidth={2} className="text-green-600 flex-shrink-0 mt-0.5" aria-hidden="true" />, tip: 'Keep your preferences honest — sets the right expectations.' },
                 ].map((t, i) => (
                   <div key={i} className="flex items-start gap-2.5">
-                    <span className="text-base flex-shrink-0">{t.icon}</span>
+                    {t.icon}
                     <p className="text-xs text-gray-600 leading-relaxed">{t.tip}</p>
                   </div>
                 ))}
@@ -948,17 +911,17 @@ function RidePost() {
             {/* Quick links — same quick action card pattern as Home.jsx */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Ride Requests', to: '/driver/bookings', icon: '🔔', bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
-                { label: 'Upcoming Rides', to: '/upcoming-rides', icon: '📅', bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' },
-                { label: 'My Bookings', to: '/bookings/my-bookings', icon: '🎫', bg: 'bg-green-50 border-green-100', text: 'text-green-700' },
-                { label: 'My Profile', to: '/profile', icon: '👤', bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },
+                { label: 'Ride Requests', to: '/driver/bookings',       icon: <Bell size={20} strokeWidth={1.75} className="text-amber-600" aria-hidden="true" />,   bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
+                { label: 'Upcoming Rides', to: '/upcoming-rides',       icon: <CalendarDays size={20} strokeWidth={1.75} className="text-blue-600" aria-hidden="true" />,    bg: 'bg-blue-50 border-blue-100',   text: 'text-blue-700' },
+                { label: 'My Bookings',  to: '/bookings/my-bookings',  icon: <Ticket size={20} strokeWidth={1.75} className="text-green-600" aria-hidden="true" />,  bg: 'bg-green-50 border-green-100', text: 'text-green-700' },
+                { label: 'My Profile',   to: '/profile',               icon: <UserCircle2 size={20} strokeWidth={1.75} className="text-purple-600" aria-hidden="true" />, bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },
               ].map(card => (
                 <Link
                   key={card.label}
                   to={card.to}
                   className={`${card.bg} border rounded-2xl p-4 flex flex-col items-start gap-1.5 hover:shadow-md transition-all duration-150`}
                 >
-                  <span className="text-xl">{card.icon}</span>
+                  <span className="flex items-center">{card.icon}</span>
                   <span className={`text-xs font-semibold ${card.text}`}>{card.label}</span>
                 </Link>
               ))}
