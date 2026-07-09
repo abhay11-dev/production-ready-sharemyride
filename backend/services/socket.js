@@ -6,10 +6,18 @@
 // changed from `app.listen()` to `http.createServer(app)` + `server.listen()`
 // specifically to make this possible — Express alone has no socket access).
 //
-// Auth: mirrors middleware/auth.js's JWT verification exactly (same
-// JWT_SECRET, same `decoded.id` payload shape) so a client uses the SAME
-// access token for both REST calls and the socket handshake — no separate
-// socket-specific auth system.
+// Auth: mirrors middleware/auth.js's JWT verification (same JWT_SECRET,
+// same `decoded.id` payload shape) so a client uses the SAME access token
+// for both REST calls and the socket handshake — no separate socket-specific
+// auth system.
+//
+// FIX (this session): the handshake now also rejects a refresh token
+// presented as an access token (decoded.type !== 'access'), matching the
+// same check middleware/auth.js's `protect` already performs on REST calls.
+// Also added a server-side 1000-char cap on `message:send` text, matching
+// the Message schema's maxlength and the REST fallback's validation in
+// chatController.sendMessageRest — previously an over-limit message would
+// throw a raw Mongoose validation error instead of a clean ack failure.
 //
 // Rooms: one Socket.IO room per Conversation (`conversation:<id>`). A user
 // joins the rooms for all conversations they're a participant in in one
@@ -44,163 +52,181 @@ let io = null;
 const onlineUsers = new Map();
 
 function markOnline(userId, socketId) {
-    const key = userId.toString();
-    if (!onlineUsers.has(key)) onlineUsers.set(key, new Set());
-    onlineUsers.get(key).add(socketId);
-    return onlineUsers.get(key).size === 1; // true if this is their first connection
+  const key = userId.toString();
+  if (!onlineUsers.has(key)) onlineUsers.set(key, new Set());
+  onlineUsers.get(key).add(socketId);
+  return onlineUsers.get(key).size === 1; // true if this is their first connection
 }
 
 function markOffline(userId, socketId) {
-    const key = userId.toString();
-    const sockets = onlineUsers.get(key);
-    if (!sockets) return true;
-    sockets.delete(socketId);
-    if (sockets.size === 0) {
-        onlineUsers.delete(key);
-        return true; // true if they're now fully offline
-    }
-    return false;
+  const key = userId.toString();
+  const sockets = onlineUsers.get(key);
+  if (!sockets) return true;
+  sockets.delete(socketId);
+  if (sockets.size === 0) {
+    onlineUsers.delete(key);
+    return true; // true if they're now fully offline
+  }
+  return false;
 }
 
 function isOnline(userId) {
-    return onlineUsers.has(userId.toString());
+  return onlineUsers.has(userId.toString());
 }
 
 function initSocket(httpServer) {
-    const { Server } = require('socket.io');
+  const { Server } = require('socket.io');
 
-    io = new Server(httpServer, {
-        cors: {
-            origin: process.env.FRONTEND_URL || '*',
-            credentials: true,
-        },
+  io = new Server(httpServer, {
+    cors: {
+      origin: process.env.FRONTEND_URL || '*',
+      credentials: true,
+    },
+  });
+
+  // ── Auth middleware — runs once per connection ─────────────────────────
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth?.token ||
+        socket.handshake.headers?.authorization?.split(' ')[1];
+
+      if (!token) return next(new Error('No token provided'));
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      if (decoded.type && decoded.type !== 'access') {
+        return next(new Error('Invalid token type'));
+      }
+
+      const user = await User.findById(decoded.id).select('-password');
+      if (!user) return next(new Error('User not found'));
+      if (!user.isActive || user.accountStatus === 'SUSPENDED') {
+        return next(new Error('Account suspended'));
+      }
+
+      socket.user = user;
+      next();
+    } catch (err) {
+      next(new Error('Authentication failed: ' + err.message));
+    }
+  });
+
+  io.on('connection', async (socket) => {
+    const userId = socket.user._id.toString();
+    const firstConnection = markOnline(userId, socket.id);
+
+    // Join a room per conversation this user participates in
+    try {
+      const conversations = await Conversation.find({
+        $or: [{ passenger: userId }, { driver: userId }],
+        isActive: true,
+      }).select('_id').lean();
+
+      conversations.forEach(c => socket.join(`conversation:${c._id}`));
+    } catch (err) {
+      console.warn('⚠️ Socket room join failed:', err.message);
+    }
+
+    if (firstConnection) {
+      io.emit('presence:update', { userId, online: true });
+    }
+
+    // ── message:send ───────────────────────────────────────────────────
+    socket.on('message:send', async ({ conversationId, text }, ack) => {
+      try {
+        if (!text?.trim()) return ack?.({ success: false, message: 'Message text required' });
+        if (text.trim().length > 1000) {
+          return ack?.({ success: false, message: 'Message must be 1000 characters or fewer' });
+        }
+        if (!conversationId) return ack?.({ success: false, message: 'conversationId required' });
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) return ack?.({ success: false, message: 'Conversation not found' });
+
+        const isParticipant = [conversation.passenger.toString(), conversation.driver.toString()].includes(userId);
+        if (!isParticipant) return ack?.({ success: false, message: 'Not a participant in this conversation' });
+
+        // Milestone 5, step 1: quick-scan/mask BEFORE saving (see chatController
+        // for the identical pattern used on the REST send path — both writers
+        // go through the same moderationService functions, not duplicated logic)
+        const { maskedText, quickScanMatches, originalText } = scanAndMask(text.trim());
+
+        const message = await Message.create({
+          conversation: conversationId,
+          sender: userId,
+          type: 'text',
+          text: maskedText,
+        });
+
+        // Milestone 5, step 2: schedule background AI analysis now that the
+        // message has a real _id
+        scheduleAnalysis({ message, conversation, senderId: userId, originalText, quickScanMatches });
+
+        const isPassenger = conversation.passenger.toString() === userId;
+        conversation.lastMessage = { text: maskedText, sender: userId, sentAt: message.createdAt };
+        // Increment the OTHER participant's unread count
+        if (isPassenger) conversation.unreadCount.driver += 1;
+        else conversation.unreadCount.passenger += 1;
+        await conversation.save();
+
+        io.to(`conversation:${conversationId}`).emit('message:new', message);
+        ack?.({ success: true, data: message });
+      } catch (err) {
+        console.error('❌ message:send error:', err.message);
+        ack?.({ success: false, message: 'Server error' });
+      }
     });
 
-    // ── Auth middleware — runs once per connection ─────────────────────────
-    io.use(async (socket, next) => {
-        try {
-            const token = socket.handshake.auth?.token ||
-                socket.handshake.headers?.authorization?.split(' ')[1];
-
-            if (!token) return next(new Error('No token provided'));
-
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            const user = await User.findById(decoded.id).select('-password');
-            if (!user) return next(new Error('User not found'));
-
-            socket.user = user;
-            next();
-        } catch (err) {
-            next(new Error('Authentication failed: ' + err.message));
-        }
+    // ── typing indicators ────────────────────────────────────────────────
+    socket.on('typing:start', ({ conversationId }) => {
+      if (!conversationId) return;
+      socket.to(`conversation:${conversationId}`).emit('typing:update', { conversationId, userId, isTyping: true });
+    });
+    socket.on('typing:stop', ({ conversationId }) => {
+      if (!conversationId) return;
+      socket.to(`conversation:${conversationId}`).emit('typing:update', { conversationId, userId, isTyping: false });
     });
 
-    io.on('connection', async (socket) => {
-        const userId = socket.user._id.toString();
-        const firstConnection = markOnline(userId, socket.id);
+    // ── read receipts ─────────────────────────────────────────────────────
+    socket.on('message:read', async ({ conversationId }) => {
+      try {
+        if (!conversationId) return;
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) return;
 
-        // Join a room per conversation this user participates in
-        try {
-            const conversations = await Conversation.find({
-                $or: [{ passenger: userId }, { driver: userId }],
-                isActive: true,
-            }).select('_id').lean();
+        const isPassenger = conversation.passenger.toString() === userId;
+        const isDriver = conversation.driver.toString() === userId;
+        if (!isPassenger && !isDriver) return;
 
-            conversations.forEach(c => socket.join(`conversation:${c._id}`));
-        } catch (err) {
-            console.warn('⚠️ Socket room join failed:', err.message);
-        }
+        if (isPassenger) conversation.unreadCount.passenger = 0;
+        else conversation.unreadCount.driver = 0;
+        conversation.lastSeenBy = conversation.lastSeenBy || {};
+        conversation.lastSeenBy[isPassenger ? 'passenger' : 'driver'] = new Date();
+        await conversation.save();
 
-        if (firstConnection) {
-            io.emit('presence:update', { userId, online: true });
-        }
-
-        // ── message:send ───────────────────────────────────────────────────
-        socket.on('message:send', async ({ conversationId, text }, ack) => {
-            try {
-                if (!text?.trim()) return ack?.({ success: false, message: 'Message text required' });
-
-                const conversation = await Conversation.findById(conversationId);
-                if (!conversation) return ack?.({ success: false, message: 'Conversation not found' });
-
-                const isParticipant = [conversation.passenger.toString(), conversation.driver.toString()].includes(userId);
-                if (!isParticipant) return ack?.({ success: false, message: 'Not a participant in this conversation' });
-
-                // Milestone 5, step 1: quick-scan/mask BEFORE saving (see chatController
-                // for the identical pattern used on the REST send path — both writers
-                // go through the same moderationService functions, not duplicated logic)
-                const { maskedText, quickScanMatches, originalText } = scanAndMask(text.trim());
-
-                const message = await Message.create({
-                    conversation: conversationId,
-                    sender: userId,
-                    type: 'text',
-                    text: maskedText,
-                });
-
-                // Milestone 5, step 2: schedule background AI analysis now that the
-                // message has a real _id
-                scheduleAnalysis({ message, conversation, senderId: userId, originalText, quickScanMatches });
-
-                const isPassenger = conversation.passenger.toString() === userId;
-                conversation.lastMessage = { text: text.trim(), sender: userId, sentAt: message.createdAt };
-                // Increment the OTHER participant's unread count
-                if (isPassenger) conversation.unreadCount.driver += 1;
-                else conversation.unreadCount.passenger += 1;
-                await conversation.save();
-
-                io.to(`conversation:${conversationId}`).emit('message:new', message);
-                ack?.({ success: true, data: message });
-            } catch (err) {
-                console.error('❌ message:send error:', err.message);
-                ack?.({ success: false, message: 'Server error' });
-            }
+        io.to(`conversation:${conversationId}`).emit('conversation:read', {
+          conversationId, userId, readAt: new Date(),
         });
-
-        // ── typing indicators ────────────────────────────────────────────────
-        socket.on('typing:start', ({ conversationId }) => {
-            socket.to(`conversation:${conversationId}`).emit('typing:update', { conversationId, userId, isTyping: true });
-        });
-        socket.on('typing:stop', ({ conversationId }) => {
-            socket.to(`conversation:${conversationId}`).emit('typing:update', { conversationId, userId, isTyping: false });
-        });
-
-        // ── read receipts ─────────────────────────────────────────────────────
-        socket.on('message:read', async ({ conversationId }) => {
-            try {
-                const conversation = await Conversation.findById(conversationId);
-                if (!conversation) return;
-
-                const isPassenger = conversation.passenger.toString() === userId;
-                if (isPassenger) conversation.unreadCount.passenger = 0;
-                else conversation.unreadCount.driver = 0;
-                conversation.lastSeenBy = conversation.lastSeenBy || {};
-                conversation.lastSeenBy[isPassenger ? 'passenger' : 'driver'] = new Date();
-                await conversation.save();
-
-                io.to(`conversation:${conversationId}`).emit('conversation:read', {
-                    conversationId, userId, readAt: new Date(),
-                });
-            } catch (err) {
-                console.warn('⚠️ message:read error:', err.message);
-            }
-        });
-
-        socket.on('disconnect', () => {
-            const fullyOffline = markOffline(userId, socket.id);
-            if (fullyOffline) {
-                io.emit('presence:update', { userId, online: false, lastSeen: new Date() });
-            }
-        });
+      } catch (err) {
+        console.warn('⚠️ message:read error:', err.message);
+      }
     });
 
-    console.log('🔌 Socket.IO initialized');
-    return io;
+    socket.on('disconnect', () => {
+      const fullyOffline = markOffline(userId, socket.id);
+      if (fullyOffline) {
+        io.emit('presence:update', { userId, online: false, lastSeen: new Date() });
+      }
+    });
+  });
+
+  console.log('🔌 Socket.IO initialized');
+  return io;
 }
 
 function getIO() {
-    if (!io) throw new Error('Socket.IO not initialized — call initSocket(httpServer) first');
-    return io;
+  if (!io) throw new Error('Socket.IO not initialized — call initSocket(httpServer) first');
+  return io;
 }
 
 module.exports = { initSocket, getIO, isOnline };

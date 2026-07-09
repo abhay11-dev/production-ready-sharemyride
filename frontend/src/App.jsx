@@ -5,6 +5,7 @@ import Header from './components/common/Header';
 import Footer from './components/common/Footer';
 import { UserProvider } from './contexts/UserContext';
 import { GoogleMapsProvider } from './contexts/GoogleMapsContext';
+import { SocketProvider } from './contexts/SocketContext';
 import { Toaster, useToasterStore, toast as hotToast } from 'react-hot-toast';
 
 function App() {
@@ -12,7 +13,9 @@ function App() {
     <Router>
       <GoogleMapsProvider>
         <UserProvider>
-          <AppShell />
+          <SocketProvider>
+            <AppShell />
+          </SocketProvider>
         </UserProvider>
       </GoogleMapsProvider>
     </Router>
@@ -37,14 +40,12 @@ function AppShell() {
       const targetPath = `${url.pathname}${url.search}`;
       const currentPath = `${location.pathname}${location.search}`;
 
-      // Same page → smooth scroll to top instead of doing nothing
       if (targetPath === currentPath) {
         event.preventDefault();
         window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
         return;
       }
 
-      // Different page → navigate immediately; scroll reset happens after render
       event.preventDefault();
       navigate(targetPath);
     };
@@ -54,10 +55,6 @@ function AppShell() {
     return () => document.removeEventListener('click', handleInternalLinkClick);
   }, [location.pathname, location.search, navigate]);
 
-  // After every route change, reset scroll position to the very top of the
-  // new page. We use requestAnimationFrame so the DOM has painted the new
-  // page before we scroll — this prevents the old page from visibly
-  // scrolling up before the new one appears.
   useEffect(() => {
     requestAnimationFrame(() => {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -73,7 +70,6 @@ function AppShell() {
           containerStyle={{ top: 72, right: 16, zIndex: 9999 }}
           toastOptions={{
             duration: 4000,
-            // Disable default styles — toastService handles all styling
             style: {},
           }}
         />
@@ -96,8 +92,6 @@ const ToastLimiter = () => {
 
     const visibleToasts = toasts.filter((t) => t.visible);
     if (visibleToasts.length > TOAST_LIMIT) {
-      // Dismiss oldest toasts if limit is exceeded.
-      // react-hot-toast puts newest toasts first in the array.
       const toastsToDismiss = visibleToasts.slice(TOAST_LIMIT);
       toastsToDismiss.forEach((t) => hotToast.dismiss(t.id));
     }

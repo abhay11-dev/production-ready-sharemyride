@@ -9,6 +9,10 @@ import {
   updateReportAction,
   fetchUpcomingRides,   // NEW
   runReminderCheckNow,  // NEW
+  fetchModerationStats,      // NEW — Phase 5
+  fetchModerationFlags,      // NEW — Phase 5
+  fetchModerationFlagById,   // NEW — Phase 5
+  reviewModerationFlag,      // NEW — Phase 5
 } from '../../services/adminService.js';
 import RequestDetailsModal from './RequestDetailsModal.jsx';
 import UserDetailModal from './UserDetailModal.jsx';
@@ -89,6 +93,9 @@ const Icon = {
   eye: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><circle cx="12" cy="12" r="3" strokeWidth={1.8} /></svg>),
   logout: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>),
   sync: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>),
+  // NEW — Phase 5 (Moderation tab). Simple flag glyph, matches the existing
+  // 1.8 stroke-width / 24x24 viewBox convention used by every other icon here.
+  flag: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 21V4a1 1 0 011-1h11.382a1 1 0 01.894 1.447L16 9l2.276 4.553A1 1 0 0117.382 15H6" /></svg>),
 };
 
 /* ─── Constants ─────────────────────────────────────────── */
@@ -102,6 +109,7 @@ const TABS = [
   { id: 'verification', label: 'Driver Verification', icon: Icon.shield },
   { id: 'enquiries', label: 'Enquiries', icon: Icon.chat },
   { id: 'reports', label: 'Reports', icon: Icon.alert },
+  { id: 'moderation', label: 'Moderation', icon: Icon.flag }, // NEW — Phase 5
   { id: 'blogs', label: 'Blogs', icon: Icon.document },
 ];
 
@@ -659,7 +667,7 @@ function BookingsTab() {
   );
 }
 
-/* ─── Upcoming Rides Tab — NEW ──────────────────────────────────────────────
+/* ─── Upcoming Rides Tab ─────────────────────────────────────────────────
    Every accepted + paid booking whose ride is still ahead of us: full route,
    passenger + driver contact info, fare breakdown (base fare / passenger's
    total / driver's payout / platform's cut), and the send status of each of
@@ -1364,6 +1372,312 @@ function ReportsTab() {
   );
 }
 
+/* ─── Moderation Tab — NEW (Phase 5 / Milestone 5 admin UI) ──────────────────
+   Consumes /api/moderation/* (getModerationStats / getFlags / getFlagById /
+   reviewFlag — controllers/moderationController.js). This is a SEPARATE
+   Express router from /api/admin (see ARCHITECTURE.md §6/§11), hence
+   `moderationAxios` in adminService.js rather than the shared `api`
+   (adminAxios) instance every other tab in this file uses.
+
+   originalText (the unmasked message) only ever appears on these admin-only
+   routes — Message.text always stores the masked version. It is rendered
+   here, inside the admin-only dashboard, for review purposes; nowhere else
+   in the app receives or displays it. Follows the same inline-expand +
+   ReplyComposer-style pattern as EnquiriesTab/ReportsTab above rather than a
+   separate modal file, to match those two tabs exactly.
+─────────────────────────────────────────────────────────────────────── */
+function QuickScanPills({ matches }) {
+  if (!matches || matches.length === 0) return null;
+  const CATEGORY_LABEL = {
+    phone: 'Phone number',
+    email: 'Email',
+    upi: 'UPI ID',
+    external_app: 'External app',
+    off_platform_phrase: 'Off-platform phrase',
+  };
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {matches.map((m, i) => (
+        <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+          {CATEGORY_LABEL[m.category] || m.category || 'Unknown'}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function AiAnalysisBlock({ aiAnalysis }) {
+  if (!aiAnalysis || (!(aiAnalysis.categories && aiAnalysis.categories.length) && !aiAnalysis.explanation)) {
+    return <p className="text-xs text-gray-400 italic">No AI analysis recorded — either the quick-scan alone determined severity, or ANTHROPIC_API_KEY was unavailable when this message was processed.</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {aiAnalysis.categories?.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {aiAnalysis.categories.map((c, i) => (
+            <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200 capitalize">
+              {String(c).replace(/_/g, ' ')}
+            </span>
+          ))}
+        </div>
+      )}
+      {aiAnalysis.explanation && <p className="text-sm text-gray-600">{aiAnalysis.explanation}</p>}
+      {aiAnalysis.rawModel && <p className="text-[11px] text-gray-400">Model: {aiAnalysis.rawModel}</p>}
+    </div>
+  );
+}
+
+function FlagReviewForm({ flag, onSubmit, submitting }) {
+  const [note, setNote] = useState(flag.adminNote || '');
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <div>
+        <label className="text-xs font-bold uppercase text-gray-400 block mb-1.5">Admin note (optional)</label>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          rows={2}
+          placeholder="e.g. Verified as false positive, no action needed…"
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none placeholder-gray-400"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-gray-400">
+          {flag.reviewed
+            ? `Already reviewed${flag.reviewedAt ? ' · ' + fmtDT(flag.reviewedAt) : ''} — saving will re-review it.`
+            : 'Marks this flag as reviewed.'}
+        </p>
+        <button
+          onClick={() => onSubmit({ adminNote: note.trim() || undefined, adminName: 'ShareMyRide Admin' })}
+          disabled={submitting}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+        >
+          {submitting ? (
+            <>
+              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+              Saving…
+            </>
+          ) : (flag.reviewed ? 'Update review' : 'Mark reviewed')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Detail fetch happens on expand (getFlagById), not for every row in the
+// list, because it's the only call that returns the fully-populated
+// conversation → passenger/driver detail. If it fails for any reason
+// (network blip), falls back to rendering the list-row data instead of
+// blocking the whole expanded panel.
+function ExpandedFlag({ flag, onReview, submitting }) {
+  const [detail, setDetail] = useState(null);
+  const [loadingDetail, setLoadingDetail] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingDetail(true);
+    fetchModerationFlagById(flag._id)
+      .then(res => { if (!cancelled) setDetail(res.data); })
+      .catch(() => { if (!cancelled) setDetail(flag); })
+      .finally(() => { if (!cancelled) setLoadingDetail(false); });
+    return () => { cancelled = true; };
+  }, [flag._id]);
+
+  const d = detail || flag;
+  const passenger = d.conversation?.passenger;
+  const driver = d.conversation?.driver;
+
+  return (
+    <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50 space-y-4">
+      {loadingDetail && !detail ? (
+        <div className="h-32 bg-white rounded-xl border border-gray-100 animate-pulse" />
+      ) : (
+        <>
+          <div className="grid sm:grid-cols-2 gap-4 text-sm">
+            <div className="bg-blue-50 rounded-xl p-3.5">
+              <p className="text-[11px] font-bold uppercase text-blue-600 mb-1">Passenger</p>
+              <p className="text-sm font-semibold text-gray-900">{passenger?.name || '—'}</p>
+              <p className="text-xs text-gray-500">{passenger?.email || '—'}{passenger?.phone ? ` · ${passenger.phone}` : ''}</p>
+            </div>
+            <div className="bg-green-50 rounded-xl p-3.5">
+              <p className="text-[11px] font-bold uppercase text-green-600 mb-1">Driver</p>
+              <p className="text-sm font-semibold text-gray-900">{driver?.name || '—'}</p>
+              <p className="text-xs text-gray-500">{driver?.email || '—'}{driver?.phone ? ` · ${driver.phone}` : ''}</p>
+            </div>
+          </div>
+
+          <div>
+            <span className="text-xs font-bold uppercase text-gray-400">Masked message (as delivered to both parties)</span>
+            <p className="text-gray-700 mt-1 text-sm bg-white border border-gray-200 rounded-lg p-3 whitespace-pre-wrap break-words">
+              {d.message?.text || '—'}
+            </p>
+          </div>
+
+          <div>
+            <span className="text-xs font-bold uppercase text-red-500">Original text — unmasked, admin only</span>
+            <p className="text-gray-800 mt-1 text-sm bg-red-50 border border-red-200 rounded-lg p-3 whitespace-pre-wrap break-words">
+              {d.originalText || '—'}
+            </p>
+          </div>
+
+          <div>
+            <span className="text-xs font-bold uppercase text-gray-400 block mb-1.5">Quick-scan matches</span>
+            {d.quickScanMatches?.length > 0
+              ? <QuickScanPills matches={d.quickScanMatches} />
+              : <p className="text-xs text-gray-400 italic">None — this flag was raised by the AI pass only.</p>}
+          </div>
+
+          <div>
+            <span className="text-xs font-bold uppercase text-gray-400 block mb-1.5">AI analysis</span>
+            <AiAnalysisBlock aiAnalysis={d.aiAnalysis} />
+          </div>
+
+          <div className="flex items-center gap-4 text-xs text-gray-400">
+            <span>Flagged {fmtDT(d.createdAt)}</span>
+            {d.adminNotified && <Badge label="Admin notified" color="purple" />}
+          </div>
+
+          {d.adminNote && (
+            <div>
+              <span className="text-xs font-bold uppercase text-gray-400">Previous admin note</span>
+              <p className="text-gray-700 mt-1 text-sm whitespace-pre-wrap">{d.adminNote}</p>
+            </div>
+          )}
+
+          <div>
+            <span className="text-xs font-bold uppercase text-gray-400 mb-2 block">Review</span>
+            <FlagReviewForm flag={d} submitting={submitting} onSubmit={(payload) => onReview(d._id, payload)} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ModerationTab() {
+  const [flags, setFlags] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [severityF, setSeverityF] = useState('all');
+  const [reviewedF, setReviewedF] = useState('unreviewed'); // default to the actionable queue
+  const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState(null);
+  const [submittingId, setSubmittingId] = useState(null);
+  const LIMIT = 20;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = { page, limit: LIMIT };
+      if (severityF !== 'all') params.severity = severityF;
+      if (reviewedF !== 'all') params.reviewed = reviewedF === 'reviewed' ? 'true' : 'false';
+      const res = await fetchModerationFlags(params);
+      setFlags(res.data || []);
+      setTotal(res.pagination?.total || 0);
+    } catch { toast.error('Failed to load moderation flags'); }
+    finally { setLoading(false); }
+  }, [page, severityF, reviewedF]);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await fetchModerationStats();
+      setStats(res.data || null);
+    } catch { /* non-blocking — stats row just stays hidden on failure */ }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadStats(); }, [loadStats]);
+  useEffect(() => { setPage(1); }, [severityF, reviewedF]);
+
+  const handleReview = async (id, payload) => {
+    setSubmittingId(id);
+    try {
+      await reviewModerationFlag(id, payload);
+      toast.success('Flag marked reviewed');
+      load();
+      loadStats();
+    } catch { toast.error('Failed to save review'); }
+    finally { setSubmittingId(null); }
+  };
+
+  const SEVERITY_OPTS = [
+    { value: 'all', label: 'All' }, { value: 'critical', label: 'Critical' },
+    { value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' },
+  ];
+  const REVIEWED_OPTS = [
+    { value: 'unreviewed', label: 'Needs review' },
+    { value: 'reviewed', label: 'Reviewed' },
+    { value: 'all', label: 'All' },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div>
+          <h2 className="text-base font-bold text-gray-900">Moderation</h2>
+          <p className="text-xs text-gray-400 mt-0.5">AI + regex chat safety flags · {fmt(total)} matching current filters</p>
+        </div>
+      </div>
+
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+          <StatCard label="Unreviewed" value={stats.totalUnreviewed} icon={Icon.flag} color="amber" />
+          <StatCard label="Critical (unreviewed)" value={stats.unreviewedBySeverity?.critical || 0} icon={Icon.alert} color="red" />
+          <StatCard label="High (unreviewed)" value={stats.unreviewedBySeverity?.high || 0} icon={Icon.alert} color="amber" />
+          <StatCard label="Admin notified" value={stats.totalAdminNotified} icon={Icon.shield} color="purple" sub="Critical flags — email send is Milestone 8, not built yet" />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <FilterPills options={REVIEWED_OPTS} value={reviewedF} onChange={setReviewedF} />
+        <FilterPills options={SEVERITY_OPTS} value={severityF} onChange={setSeverityF} />
+      </div>
+
+      {loading
+        ? <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-20 bg-white rounded-2xl border border-gray-100 animate-pulse" />)}</div>
+        : flags.length === 0
+          ? <div className="bg-white rounded-2xl border border-gray-200 p-12">
+              <EmptyState message={reviewedF === 'unreviewed' ? 'Nothing needs review right now' : 'No flags found'} />
+            </div>
+          : (
+            <div className="space-y-2">
+              {flags.map(f => (
+                <div key={f._id} className={`bg-white rounded-2xl border overflow-hidden ${f.severity === 'critical' ? 'border-red-200' : 'border-gray-200'}`}>
+                  <div className="p-5 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => setExpanded(expanded === f._id ? null : f._id)}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <p className="font-semibold text-sm text-gray-900">{f.sender?.name || 'Unknown sender'}</p>
+                          <StatusBadge status={f.severity} />
+                          <Badge label={f.reviewed ? 'Reviewed' : 'Needs review'} color={f.reviewed ? 'green' : 'amber'} />
+                        </div>
+                        <p className="text-xs text-gray-400">{f.sender?.email || '—'}{f.sender?.phone ? ` · ${f.sender.phone}` : ''}</p>
+                        <p className="text-sm text-gray-600 mt-1.5 line-clamp-1">{f.message?.text || '(message unavailable)'}</p>
+                        <div className="mt-2"><QuickScanPills matches={f.quickScanMatches} /></div>
+                        <p className="text-xs text-gray-400 mt-1.5">{fmtDT(f.createdAt)}</p>
+                      </div>
+                      <svg className={`w-4 h-4 text-gray-300 transition-transform flex-shrink-0 ${expanded === f._id ? 'rotate-180' : ''}`}
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {expanded === f._id && (
+                    <ExpandedFlag flag={f} onReview={handleReview} submitting={submittingId === f._id} />
+                  )}
+                </div>
+              ))}
+              <Pagination page={page} total={total} limit={LIMIT} onPage={setPage} />
+            </div>
+          )}
+    </div>
+  );
+}
+
 /* ─── Blogs Tab ─────────────────────────────────────────── */
 function BlogsTab() {
   const [blogs, setBlogs] = useState([]);
@@ -1583,6 +1897,7 @@ export default function AdminDashboard() {
         {activeTab === 'verification' && <VerificationTab requests={verRequests} onUpdate={handleUpdateVerification} onRefresh={loadCore} />}
         {activeTab === 'enquiries' && <EnquiriesTab />}
         {activeTab === 'reports' && <ReportsTab />}
+        {activeTab === 'moderation' && <ModerationTab />}
         {activeTab === 'blogs' && <BlogsTab />}
       </main>
     </div>

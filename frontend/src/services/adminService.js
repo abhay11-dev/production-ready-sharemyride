@@ -6,12 +6,13 @@ import axios from 'axios';
  * ⚠️ RECONSTRUCTION NOTE:
  * I don't have your actual original adminService.js file — only the exports
  * your codebase visibly imports from it (`fetchRequests`, `updateRequestStatus`,
- * `adminAxios` in AdminDashboard.jsx). This file rebuilds those plus the NEW
- * additions needed for the enquiry/report reply + email-sync flow.
+ * `adminAxios` in AdminDashboard.jsx). This file rebuilds those plus the
+ * enquiry/report reply + email-sync flow, plus (NEW, this pass) the
+ * Moderation admin API (Phase 5 / Milestone 5's missing frontend half).
  *
  * If your real file has more exports than this (it likely does — things like
  * fetchVerificationDocument per the build guide, or other admin helpers),
- * copy this file's NEW section (marked below) into your actual file instead
+ * copy this file's NEW sections (marked below) into your actual file instead
  * of replacing it wholesale.
  */
 
@@ -57,7 +58,7 @@ export const fetchVerificationDocument = (id, documentType) =>
     .get(`/verifications/${id}/document/${documentType}`, { responseType: 'blob' })
     .then((r) => ({ blob: r.data, contentType: r.headers['content-type'] || r.data.type }));
 
-// ─── Enquiries / Reports — NEW ──────────────────────────────────────────────
+// ─── Enquiries / Reports ─────────────────────────────────────────────────────
 // Both `contact_*` (Enquiries tab) and `report_*` (Reports tab) inquiry types
 // live in the same Inquiry model and go through the same backend handler
 // (adminController.updateEnquiry, aliased as updateReport). These two helpers
@@ -114,5 +115,73 @@ export const fetchUpcomingRides = (page = 1, limit = 15) =>
 export const runReminderCheckNow = () =>
   adminAxios.post('/run-reminder-check').then((r) => r.data);
 
-// ─── Export the raw instance too, for ad-hoc calls (as AdminDashboard.jsx does) ──
-export { adminAxios };
+// ─── Moderation — NEW (Phase 5 / Milestone 5 admin UI) ───────────────────────
+// IMPORTANT: /api/moderation is mounted as its OWN router in server.js, a
+// sibling of /api/admin, NOT nested under it (see ARCHITECTURE.md §6 / §11
+// and CODEBASE_GUIDE.md §4). That means it cannot go through `adminAxios`
+// (baseURL `${API_URL}/admin`) — a call like `adminAxios.get('/moderation/flags')`
+// would resolve to `${API_URL}/admin/moderation/flags`, which doesn't exist.
+// It still uses the same adminToken/protectAdmin auth, just a different base
+// path, so it gets its own axios instance mirroring adminAxios exactly.
+const moderationAxios = axios.create({ baseURL: `${API_URL}/moderation` });
+
+moderationAxios.interceptors.request.use((config) => {
+  const token = localStorage.getItem('adminToken');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+moderationAxios.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('isAdminAuthenticated');
+    }
+    return Promise.reject(err);
+  }
+);
+
+/**
+ * Aggregate moderation counts for the dashboard widget row.
+ * GET /api/moderation/stats
+ * @returns {Promise<{ success: boolean, data: { total, totalUnreviewed,
+ *   totalAdminNotified, bySeverity, unreviewedBySeverity } }>}
+ */
+export const fetchModerationStats = () =>
+  moderationAxios.get('/stats').then((r) => r.data);
+
+/**
+ * Fetch paginated, filterable moderation flags.
+ * GET /api/moderation/flags
+ * @param {{page?: number, limit?: number, severity?: string, reviewed?: 'true'|'false', conversation?: string}} params
+ *   `severity` accepts a comma-separated list (e.g. "high,critical") per the
+ *   backend controller; the frontend only ever sends one value at a time.
+ * @returns {Promise<{ success: boolean, data: Array, pagination: object }>}
+ */
+export const fetchModerationFlags = (params = {}) =>
+  moderationAxios.get('/flags', { params }).then((r) => r.data);
+
+/**
+ * Fetch a single moderation flag with full population — includes the
+ * unmasked `originalText` and the conversation's passenger/driver detail
+ * that the list endpoint doesn't populate.
+ * GET /api/moderation/flags/:id
+ */
+export const fetchModerationFlagById = (id) =>
+  moderationAxios.get(`/flags/${id}`).then((r) => r.data);
+
+/**
+ * Mark a flag reviewed (or re-reviewed), optionally attaching a note.
+ * Note: the backend has no real admin User document to set `reviewedBy` to
+ * (protectAdmin is a synthetic JWT payload, not a User row) — `adminName`
+ * gets folded into `adminNote` server-side instead. See moderationController.js.
+ * POST /api/moderation/flags/:id/review
+ * @param {string} id
+ * @param {{adminNote?: string, adminName?: string}} payload
+ */
+export const reviewModerationFlag = (id, { adminNote, adminName } = {}) =>
+  moderationAxios.post(`/flags/${id}/review`, { adminNote, adminName }).then((r) => r.data);
+
+// ─── Export the raw instances too, for ad-hoc calls (as AdminDashboard.jsx does) ──
+export { adminAxios, moderationAxios };

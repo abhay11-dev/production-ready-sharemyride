@@ -227,11 +227,11 @@ class WebhookController {
       // Update booking status
       booking.paymentStatus = 'paid';
       booking.paymentMode = payment.method || 'online';
-      booking.status = 'confirmed';
+      booking.status = 'accepted';
 
       await ride.save({ session });
 
-      console.log(`[${webhookId}] Booking confirmed: ${booking._id} in ride: ${ride._id}`);
+      console.log(`[${webhookId}] Booking accepted: ${booking._id} in ride: ${ride._id}`);
 
       // Auto-create payout if enabled
       if (process.env.AUTO_PAYOUT_ENABLED === 'true') {

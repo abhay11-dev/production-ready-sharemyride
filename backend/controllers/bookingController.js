@@ -159,7 +159,7 @@ exports.createBooking = async (req, res) => {
     const existingBooking = await Booking.findOne({
       passenger: userId,
       ride: rideId,
-      status: { $in: ['pending', 'confirmed', 'accepted'] }
+      status: { $in: ['pending', 'accepted'] }
     });
 
     if (existingBooking) {

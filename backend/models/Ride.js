@@ -1,12 +1,11 @@
 // models/Ride.js
-// Updated with Geoapify coordinate-based pickup/destination fields.
+// Updated with Geoapify coordinate-based pickup/destination fields
+// AND round-trip linking fields (isRoundTrip, roundTripGroupId, linkedRideId, tripLeg, returnDate, returnTime).
 // All existing fields, methods, statics, middleware, and indexes preserved.
-// New fields: pickup{} and destination{} sub-objects with lat/lng/placeId.
-// Legacy `start` and `end` string fields are kept and auto-synced via pre-save.
 
 const mongoose = require('mongoose');
 
-// ─── New: Geoapify location sub-schema ───────────────────────────────────────
+// ─── Geoapify location sub-schema ────────────────────────────────────────────
 const locationSchema = new mongoose.Schema(
   {
     address: { type: String, default: '' },
@@ -61,9 +60,7 @@ const rideSchema = new mongoose.Schema({
   },
 
   // ===========================
-  // NEW: GEOAPIFY STRUCTURED LOCATIONS
-  // Populated when a user selects from the autocomplete.
-  // Falls back gracefully to start/end text if not present.
+  // GEOAPIFY STRUCTURED LOCATIONS
   // ===========================
   pickup: {
     type: locationSchema,
@@ -261,6 +258,33 @@ const rideSchema = new mongoose.Schema({
   }],
 
   // ===========================
+  // ROUND TRIP LINKING (NEW)
+  // Each leg of a round trip is a fully independent Ride document — this
+  // section only stores enough metadata to connect the two legs and to let
+  // a future "repost this trip" feature reconstruct the pairing without
+  // re-deriving anything. Nothing here ever causes one leg to be mutated
+  // by the other after creation.
+  // ===========================
+  isRoundTrip: { type: Boolean, default: false },
+  roundTripGroupId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null,
+    index: true
+  },
+  linkedRideId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Ride',
+    default: null
+  },
+  tripLeg: {
+    type: String,
+    enum: ['outbound', 'return', null],
+    default: null
+  },
+  returnDate: { type: Date, default: null },
+  returnTime: { type: String, default: null },
+
+  // ===========================
   // SAFETY & TRACKING
   // ===========================
   liveLocationSharing: { type: Boolean, default: false },
@@ -305,7 +329,7 @@ const rideSchema = new mongoose.Schema({
 });
 
 // ===========================
-// INDEXES — original preserved + new geo indexes
+// INDEXES
 // ===========================
 rideSchema.index({ start: 1, end: 1, date: 1 });
 rideSchema.index({ driverId: 1, createdAt: -1 });
@@ -315,11 +339,10 @@ rideSchema.index({ rideStatus: 1, isActive: 1 });
 rideSchema.index({ date: 1, time: 1 });
 rideSchema.index({ 'vehicle.type': 1 });
 rideSchema.index({ featured: 1, verified: 1 });
-
-// New: coordinate-based geo indexes for proximity search
 rideSchema.index({ 'pickup.latitude': 1, 'pickup.longitude': 1 });
 rideSchema.index({ 'destination.latitude': 1, 'destination.longitude': 1 });
 rideSchema.index({ 'pickup.city': 1, 'destination.city': 1, date: 1 });
+rideSchema.index({ roundTripGroupId: 1 });
 
 // ===========================
 // VIRTUAL FIELDS
@@ -393,7 +416,7 @@ rideSchema.methods.updateAvailableSeats = function () {
   let bookedSeats = 0;
   if (this.bookings && this.bookings.length > 0) {
     this.bookings.forEach(booking => {
-      if (booking.status === 'confirmed' || booking.status === 'pending') {
+      if (['pending', 'accepted'].includes(booking.status)) {
         bookedSeats += booking.seatsBooked || 0;
       }
     });
@@ -434,16 +457,19 @@ rideSchema.statics.getDriverRides = function (driverId, filters = {}) {
     .sort({ createdAt: -1 });
 };
 
+// NEW: fetch both legs of a round trip together, given either leg's id
+rideSchema.statics.getRoundTripGroup = function (groupId) {
+  return this.find({ roundTripGroupId: groupId }).sort({ tripLeg: 1 });
+};
+
 // ===========================
 // PRE-SAVE MIDDLEWARE
 // ===========================
 rideSchema.pre('save', function (next) {
-  // Set availableSeats on new rides
   if (this.isNew && this.availableSeats === undefined) {
     this.availableSeats = this.seats;
   }
 
-  // Sync all driver reference fields
   if (this.isModified('driver')) {
     if (!this.driverId) this.driverId = this.driver;
     if (!this.postedBy) this.postedBy = this.driver;
@@ -457,8 +483,6 @@ rideSchema.pre('save', function (next) {
     if (!this.driverId) this.driverId = this.postedBy;
   }
 
-  // NEW: sync pickup/destination structs → legacy start/end strings
-  // so old code paths that read ride.start / ride.end still work
   if (this.pickup && this.pickup.address) {
     this.start = this.pickup.address;
   }
@@ -466,8 +490,6 @@ rideSchema.pre('save', function (next) {
     this.end = this.destination.address;
   }
 
-  // NEW: sync legacy start/end → pickup/destination structs (minimal, no coords)
-  // so rides posted without Geoapify still have the struct fields populated
   if (!this.pickup || !this.pickup.address) {
     if (this.start) {
       this.pickup = {

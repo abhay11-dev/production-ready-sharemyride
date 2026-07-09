@@ -14,6 +14,12 @@
 //   GET  /api/chat/conversations               getMyConversations
 //   GET  /api/chat/conversations/:id/messages  getMessages (paginated)
 //   POST /api/chat/conversations/:id/messages  sendMessageRest
+//
+// FIX (this session): driver-ref lookup now falls back across
+// driverId/postedBy/driver (matching the $or convention documented in
+// CODEBASE_GUIDE.md §8.7 for "this driver's rides" queries elsewhere in the
+// app), and sendMessageRest now validates message length up front instead
+// of letting a Mongoose validation error surface as a raw 500.
 
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
@@ -43,7 +49,7 @@ exports.getOrCreateConversation = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Ride not found or no longer active' });
         }
 
-        const driverId = ride.driverId || ride.postedBy;
+        const driverId = ride.driverId || ride.postedBy || ride.driver;
         if (!driverId) {
             return res.status(422).json({ success: false, message: 'Ride has no driver on record' });
         }
@@ -70,11 +76,15 @@ exports.getOrCreateConversation = async (req, res) => {
         // Unique index race: two near-simultaneous requests both trying to
         // create the same (ride, passenger, driver) conversation
         if (error.code === 11000) {
-            const conversation = await Conversation.findOne({
-                ride: req.body.rideId,
-                passenger: req.user._id,
-            });
-            if (conversation) return res.json({ success: true, data: conversation });
+            try {
+                const conversation = await Conversation.findOne({
+                    ride: req.body.rideId,
+                    passenger: req.user._id,
+                });
+                if (conversation) return res.json({ success: true, data: conversation });
+            } catch (raceErr) {
+                console.error('❌ getOrCreateConversation race-recovery error:', raceErr);
+            }
         }
         console.error('❌ getOrCreateConversation error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
@@ -90,7 +100,7 @@ exports.getMyConversations = async (req, res) => {
             $or: [{ passenger: req.user._id }, { driver: req.user._id }],
             isActive: true,
         })
-            .populate('ride', 'start end date time fare')
+            .populate('ride', 'start end date time fare rideStatus')
             .populate('passenger', 'name avatar')
             .populate('driver', 'name avatar')
             .sort({ updatedAt: -1 })
@@ -148,6 +158,9 @@ exports.sendMessageRest = async (req, res) => {
     try {
         const { text } = req.body;
         if (!text?.trim()) return res.status(400).json({ success: false, message: 'Message text is required' });
+        if (text.trim().length > 1000) {
+            return res.status(400).json({ success: false, message: 'Message must be 1000 characters or fewer' });
+        }
 
         const conversation = await Conversation.findById(req.params.id);
         if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
@@ -170,7 +183,7 @@ exports.sendMessageRest = async (req, res) => {
         // the background AI analysis (fire-and-forget, never awaited here).
         scheduleAnalysis({ message, conversation, senderId: req.user._id, originalText, quickScanMatches });
 
-        conversation.lastMessage = { text: text.trim(), sender: req.user._id, sentAt: message.createdAt };
+        conversation.lastMessage = { text: maskedText, sender: req.user._id, sentAt: message.createdAt };
         if (role === 'passenger') conversation.unreadCount.driver += 1;
         else conversation.unreadCount.passenger += 1;
         await conversation.save();

@@ -1,97 +1,90 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// NEGOTIATION CARDS — Milestone 2 (see PROJECT_STATE.md §6/§7)
+// src/utils/negotiationActions.js
 //
-// Pure logic: given a ride (as returned by searchRides, so it may carry
-// matchTier/matchType from Milestone 1), decide which of the 5 negotiation
-// actions from the spec should be offered:
-//   - Chat with Driver
-//   - Negotiate Ride     (fare negotiation)
-//   - Request Partial Ride
-//   - Discuss Pickup
-//   - Discuss Drop
+// MILESTONE 2/3 (frontend) — defines the 5 canonical negotiation action
+// types and which ones are eligible for a given ride. These keys match
+// Negotiation.source in the backend model 1:1 — no translation layer.
 //
-// DEFAULT RULES IN EFFECT (not yet confirmed by user — see PROJECT_STATE.md
-// §5 Decisions Log; override here if the answer differs):
-//   - "Negotiate Ride" shows when ride.negotiableFare === true
-//     (chosen over the broader "OR allowPartialRoute" option, since fare
-//     negotiation and partial-route requests are conceptually different asks
-//     and conflating them would make "Negotiate Ride" fire on every partial
-//     match even when the driver never opted into fare negotiation)
-//   - "Request Partial Ride" shows when ride.allowPartialRoute === true AND
-//     the ride is not already an exact door-to-door match (matchTier > 1,
-//     or no matchTier available e.g. viewed outside search context — shown
-//     by default in that case since we can't rule it out)
-//   - "Discuss Pickup" shows for nearby-origin-only matches (matchTier 4) or
-//     any negotiable ride that isn't an exact match
-//   - "Discuss Drop" shows for nearby-destination-only matches (matchTier 5)
-//     or any negotiable ride that isn't an exact match
-//   - "Chat with Driver" always shows for any active ride — it's the lowest-
-//     friction action and every negotiation starts with a message anyway
-//
-// This file has ZERO backend dependency. Milestone 3 will add the real
-// Negotiation API; until then, action handlers in NegotiationActions.jsx
-// show a "coming soon" toast instead of calling an endpoint.
-// ═══════════════════════════════════════════════════════════════════════════
+// Eligibility rules here MUST stay in sync with the server-side checks in
+// negotiationController.initiateNegotiation (negotiate_fare requires
+// ride.negotiableFare, request_partial requires ride.allowPartialRoute).
+// The frontend check only controls which buttons render; the backend check
+// is the actual authorization boundary — see negotiationController.js.
 
+export const NEGOTIATION_ACTIONS = {
+  chat: {
+    key: 'chat',
+    label: 'Chat',
+    icon: 'MessageCircle',
+    description: 'Ask the driver a question before booking.',
+  },
+  negotiate_fare: {
+    key: 'negotiate_fare',
+    label: 'Negotiate fare',
+    icon: 'IndianRupee',
+    description: 'Propose a different fare for this ride.',
+  },
+  request_partial: {
+    key: 'request_partial',
+    label: 'Partial route',
+    icon: 'Route',
+    description: 'Ask to book only part of this route.',
+  },
+  discuss_pickup: {
+    key: 'discuss_pickup',
+    label: 'Pickup point',
+    icon: 'MapPin',
+    description: 'Suggest a different pickup point.',
+  },
+  discuss_drop: {
+    key: 'discuss_drop',
+    label: 'Drop point',
+    icon: 'MapPinOff',
+    description: 'Suggest a different drop-off point.',
+  },
+};
+
+const ROUTE_DISCUSSION_ELIGIBLE_MATCH_TYPES = ['nearby', 'partial', 'negotiation'];
+
+/**
+ * Returns the list of negotiation actions eligible for a given ride, based
+ * on Smart Search tier/matchType and ride-level flags (Milestone 1 fields).
+ *
+ * @param {Object} ride - a search-result ride, as returned by
+ *   rideService.searchRides (carries matchTier/matchType/negotiableFare/
+ *   allowPartialRoute alongside the normal Ride fields)
+ * @returns {Array<Object>} eligible action descriptors, each shaped like an
+ *   entry of NEGOTIATION_ACTIONS
+ */
 export function getNegotiationActions(ride) {
-    if (!ride) return [];
+  if (!ride || ride.rideStatus === 'cancelled' || ride.rideStatus === 'completed') return [];
 
-    const tier = typeof ride.matchTier === 'number' ? ride.matchTier : null;
-    const isExactMatch = tier === 1; // Tier 1 = same pickup AND same drop, nothing to negotiate
-    const negotiable = !!ride.negotiableFare;
-    const allowsPartial = !!ride.allowPartialRoute;
+  const actions = [];
 
-    const actions = [];
+  // Chat is always available on any active, bookable ride — it's the
+  // lowest-friction entry point and doesn't require any special ride flag.
+  actions.push(NEGOTIATION_ACTIONS.chat);
 
-    // Always available — the entry point into any negotiation
-    actions.push({
-        key: 'chat',
-        label: 'Chat with Driver',
-        style: 'primary',
-    });
+  if (ride.negotiableFare) {
+    actions.push(NEGOTIATION_ACTIONS.negotiate_fare);
+  }
 
-    if (negotiable) {
-        actions.push({
-            key: 'negotiate_fare',
-            label: 'Negotiate Ride',
-            style: 'accent',
-        });
-    }
+  if (ride.allowPartialRoute) {
+    actions.push(NEGOTIATION_ACTIONS.request_partial);
+  }
 
-    if (allowsPartial && !isExactMatch) {
-        actions.push({
-            key: 'request_partial',
-            label: 'Request Partial Ride',
-            style: 'secondary',
-        });
-    }
+  // Pickup/drop discussion makes sense for route-matched results (Smart
+  // Search tiers 3-6) where the passenger's exact point may legitimately
+  // differ from the ride's default start/end.
+  const isRouteMatched =
+    ROUTE_DISCUSSION_ELIGIBLE_MATCH_TYPES.includes(ride.matchType) ||
+    (typeof ride.matchTier === 'number' && ride.matchTier >= 3);
 
-    if (!isExactMatch && (tier === 4 || negotiable)) {
-        actions.push({
-            key: 'discuss_pickup',
-            label: 'Discuss Pickup',
-            style: 'secondary',
-        });
-    }
+  if (isRouteMatched) {
+    actions.push(NEGOTIATION_ACTIONS.discuss_pickup);
+    actions.push(NEGOTIATION_ACTIONS.discuss_drop);
+  }
 
-    if (!isExactMatch && (tier === 5 || negotiable)) {
-        actions.push({
-            key: 'discuss_drop',
-            label: 'Discuss Drop',
-            style: 'secondary',
-        });
-    }
-
-    return actions;
+  return actions;
 }
 
-// Human-readable "coming soon" copy per action — shown until Milestone 3
-// (the real Negotiation API) exists. Centralized here so swapping this for
-// a real API call later is a one-place change.
-export const NEGOTIATION_COMING_SOON_COPY = {
-    chat: "Direct chat is launching soon — you'll be able to message the driver right here.",
-    negotiate_fare: "Fare negotiation is launching soon — you'll be able to propose your own price.",
-    request_partial: "Partial-ride requests are launching soon — you'll be able to ask to join for part of the route.",
-    discuss_pickup: "Pickup negotiation is launching soon — you'll be able to suggest a different pickup point.",
-    discuss_drop: "Drop negotiation is launching soon — you'll be able to suggest a different drop point.",
-};
+export default { NEGOTIATION_ACTIONS, getNegotiationActions };

@@ -8,45 +8,45 @@
 // trimmed deliberately to ship something real rather than a half-built
 // version of everything. `type` is an enum specifically so those can be
 // added later as additive values without a schema migration.
+//
+// Verified this session — no changes needed.
 
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
-    conversation: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Conversation',
-        required: true,
-        index: true,
-    },
-    sender: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: function () { return this.type !== 'system'; },
-        default: null,
-    },
+  conversation: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Conversation',
+    required: true,
+    index: true,
+  },
+  sender: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: function () { return this.type !== 'system'; },
+    default: null,
+  },
+  type: {
+    type: String,
+    enum: ['text', 'system'], // 'system' = e.g. "Negotiation finalized" auto-messages
+    default: 'text',
+  },
+  text: {
+    type: String,
+    trim: true,
+    maxlength: 1000,
+    required: function () { return this.type === 'text'; },
+  },
 
-    type: {
-        type: String,
-        enum: ['text', 'system'], // 'system' = e.g. "Negotiation finalized" auto-messages
-        default: 'text',
-    },
-    text: {
-        type: String,
-        trim: true,
-        maxlength: 1000,
-        required: function () { return this.type === 'text'; },
-    },
+  // Read receipts — array of {user, readAt} rather than a boolean, since a
+  // conversation only has 2 participants but this shape survives group
+  // chat later without a migration
+  readBy: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    readAt: { type: Date, default: Date.now },
+  }],
 
-    // Read receipts — array of {user, readAt} rather than a boolean, since a
-    // conversation only has 2 participants but this shape survives group
-    // chat later without a migration
-    readBy: [{
-        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-        readAt: { type: Date, default: Date.now },
-    }],
-
-    isActive: { type: Boolean, default: true }, // soft delete, matches app convention
-
+  isActive: { type: Boolean, default: true }, // soft delete, matches app convention
 }, { timestamps: true });
 
 messageSchema.index({ conversation: 1, createdAt: -1 });

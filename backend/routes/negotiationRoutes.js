@@ -9,6 +9,8 @@
 // stricter one, since introducing a second inconsistency wasn't worth it
 // for a brand-new route file. Flagged in PROJECT_STATE.md as a decision,
 // not silently made.
+//
+// Verified this session — no changes needed.
 
 const express = require('express');
 const router = express.Router();

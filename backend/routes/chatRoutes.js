@@ -3,6 +3,8 @@
 // MILESTONE 4 — mounted at /api/chat (see server.js)
 // Uses `protect` from `middleware/auth.js`, matching the same convention
 // decision made for negotiationRoutes.js in Milestone 3.
+//
+// Verified this session — no changes needed.
 
 const express = require('express');
 const router = express.Router();

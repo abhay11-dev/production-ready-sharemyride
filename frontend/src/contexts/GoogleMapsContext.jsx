@@ -25,9 +25,12 @@ export function GoogleMapsProvider({ children }) {
     });
 
     return (
-        <GoogleMapsContext.Provider value={{ isLoaded, loadError }}>
+         <SocketProvider>
+            <GoogleMapsContext.Provider value={{ isLoaded, loadError }}>
             {children}
         </GoogleMapsContext.Provider>
+         </SocketProvider>
+        
     );
 }
 

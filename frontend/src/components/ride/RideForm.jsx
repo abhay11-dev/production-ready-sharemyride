@@ -17,6 +17,14 @@
 //
 // Location fields use LocationAutocomplete for India-wide coverage.
 // No external deps beyond what the project already has.
+//
+// FIXED (session 5, NEW-4): handleSubmit now sends real pickup{}/destination{}
+// Geoapify-shaped objects instead of unused startCoordinates/endCoordinates
+// fields. rideController.postRide's buildLocationObject() only stores real
+// coordinates when it receives an object with an `.address` property — the
+// old payload shape meant every posted ride's pickup/destination coordinates
+// were silently null, which made the backend's coordinate-based Smart Search
+// ranking (tiers 4/5/6b) inert for all rides posted through this form.
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
@@ -94,10 +102,27 @@ const locationLabel = (loc) => {
   return loc.name || loc.formatted || '';
 };
 
-const locationCoords = (loc) => {
+// Build the Geoapify-shaped pickup/destination object rideController.postRide
+// actually expects. postRide's buildLocationObject() only produces a
+// coordinate-bearing location when locInput is an object with a truthy
+// `.address` — the LocationAutocomplete selection object uses `name`/
+// `formatted` instead of `address`, so this bridges that gap. Without it,
+// posted rides silently store pickup/destination.latitude/longitude as null
+// regardless of what the user actually picked.
+const buildLocationPayload = (loc) => {
   if (!loc || typeof loc === 'string') return undefined;
-  if (loc.latitude == null || loc.longitude == null) return undefined;
-  return { lat: loc.latitude, lng: loc.longitude };
+  const address = loc.name || loc.formatted || '';
+  if (!address) return undefined;
+  return {
+    address,
+    latitude: typeof loc.latitude === 'number' ? loc.latitude : null,
+    longitude: typeof loc.longitude === 'number' ? loc.longitude : null,
+    placeId: loc.placeId || '',
+    city: loc.city || '',
+    state: loc.state || '',
+    country: loc.country || 'India',
+    formatted: loc.formatted || address,
+  };
 };
 
 // ─── CSS animations — injected once ──────────────────────────────────────────
@@ -707,15 +732,25 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
 
     const startLabel = normalizeIndiaLocation(locationLabel(start));
     const endLabel = normalizeIndiaLocation(locationLabel(end));
-    const startCoords = locationCoords(start);
-    const endCoords = locationCoords(end);
+
+    // Real Geoapify-shaped objects (address/latitude/longitude/placeId/
+    // city/state/country/formatted) — this is what rideController.postRide
+    // actually reads to store coordinates on the ride. See buildLocationPayload
+    // above for why the raw LocationAutocomplete selection object needs
+    // reshaping first.
+    const pickupPayload = buildLocationPayload(start);
+    const destinationPayload = buildLocationPayload(end);
 
     const payload = {
       start: startLabel,
       end: endLabel,
-      // Pass resolved coordinates if available from autocomplete
-      startCoordinates: startCoords,
-      endCoordinates: endCoords,
+      // Geoapify-shaped location objects — rideController.postRide reads
+      // pickup.address/latitude/longitude/etc. to store real coordinates on
+      // the ride, which Smart Search then ranks by. Previously this payload
+      // only sent unused startCoordinates/endCoordinates fields, leaving
+      // every posted ride's pickup/destination coordinates null.
+      pickup: pickupPayload,
+      destination: destinationPayload,
       date, time,
       seats: parseInt(seats),
       fareMode: 'fixed',

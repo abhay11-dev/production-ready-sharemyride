@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import NotificationDropdown from '../NotificationDropdown.jsx';
-
+// add near the top with the other imports
+import MessagesBell from './MessagesBell.jsx';
 function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -63,20 +64,18 @@ function Header() {
   };
 
   const navLinkClass = (path) =>
-    `relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
-      isActive(path)
-        ? 'bg-white/20 text-white'
-        : 'text-blue-100 hover:text-white hover:bg-white/10'
+    `relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${isActive(path)
+      ? 'bg-white/20 text-white'
+      : 'text-blue-100 hover:text-white hover:bg-white/10'
     }`;
 
   return (
     <>
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
-          scrolled
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${scrolled
             ? 'bg-blue-700/98 backdrop-blur-md shadow-lg shadow-blue-900/20'
             : 'bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500'
-        }`}
+          }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className={`flex items-center justify-between transition-all duration-200 ${scrolled ? 'h-14' : 'h-16'}`}>
@@ -137,6 +136,7 @@ function Header() {
             <div className="hidden md:flex items-center gap-2">
               {user ? (
                 <>
+                  <MessagesBell />
                   <NotificationDropdown />
 
                   <Link
@@ -184,6 +184,7 @@ function Header() {
 
             {/* ── Mobile: Bell + Hamburger ── */}
             <div className="md:hidden flex items-center gap-1">
+              {user && <MessagesBell />}
               {user && <NotificationDropdown />}
 
               <button
@@ -206,9 +207,8 @@ function Header() {
       {/* ── Mobile Sidebar Overlay ── */}
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm transition-opacity duration-300 md:hidden ${
-          isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
+        className={`fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm transition-opacity duration-300 md:hidden ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
         aria-hidden="true"
         onClick={() => setIsMenuOpen(false)}
       />
@@ -217,9 +217,8 @@ function Header() {
       <aside
         id="mobile-sidebar"
         ref={sidebarRef}
-        className={`fixed top-0 right-0 bottom-0 z-[70] w-72 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out md:hidden ${
-          isMenuOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className={`fixed top-0 right-0 bottom-0 z-[70] w-72 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out md:hidden ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'
+          }`}
         aria-label="Mobile navigation"
       >
         {/* Sidebar Header */}
@@ -369,11 +368,10 @@ function MobileNavLink({ to, icon, children, onClick, active }) {
     <Link
       to={to}
       onClick={onClick}
-      className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all duration-150 ${
-        active
+      className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all duration-150 ${active
           ? 'bg-blue-50 text-blue-700'
           : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
-      }`}
+        }`}
     >
       <span className={active ? 'text-blue-600' : 'text-gray-400'}>{icon}</span>
       {children}

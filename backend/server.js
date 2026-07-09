@@ -4,8 +4,8 @@ const mongoose = require('mongoose');
 const cors = require("cors");
 const cookieParser = require('cookie-parser');
 const path = require('path');
-const http = require('http'); // ✅ NEW: Milestone 4 — needed to attach Socket.IO
-const { initSocket } = require('./services/socket'); // ✅ NEW: Milestone 4 — chat websocket
+const http = require('http'); // ✅ Milestone 4 — needed to attach Socket.IO
+const { initSocket } = require('./services/socket'); // ✅ Milestone 4 — chat websocket
 
 const app = express();
 
@@ -86,16 +86,16 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const payoutRoutes = require('./routes/payoutRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const receiptRoutes = require('./routes/receipts');
-const ratingRoutes = require('./routes/ratingRoutes'); // ✅ NEW: Rating routes
-const statsRoutes = require('./routes/statsRoutes');   // ✅ NEW: Stats routes
+const ratingRoutes = require('./routes/ratingRoutes');
+const statsRoutes = require('./routes/statsRoutes');
 const driverVerificationRoutes = require('./routes/driverVerificationRoutes');
-const adminRoutes = require('./routes/adminRoutes'); // ✅ NEW: Admin routes
-const inquiryRoutes = require('./routes/inquiryRoutes'); // ✅ NEW: Inquiry/Support routes
-const blogRoutes = require('./routes/blogRoutes'); // ✅ NEW: Blog routes
-const locationRoutes = require('./routes/locationRoutes'); // ✅ NEW: Location routes
-const negotiationRoutes = require('./routes/negotiationRoutes'); // ✅ NEW: Milestone 3 — Negotiation routes
-const chatRoutes = require('./routes/chatRoutes'); // ✅ NEW: Milestone 4 — Chat routes
-const moderationRoutes = require('./routes/moderationRoutes'); // ✅ NEW: Milestone 5 — Moderation admin routes
+const adminRoutes = require('./routes/adminRoutes');
+const inquiryRoutes = require('./routes/inquiryRoutes');
+const blogRoutes = require('./routes/blogRoutes');
+const locationRoutes = require('./routes/locationRoutes');
+const negotiationRoutes = require('./routes/negotiationRoutes'); // Milestone 3
+const chatRoutes = require('./routes/chatRoutes'); // Milestone 4
+const moderationRoutes = require('./routes/moderationRoutes'); // Milestone 5
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -119,16 +119,16 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/payouts', payoutRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/receipts', receiptRoutes);
-app.use('/api/ratings', ratingRoutes);  // ✅ NEW: Rating endpoints
-app.use('/api/stats', statsRoutes);     // ✅ NEW: Stats endpoints
+app.use('/api/ratings', ratingRoutes);
+app.use('/api/stats', statsRoutes);
 app.use('/api/driver-verification', driverVerificationRoutes);
-app.use('/api/admin', adminRoutes);     // ✅ NEW: Admin endpoints
-app.use('/api/inquiries', inquiryRoutes); // ✅ NEW: Inquiry/Support endpoints
-app.use('/api/blogs', blogRoutes);       // ✅ NEW: Blog endpoints
-app.use('/api/negotiations', negotiationRoutes); // ✅ NEW: Milestone 3 — Negotiation endpoints
-app.use('/api/chat', chatRoutes); // ✅ NEW: Milestone 4 — Chat endpoints
-app.use('/api/moderation', moderationRoutes); // ✅ NEW: Milestone 5 — Moderation admin endpoints
-app.use('/api/location', locationRoutes); // ✅ NEW: Location endpoints
+app.use('/api/admin', adminRoutes);
+app.use('/api/inquiries', inquiryRoutes);
+app.use('/api/blogs', blogRoutes);
+app.use('/api/negotiations', negotiationRoutes); // Milestone 3
+app.use('/api/chat', chatRoutes); // Milestone 4
+app.use('/api/moderation', moderationRoutes); // Milestone 5
+app.use('/api/location', locationRoutes);
 
 app.get('/api', (req, res) => {
   res.json({
@@ -154,11 +154,14 @@ app.get('/api-info', (req, res) => {
       payouts: '/api/payouts',
       webhooks: '/api/webhooks',
       receipts: '/api/receipts',
-      ratings: '/api/ratings',  // ✅ NEW
-      stats: '/api/stats',      // ✅ NEW
+      ratings: '/api/ratings',
+      stats: '/api/stats',
       driverVerification: '/api/driver-verification',
-      admin: '/api/admin',       // ✅ NEW
-      location: '/api/location'  // ✅ NEW
+      admin: '/api/admin',
+      negotiations: '/api/negotiations',
+      chat: '/api/chat',
+      moderation: '/api/moderation',
+      location: '/api/location'
     }
   });
 });
@@ -192,9 +195,9 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ✅ NEW (Milestone 4): create an http.Server so Socket.IO can attach to it.
-// Express's app.listen() internally does exactly this, but doesn't expose
-// the server instance — we need it directly for chat's websocket layer.
+// Create an http.Server so Socket.IO can attach to it. Express's app.listen()
+// internally does exactly this, but doesn't expose the server instance — we
+// need it directly for chat's websocket layer.
 const server = http.createServer(app);
 initSocket(server);
 

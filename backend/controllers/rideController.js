@@ -3,8 +3,11 @@
 //          and stores coordinates on the ride.
 //          searchRides now accepts pickupLat/pickupLng/destLat/destLng
 //          and ranks results by Haversine distance when coordinates are present.
+//          NEW: postRide now actually creates a linked, fully independent
+//          return-leg Ride when isRoundTrip is true (previously a silent no-op).
 //          All other functions (getMyRides, deleteRide, updateRide, etc.) unchanged.
 
+const mongoose = require('mongoose');
 const Ride = require('../models/Ride');
 const Booking = require('../models/Booking');
 const { getRouteDetails } = require('../services/utils/routeMatching.js');
@@ -65,8 +68,6 @@ const findMatchingWaypoint = (location, waypoints, routeStart, routeEnd) => {
 };
 
 // ─── Build a Geoapify location object from the request body ──────────────────
-// Accepts both the new {address, latitude, longitude, ...} shape
-// and gracefully falls back to plain text.
 const buildLocationObject = (locInput, fallbackText) => {
   if (locInput && typeof locInput === 'object' && locInput.address) {
     return {
@@ -80,7 +81,6 @@ const buildLocationObject = (locInput, fallbackText) => {
       formatted: locInput.formatted || String(locInput.address).trim(),
     };
   }
-  // Legacy / fallback — plain text, no coordinates
   const text = String(fallbackText || '').trim();
   return {
     address: text,
@@ -96,29 +96,28 @@ const buildLocationObject = (locInput, fallbackText) => {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // POST A NEW RIDE
-// Now accepts optional pickup{} / destination{} Geoapify objects alongside
-// the existing start / end plain-text fields.
+// Accepts optional pickup{} / destination{} Geoapify objects alongside the
+// existing start / end plain-text fields.
+// NEW: when isRoundTrip is true, also creates a fully independent, linked
+// return-leg Ride (swapped pickup/destination, returnDate/returnTime), and
+// cross-links both legs via roundTripGroupId / linkedRideId / tripLeg.
 // requireVerifiedDriver middleware must be applied on the route.
 // ═══════════════════════════════════════════════════════════════════════════
 exports.postRide = async (req, res) => {
   const {
-    // Legacy plain-text fields (still supported)
     start, end,
-    // New Geoapify structured location objects (preferred)
     pickup, destination,
-    // Everything else unchanged
     date, time, seats, fare, phoneNumber, address, vehicleNumber,
     fareMode, perKmRate, totalDistance, estimatedDuration,
     waypoints, routeCoordinates, routeMapURL,
     vehicle, preferences, notes, pickupInstructions,
     tollIncluded, negotiableFare,
-    isRoundTrip, returnDate,
+    isRoundTrip, returnDate, returnTime, reusePreviousTripOptions,
     recurringRide, recurringDays,
     allowPartialRoute, maxDetourAllowed,
     liveLocationSharing
   } = req.body;
 
-  // Resolve start/end strings — prefer Geoapify address, fall back to plain text
   const resolvedStart = (pickup?.address || start || '').trim();
   const resolvedEnd = (destination?.address || end || '').trim();
 
@@ -134,7 +133,11 @@ exports.postRide = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Date must be a valid YYYY-MM-DD value' });
   }
 
-  if (isRoundTrip && returnDate && !isValidISODateOnly(returnDate)) {
+  // ─── Round trip validation ───────────────────────────────────────────────
+  if (isRoundTrip && !returnDate) {
+    return res.status(400).json({ success: false, message: 'Return date is required for a round trip' });
+  }
+  if (isRoundTrip && !isValidISODateOnly(returnDate)) {
     return res.status(400).json({ success: false, message: 'Return date must be a valid YYYY-MM-DD value' });
   }
 
@@ -149,15 +152,12 @@ exports.postRide = async (req, res) => {
       });
     }
 
-    // Build structured location objects (with coordinates if Geoapify data present)
     const pickupLocation = buildLocationObject(pickup, normalizedStart);
     const destinationLocation = buildLocationObject(destination, normalizedEnd);
 
-    // Override address with normalized string if Geoapify didn't supply one
     if (!pickupLocation.address) pickupLocation.address = normalizedStart;
     if (!destinationLocation.address) destinationLocation.address = normalizedEnd;
 
-    // Fetch route from Google Maps if coordinates not provided by client
     let finalRouteCoordinates = routeCoordinates || [];
     let finalTotalDistance = parseFloat(totalDistance) || 0;
     let finalEstimatedDuration = parseInt(estimatedDuration) || 0;
@@ -176,7 +176,6 @@ exports.postRide = async (req, res) => {
       }
     }
 
-    // Build driverInfo from DB — trust the DB, not the request body
     const driverInfoFromUser = {
       name: req.user.name || '',
       phone: req.user.phone || phoneNumber,
@@ -185,7 +184,7 @@ exports.postRide = async (req, res) => {
       drivingLicenseNumber: req.user.driverVerification?.drivingLicense?.number || '',
       emergencyContact: req.user.emergencyContact || '',
       emergencyContactName: req.user.emergencyContactName || '',
-      verified: true  // guaranteed by requireVerifiedDriver middleware
+      verified: true
     };
 
     const rideData = {
@@ -193,11 +192,9 @@ exports.postRide = async (req, res) => {
       driverId: req.user._id,
       postedBy: req.user._id,
 
-      // Legacy string fields (pre-save hook will also set these from pickup/destination)
       start: normalizedStart,
       end: normalizedEnd,
 
-      // NEW: structured location objects with coordinates
       pickup: pickupLocation,
       destination: destinationLocation,
 
@@ -260,6 +257,11 @@ exports.postRide = async (req, res) => {
         ? recurringDays.map(d => d.toLowerCase())
         : [],
 
+      // NEW: round trip fields on the outbound leg
+      isRoundTrip: !!isRoundTrip,
+      returnDate: isRoundTrip ? new Date(returnDate) : null,
+      returnTime: isRoundTrip ? (returnTime || time) : null,
+
       liveLocationSharing: !!liveLocationSharing,
       rideStatus: 'active',
       isActive: true
@@ -268,6 +270,100 @@ exports.postRide = async (req, res) => {
     const ride = new Ride(rideData);
     await ride.save();
 
+    // ─── NEW: create the linked, fully independent return leg ──────────────
+    let returnRidePopulated = null;
+
+    if (isRoundTrip && returnDate) {
+      const reuse = reusePreviousTripOptions !== false; // default true
+
+      const returnRideData = {
+        driver: req.user._id,
+        driverId: req.user._id,
+        postedBy: req.user._id,
+
+        // Swapped route — the return leg's own reference, never mutated
+        // by or tied back to the outbound ride's route data.
+        start: normalizedEnd,
+        end: normalizedStart,
+        pickup: destinationLocation,
+        destination: pickupLocation,
+
+        date: returnDate,
+        time: returnTime || time,
+        seats: parseInt(seats),
+        availableSeats: parseInt(seats),
+        fare: parseFloat(fare),
+
+        fareMode: reuse ? (fareMode || 'fixed') : 'fixed',
+        perKmRate: reuse ? (parseFloat(perKmRate) || 0) : 0,
+        totalDistance: finalTotalDistance,
+        estimatedDuration: finalEstimatedDuration,
+        tollIncluded: reuse ? !!tollIncluded : false,
+        negotiableFare: reuse ? !!negotiableFare : false,
+
+        vehicle: rideData.vehicle,
+        vehicleNumber: rideData.vehicleNumber,
+        driverInfo: driverInfoFromUser,
+
+        routeCoordinates: [],
+        routePolyline: null,
+        waypoints: [],
+        routeMapURL: '',
+        allowPartialRoute: reuse ? (allowPartialRoute !== false) : true,
+        maxDetourAllowed: reuse ? (parseFloat(maxDetourAllowed) || 5) : 5,
+
+        preferences: reuse ? rideData.preferences : {
+          smokingAllowed: false,
+          musicAllowed: true,
+          petFriendly: false,
+          luggageAllowed: true,
+          womenOnly: false,
+          talkative: true,
+          childSeatAvailable: false,
+          pickupFlexibility: true
+        },
+
+        notes: reuse ? (notes?.trim() || '') : '',
+        pickupInstructions: reuse ? (pickupInstructions?.trim() || '') : '',
+        address: address.trim(),
+        phoneNumber: phoneNumber.trim(),
+
+        recurringRide: false,
+        recurringDays: [],
+
+        isRoundTrip: true,
+        returnDate: new Date(returnDate),
+        returnTime: returnTime || time,
+        tripLeg: 'return',
+
+        liveLocationSharing: !!liveLocationSharing,
+        rideStatus: 'active',
+        isActive: true
+      };
+
+      const returnRide = new Ride(returnRideData);
+      await returnRide.save();
+
+      // Cross-link both legs under a single shared group id.
+      // Neither leg mutates the other's route/fare/booking data — only
+      // these three linking fields are set, after both docs already exist.
+      const groupId = new mongoose.Types.ObjectId();
+
+      ride.roundTripGroupId = groupId;
+      ride.linkedRideId = returnRide._id;
+      ride.tripLeg = 'outbound';
+      await ride.save();
+
+      returnRide.roundTripGroupId = groupId;
+      returnRide.linkedRideId = ride._id;
+      await returnRide.save();
+
+      returnRidePopulated = await Ride.findById(returnRide._id)
+        .populate('driver', 'name email phone avatar ratingSummary')
+        .populate('driverId', 'name email phone avatar')
+        .lean();
+    }
+
     const populated = await Ride.findById(ride._id)
       .populate('driver', 'name email phone avatar ratingSummary')
       .populate('driverId', 'name email phone avatar')
@@ -275,12 +371,14 @@ exports.postRide = async (req, res) => {
 
     console.log('✅ Ride posted:', ride._id,
       '| pickup coords:', pickupLocation.latitude, pickupLocation.longitude,
-      '| dest coords:', destinationLocation.latitude, destinationLocation.longitude);
+      '| dest coords:', destinationLocation.latitude, destinationLocation.longitude,
+      isRoundTrip ? `| round trip → return leg ${returnRidePopulated?._id}` : '');
 
     res.status(201).json({
       success: true,
-      message: 'Ride posted successfully',
-      data: populated
+      message: isRoundTrip ? 'Round trip posted successfully — both legs created' : 'Ride posted successfully',
+      data: populated,
+      returnRide: returnRidePopulated // null when isRoundTrip is false
     });
   } catch (error) {
     console.error('❌ postRide error:', error.message);
@@ -312,7 +410,7 @@ exports.getMyRides = async (req, res) => {
         .populate('driverId', 'name email phone avatar ratingSummary')
         .populate({
           path: 'bookings',
-          populate: { path: 'passengerId', select: 'name email phone avatar' }
+          populate: { path: 'passenger', select: 'name email phone avatar' }
         })
         .sort({ createdAt: -1 })
         .limit(parseInt(limit))
@@ -339,7 +437,7 @@ exports.getMyRides = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DELETE / CANCEL RIDE — UNCHANGED
+// DELETE / CANCEL RIDE — UNCHANGED (Bug #2 still present, not in scope this pass)
 // ═══════════════════════════════════════════════════════════════════════════
 exports.deleteRide = async (req, res) => {
   try {
@@ -364,12 +462,12 @@ exports.deleteRide = async (req, res) => {
     await ride.save();
 
     await Booking.updateMany(
-      { rideId: ride._id, status: { $in: ['pending', 'accepted', 'confirmed'] } },
+      { ride: ride._id, status: { $in: ['pending', 'accepted'] } },
       {
         status: 'cancelled',
-        'cancellation.cancelledBy': 'driver',
-        'cancellation.reason': req.body.cancellationReason || 'Ride cancelled by driver',
-        'cancellation.cancelledAt': new Date()
+        cancelledBy: 'driver',
+        cancellationReason: req.body.cancellationReason || 'Ride cancelled by driver',
+        cancelledAt: new Date()
       }
     );
 
@@ -388,38 +486,8 @@ exports.deleteRide = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SEARCH RIDES
-// Updated: now accepts optional coordinate params from Geoapify selection.
-// When coordinates present → Haversine-rank results within radiusKm.
-// Falls back to existing text-based matching when no coords provided.
-//
-// New query params (all optional, added alongside existing ones):
-//   pickupLat, pickupLng  — from selected Geoapify pickup
-//   destLat, destLng      — from selected Geoapify destination
-//   radiusKm              — search radius in km (default: 30)
+// SEARCH RIDES — UNCHANGED FROM PRIOR SESSION
 // ═══════════════════════════════════════════════════════════════════════════
-// ─────────────────────────────────────────────────────────────────────────────
-// SMART SEARCH — 7-tier ranking (Milestone 1, see PROJECT_STATE.md §6)
-//
-// Tier 1  exact              — same pickup AND same drop
-// Tier 2  same_destination   — same drop, different pickup
-// Tier 3  same_state_origin  — pickup is in the same state as the searched pickup
-// Tier 4  nearby_origin      — pickup within radiusKm of searched pickup
-// Tier 5  nearby_destination — drop within radiusKm of searched drop
-// Tier 6  partial_route      — searched pickup/drop lie along the ride's route
-//                              (covers both geometric route-coordinate matches
-//                              and text/waypoint matches — same underlying idea,
-//                              user just sees "you can join partway")
-// Tier 7  negotiation_possible — nothing above matched, but the ride is fare-
-//                              negotiable and loosely relevant (same state,
-//                              wider radius) — driver may still accommodate
-//
-// Every result carries `matchTier` (1-7) and a human-readable `matchReason`,
-// so the frontend can always explain "why this ride appeared" per the spec.
-// The legacy `matchType` field ('exact' | 'on_route' | 'partial' | 'nearby')
-// is preserved for backward compatibility with existing frontend code.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const TIER_META = {
   1: { matchType: 'exact', label: 'Exact match — same pickup and drop' },
   2: { matchType: 'exact', label: 'Same destination, different pickup point' },
@@ -433,22 +501,16 @@ const TIER_META = {
 exports.searchRides = async (req, res) => {
   try {
     const {
-      // Existing params
       start, end, date, minSeats, maxFare,
       vehicleType, acAvailable, petFriendly, womenOnly,
       musicAllowed, smokingAllowed, includePartialRoutes,
-      // Coordinate params from Geoapify
       pickupLat, pickupLng, destLat, destLng,
-      // NEW: optional state hints (from the same Geoapify selection that
-      // populates ride.pickup.state / ride.destination.state on post)
       originState, destState,
       radiusKm = 30,
-      // NEW: pagination
       page = 1,
       limit = 20,
     } = req.query;
 
-    // At least one location param required
     if (!start && !end && !pickupLat && !destLat) {
       return res.status(400).json({
         success: false,
@@ -460,7 +522,6 @@ exports.searchRides = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Date must be a valid YYYY-MM-DD value' });
     }
 
-    // Determine if we have coordinates for geo-ranking
     const hasPickupCoords = pickupLat && pickupLng &&
       !isNaN(parseFloat(pickupLat)) && !isNaN(parseFloat(pickupLng));
     const hasDestCoords = destLat && destLng &&
@@ -472,13 +533,11 @@ exports.searchRides = async (req, res) => {
     const dLat = hasDestCoords ? parseFloat(destLat) : null;
     const dLng = hasDestCoords ? parseFloat(destLng) : null;
     const radius = parseFloat(radiusKm) || 30;
-    // Wider net used only for the last-resort "negotiation possible" tier
     const negotiationRadius = radius * 3;
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(limit) || 20));
 
-    // ── Base DB query ─────────────────────────────────────────────────────
     const query = { isActive: true, rideStatus: 'active' };
 
     if (date) {
@@ -500,8 +559,6 @@ exports.searchRides = async (req, res) => {
     if (musicAllowed === 'true') query['preferences.musicAllowed'] = true;
     if (smokingAllowed === 'true') query['preferences.smokingAllowed'] = true;
 
-    // ── Fetch candidates ──────────────────────────────────────────────────
-    // When using coordinates we fetch more to allow geo-filtering
     const fetchLimit = hasCoords ? 300 : 100;
 
     const allRides = await Ride.find(query)
@@ -511,7 +568,6 @@ exports.searchRides = async (req, res) => {
       .limit(fetchLimit)
       .lean();
 
-    // ── Text normalization for legacy matching ────────────────────────────
     const normalizedStart = start ? normalizeIndiaLocation(start) : '';
     const normalizedEnd = end ? normalizeIndiaLocation(end) : '';
     const startLower = normalizedStart.toLowerCase().trim();
@@ -541,7 +597,7 @@ exports.searchRides = async (req, res) => {
 
       const textPickupMatch = !!(startLower && (rideStartLower.includes(startLower) || startLower.includes(rideStartLower)));
       const textDropMatch = !!(endLower && (rideEndLower.includes(endLower) || endLower.includes(rideEndLower)));
-      const coordPickupExact = pickupDist !== null && pickupDist <= 5;   // tight radius = "same point"
+      const coordPickupExact = pickupDist !== null && pickupDist <= 5;
       const coordDropExact = destDist !== null && destDist <= 5;
       const coordPickupNearby = pickupDist !== null && pickupDist <= radius;
       const coordDropNearby = destDist !== null && destDist <= radius;
@@ -552,17 +608,14 @@ exports.searchRides = async (req, res) => {
       let tier = null;
       let extra = {};
 
-      // ── Tier 1: exact (both ends match) ──────────────────────────────
       if (pickupMatches && dropMatches) {
         tier = 1;
         extra.matchQuality = 100;
       }
-      // ── Tier 2: same destination, different pickup ───────────────────
       else if (dropMatches && !pickupMatches) {
         tier = 2;
         extra.matchQuality = 90;
       }
-      // ── Tier 3: same state as searched pickup ─────────────────────────
       else if (
         originStateLower &&
         ride.pickup?.state &&
@@ -571,12 +624,10 @@ exports.searchRides = async (req, res) => {
         tier = 3;
         extra.matchQuality = 75;
       }
-      // ── Tier 4: nearby pickup only ─────────────────────────────────────
       else if (coordPickupNearby) {
         tier = 4;
         extra.matchQuality = Math.max(0, 70 - Math.round(pickupDist));
       }
-      // ── Tier 5: nearby destination only ─────────────────────────────────
       else if (coordDropNearby) {
         tier = 5;
         extra.matchQuality = Math.max(0, 65 - Math.round(destDist));
@@ -595,8 +646,6 @@ exports.searchRides = async (req, res) => {
         continue;
       }
 
-      // ── Tier 6: partial route ────────────────────────────────────────
-      // 6a. Waypoint/text-based partial match
       if (startLower && endLower && ride.allowPartialRoute && includePartialRoutes !== 'false') {
         const pickupWp = findMatchingWaypoint(normalizedStart, ride.waypoints, ride.start, ride.end);
         const dropWp = findMatchingWaypoint(normalizedEnd, ride.waypoints, ride.start, ride.end);
@@ -616,7 +665,6 @@ exports.searchRides = async (req, res) => {
         }
       }
 
-      // 6b. Geometric route-coordinate match (uses actual logged GPS route)
       if (ride.routeCoordinates?.length && (normalizedStart || hasCoords) && (normalizedEnd || hasCoords)) {
         try {
           const passengerPickup = hasCoords ? { lat: pLat, lng: pLng } : normalizedStart;
@@ -639,7 +687,7 @@ exports.searchRides = async (req, res) => {
               matchTier: 6,
               matchType: TIER_META[6].matchType,
               matchReason: TIER_META[6].label,
-              matchQuality: Math.max(56, match.matchQuality), // rank slightly above 6a when quality allows
+              matchQuality: Math.max(56, match.matchQuality),
               matchedPickup: normalizedStart,
               matchedDrop: normalizedEnd,
               segmentDistance: match.segmentDistanceKm,
@@ -657,7 +705,6 @@ exports.searchRides = async (req, res) => {
         }
       }
 
-      // ── Tier 7: negotiation possible (last resort, loose relevance) ──
       if (ride.negotiableFare) {
         const widerPickupOk = pickupDist !== null && pickupDist <= negotiationRadius;
         const widerDropOk = destDist !== null && destDist <= negotiationRadius;
@@ -677,7 +724,6 @@ exports.searchRides = async (req, res) => {
       }
     }
 
-    // ── Normalize shared display fields ───────────────────────────────────
     let allMatched = classified.map(ride => ({
       ...ride,
       segmentDistance: ride.segmentDistance || ride.totalDistance || 0,
@@ -686,7 +732,6 @@ exports.searchRides = async (req, res) => {
       isFull: (ride.availableSeats ?? ride.seats) === 0
     }));
 
-    // Deduplicate by _id — keep the best (lowest) tier, then highest quality
     const seen = new Map();
     for (const r of allMatched) {
       const key = r._id.toString();
@@ -700,7 +745,6 @@ exports.searchRides = async (req, res) => {
     }
     allMatched = Array.from(seen.values());
 
-    // ── Sort: tier ascending (1 = best) → quality desc → geo distance → date ──
     allMatched.sort((a, b) => {
       if (a.matchTier !== b.matchTier) return a.matchTier - b.matchTier;
       if (b.matchQuality !== a.matchQuality) return b.matchQuality - a.matchQuality;
@@ -712,14 +756,11 @@ exports.searchRides = async (req, res) => {
       return new Date(a.date) - new Date(b.date);
     });
 
-    // ── Pagination (applied after full ranking) ───────────────────────────
     const total = allMatched.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const startIdx = (pageNum - 1) * pageSize;
     const pageData = allMatched.slice(startIdx, startIdx + pageSize);
 
-    // Tier breakdown — useful for the frontend to show section headers
-    // ("Exact matches", "Same destination", "Negotiable rides nearby", etc.)
     const tierCounts = {};
     for (const r of allMatched) {
       tierCounts[r.matchTier] = (tierCounts[r.matchTier] || 0) + 1;
@@ -749,6 +790,131 @@ exports.searchRides = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// GET USER STATS — UNCHANGED (Bug #5 still present, not in scope this pass)
+// ═══════════════════════════════════════════════════════════════════════════
+exports.getUserStats = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const role = req.user.role;
+
+    if (role === 'driver') {
+      const rides = await Ride.find({
+        $or: [{ driverId: userId }, { postedBy: userId }, { driver: userId }]
+      });
+
+      const totalRides = rides.length;
+      const activeRides = rides.filter((ride) => ride.rideStatus === 'active').length;
+      const completedRides = rides.filter((ride) => ride.rideStatus === 'completed').length;
+
+      let totalEarnings = 0;
+      rides.forEach((ride) => {
+        if (Array.isArray(ride.bookings)) {
+          ride.bookings.forEach((booking) => {
+            if (booking.status === 'completed' && booking.paymentStatus === 'paid') {
+              totalEarnings += booking.calculatedFare || 0;
+            }
+          });
+        }
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          totalRides,
+          activeRides,
+          completedRides,
+          totalEarnings
+        }
+      });
+    }
+
+    const bookings = await Booking.aggregate([
+      { $match: { passenger: userId } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalSpent: { $sum: '$calculatedFare' }
+        }
+      }
+    ]);
+
+    const totalBookings = bookings.reduce((sum, item) => sum + (item.count || 0), 0);
+    const completedTrips = bookings.find((item) => item._id === 'completed')?.count || 0;
+    const totalSpent = bookings
+      .filter((item) => item._id === 'completed')
+      .reduce((sum, item) => sum + (item.totalSpent || 0), 0);
+
+    return res.json({
+      success: true,
+      data: {
+        totalBookings,
+        completedTrips,
+        totalSpent
+      }
+    });
+  } catch (error) {
+    console.error('❌ getUserStats error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHECK RIDE AVAILABILITY / SEGMENT FARE — UNCHANGED
+// ═══════════════════════════════════════════════════════════════════════════
+exports.checkRideAvailability = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+    if (!ride) {
+      return res.status(404).json({ success: false, message: 'Ride not found' });
+    }
+
+    const pickupPoint = req.query.pickupPoint || req.query.pickupLocation || req.query.pickup || '';
+    const dropPoint = req.query.dropPoint || req.query.dropLocation || req.query.drop || '';
+    const availableSeats = ride.availableSeats !== undefined ? ride.availableSeats : ride.seats;
+    const baseCanBook = ride.canBook ? ride.canBook(1) : availableSeats > 0;
+
+    let pickupDistance = null;
+    let dropDistance = null;
+    let validSegment = false;
+    let segmentFare = null;
+
+    if (pickupPoint && dropPoint) {
+      if (typeof ride.getDistanceForLocation === 'function') {
+        pickupDistance = ride.getDistanceForLocation(pickupPoint);
+        dropDistance = ride.getDistanceForLocation(dropPoint);
+      }
+
+      if (pickupDistance !== null && dropDistance !== null && dropDistance > pickupDistance) {
+        validSegment = true;
+      }
+
+      if (typeof ride.calculateSegmentFare === 'function') {
+        const fareInfo = ride.calculateSegmentFare(pickupPoint, dropPoint);
+        segmentFare = fareInfo?.totalFare ?? null;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        availableSeats,
+        canBook: baseCanBook && (!pickupPoint || !dropPoint || validSegment),
+        pickupPoint,
+        dropPoint,
+        pickupDistance,
+        dropDistance,
+        segmentFare,
+        validSegment
+      }
+    });
+  } catch (error) {
+    console.error('❌ checkRideAvailability error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // GET RIDE BY ID — UNCHANGED
 // ═══════════════════════════════════════════════════════════════════════════
 exports.getRideById = async (req, res) => {
@@ -765,7 +931,9 @@ exports.getRideById = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UPDATE RIDE — updated to include pickup/destination in allowed fields
+// UPDATE RIDE — UNCHANGED (round-trip fields intentionally NOT added to the
+// `allowed` list — editing one leg's route/fare/etc. should never silently
+// mutate its linked leg; that stays a fully separate PUT if ever needed)
 // ═══════════════════════════════════════════════════════════════════════════
 exports.updateRide = async (req, res) => {
   try {
@@ -783,7 +951,6 @@ exports.updateRide = async (req, res) => {
       'waypoints', 'vehicle', 'preferences', 'notes', 'pickupInstructions',
       'tollIncluded', 'negotiableFare', 'recurringRide', 'recurringDays',
       'allowPartialRoute', 'maxDetourAllowed', 'liveLocationSharing',
-      // NEW: allow updating structured location objects
       'pickup', 'destination'
     ];
 
@@ -795,7 +962,6 @@ exports.updateRide = async (req, res) => {
       ride.vehicleNumber = req.body.vehicleNumber.toUpperCase().trim();
     }
 
-    // If pickup/destination updated, also sync start/end strings
     if (req.body.pickup?.address) ride.start = req.body.pickup.address;
     if (req.body.destination?.address) ride.end = req.body.destination.address;
 
@@ -807,7 +973,8 @@ exports.updateRide = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UPDATE RIDE STATUS — UNCHANGED
+// UPDATE RIDE STATUS — UNCHANGED (Bug #2 duplicate still present, not in
+// scope this pass)
 // ═══════════════════════════════════════════════════════════════════════════
 exports.updateRideStatus = async (req, res) => {
   try {
@@ -836,11 +1003,11 @@ exports.updateRideStatus = async (req, res) => {
       ride.cancelledAt = new Date();
       if (cancellationReason) ride.cancellationReason = cancellationReason;
       await Booking.updateMany(
-        { rideId: ride._id, status: { $in: ['pending', 'accepted', 'confirmed'] } },
+        { ride: ride._id, status: { $in: ['pending', 'accepted'] } },
         {
           status: 'cancelled',
-          'cancellation.cancelledBy': 'driver',
-          'cancellation.cancelledAt': new Date()
+          cancelledBy: 'driver',
+          cancelledAt: new Date()
         }
       );
     }

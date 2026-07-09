@@ -219,7 +219,7 @@ exports.getDetailedStatistics = async (req, res) => {
             },
             confirmed: {
               $sum: { 
-                $cond: [{ $eq: ['$bookings.status', 'confirmed'] }, 1, 0] 
+                $cond: [{ $eq: ['$bookings.status', 'accepted'] }, 1, 0] 
               }
             },
             completed: {

@@ -2,15 +2,27 @@
 // Passenger-facing search result card.
 // Design: matches Home.jsx exactly — white rounded-2xl, blue-600 primary, gray-50 bg.
 // Payment: uses PaymentCalculator (3% platform fee, 5% GST) — never hardcoded.
-// Bugs fixed: removed dead code after return, fixed undefined variable references.
+//
+// FIX (this session, Milestone 4 wiring pass):
+//   1. `handleMessage` was previously defined inside BookingModal but
+//      referenced `user`/`setMessaging`/`navigate`, none of which exist in
+//      that component's scope — calling it would throw a ReferenceError.
+//      It's now defined in RideCard (the component that actually renders
+//      the "Message" button) with its own `messaging` state and `navigate`.
+//   2. The action-button row contained a second, complete copy of itself
+//      nested inside the first `<div className="grid grid-cols-4 ...">` —
+//      a leftover from an incomplete paste. There is now a single 4-button
+//      grid: Details / Contact / Message / Book.
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createBooking } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 import PaymentCalculator from '../../utils/paymentCalculator';
 import NegotiationActions from '../../pages/rides/NegotiationActions';
 import Icon from '../ui/Icon';
+import { getOrCreateConversation } from '../../services/chatService';
 
 // ─── Shared verified badge ────────────────────────────────────────────────────
 function VerifiedBadge() {
@@ -56,15 +68,7 @@ function formatTime(t) {
   return `${hr % 12 || 12}:${m} ${hr >= 12 ? 'PM' : 'AM'}`;
 }
 
-// ─── Booking Modal ────────────────────────────────────────────────────────────
-function WaivedBadge() {
-  return (
-    <span className="ml-2 inline-flex items-center rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-700">
-      waived
-    </span>
-  );
-}
-
+// ─── Booking Modal helpers ────────────────────────────────────────────────────
 const formatMoneyLocal = (value) => {
   const amount = Number(value || 0);
   const rounded = Math.round(amount * 100) / 100;
@@ -181,13 +185,11 @@ function FirstBookingCelebration({ baseFare, seats }) {
         position: 'relative',
         overflow: 'hidden',
       }}>
-        {/* Confetti stage */}
         <div ref={confettiRef} style={{
           position: 'absolute', top: 0, left: 0, right: 0,
           height: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 10,
         }} />
 
-        {/* Pulse ring behind badge */}
         <div style={{
           position: 'absolute', top: 16, right: 16,
           width: 50, height: 50, pointerEvents: 'none',
@@ -199,7 +201,6 @@ function FirstBookingCelebration({ baseFare, seats }) {
           }} />
         </div>
 
-        {/* Tick badge */}
         <div style={{
           position: 'absolute', top: 16, right: 16,
           width: 46, height: 46, borderRadius: '50%',
@@ -217,7 +218,6 @@ function FirstBookingCelebration({ baseFare, seats }) {
           </svg>
         </div>
 
-        {/* Headline block */}
         <div style={{ paddingRight: 60, marginBottom: 14 }}>
           <p style={{
             fontSize: 10, fontWeight: 700, letterSpacing: '0.09em',
@@ -235,18 +235,14 @@ function FirstBookingCelebration({ baseFare, seats }) {
           </p>
         </div>
 
-        {/* Divider */}
         <div style={{ height: 1, background: '#bbf7d0', marginBottom: 12 }} />
 
-        {/* Fare breakdown */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 13 }}>
-          {/* Base Fare */}
           <div style={{ display: 'flex', color: '#374151', justifyContent: 'space-between' }}>
             <span>Base Fare ({seatsNum} seat{seatsNum > 1 ? 's' : ''})</span>
             <span style={{ fontWeight: 600 }}>{formatMoneyLocal(base)}</span>
           </div>
 
-          {/* Platform fee — waived */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
             <span style={{ color: '#9ca3af' }}>Platform fee (3%)</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -259,7 +255,6 @@ function FirstBookingCelebration({ baseFare, seats }) {
             </span>
           </div>
 
-          {/* GST — applies */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
             <span style={{ color: '#374151' }}>GST (5% on base fare)</span>
             <span style={{ fontWeight: 600, color: '#374151' }}>
@@ -267,7 +262,6 @@ function FirstBookingCelebration({ baseFare, seats }) {
             </span>
           </div>
 
-          {/* Net total */}
           <div style={{
             display: 'flex', alignItems: 'baseline',
             borderTop: '1px solid #bbf7d0', paddingTop: 10, marginTop: 3, justifyContent: 'space-between'
@@ -712,7 +706,9 @@ function ContactModal({ ride, onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [modal, setModal] = useState(null); // 'book' | 'details' | 'contact' | null
+  const [messaging, setMessaging] = useState(false);
 
   const driver = ride.driverId || ride.driver || {};
   const driverInfo = ride.driverInfo || {};
@@ -764,6 +760,30 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
       return;
     }
     setModal('contact');
+  };
+
+  // MILESTONE 4 — start (or resume) a chat thread with this ride's driver.
+  // Moved here from BookingModal, where it was defined but unreachable
+  // (referenced state/hooks that didn't exist in that component's scope).
+  const handleMessage = async () => {
+    if (!user) {
+      toast.error('Sign in to message the driver', { style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' } });
+      return;
+    }
+    const driverId = driver._id || ride.driverId || ride.postedBy;
+    if (driverId && user._id && driverId.toString() === user._id.toString()) {
+      toast.error('You cannot message yourself');
+      return;
+    }
+    setMessaging(true);
+    try {
+      const conversation = await getOrCreateConversation(ride._id);
+      navigate(`/messages/${conversation._id}`);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Could not start chat');
+    } finally {
+      setMessaging(false);
+    }
   };
 
   // Preference pills to show
@@ -880,32 +900,42 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
             </div>
           )}
 
-          {/* Negotiation Cards (Milestone 2) — only rendered when at least
+          {/* Negotiation Cards (Milestone 2/3) — only rendered when at least
               one action applies to this ride; see utils/negotiationActions.js */}
           <NegotiationActions ride={ride} />
 
-          {/* Action buttons */}
-          <div className="flex gap-2 mt-4">
+          {/* Action buttons — single 4-button grid: Details / Contact / Message / Book.
+              (Previously this rendered a 3-button grid with a broken, fully
+              duplicated 4-button grid nested inside it — removed.) */}
+          <div className="grid grid-cols-4 gap-2 mt-4">
             <button
               onClick={() => setModal('details')}
-              className="flex-1 border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 py-2 rounded-xl text-xs font-semibold transition-all"
+              className="border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 py-2 rounded-xl text-xs font-semibold transition-all"
             >
               Details
             </button>
             <button
               onClick={handleContact}
-              className="flex-1 border border-blue-200 text-blue-600 hover:bg-blue-50 py-2 rounded-xl text-xs font-semibold transition-all"
+              className="border border-blue-200 text-blue-600 hover:bg-blue-50 py-2 rounded-xl text-xs font-semibold transition-all"
             >
               Contact
             </button>
             <button
+              onClick={handleMessage}
+              disabled={messaging}
+              className="border border-indigo-200 text-indigo-600 hover:bg-indigo-50 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50"
+            >
+              {messaging ? '…' : 'Message'}
+            </button>
+            <button
               onClick={handleBook}
               disabled={isFull}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isFull ? 'Full' : 'Book'}
             </button>
           </div>
+
         </div>
       </div>
 

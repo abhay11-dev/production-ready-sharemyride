@@ -210,7 +210,7 @@
   * Accept or reject a ride request
   * @param {string|number} rideId - Ride ID
   * @param {string|number} requestId - Request/Booking ID
-  * @param {string} status - 'confirmed', 'cancelled', or 'rejected'
+  * @param {string} status - 'accepted', 'cancelled', or 'rejected'
   * @param {string} [reason] - Reason for rejection (if applicable)
   * @returns {Promise<Object>} Updated request data
   */

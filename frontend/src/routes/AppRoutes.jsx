@@ -1,10 +1,22 @@
+// src/routes/AppRoutes.jsx
+//
+// FIX (this session): ProtectedRoute and PublicRoute were destructuring
+// `loading` from useAuth() — but hooks/useAuth.jsx exposes `isLoading`, not
+// `loading`. Since `loading` was always `undefined`, the spinner branch
+// never ran, so a user could get bounced to /login for a frame while the
+// silent token refresh was still resolving on page load. Fixed by reading
+// `isLoading` (aliased locally to `loading` so the rest of each component
+// didn't need to change). This directly affects the new /messages routes
+// added below, since Inbox/ChatThread are both protected.
+
 import { Routes, Route, Navigate } from 'react-router-dom';
 import React from 'react';
 import Home from '../pages/Home/Home';
 import Login from '../pages/Auth/Login';
 import Signup from '../pages/Auth/Signup';
 import ForgotPassword from '../pages/Auth/ForgotPassword.jsx';
-
+import Inbox from '../pages/Inbox/Inbox';
+import ChatThread from '../pages/Chat/ChatThread';
 import VerificationPending from '../pages/Auth/VerificationPending.jsx';
 import VerifyEmail from '../pages/Auth/VerifyEmail.jsx';
 import RideSearch from '../pages/RideSearch/RideSearch';
@@ -35,9 +47,10 @@ import TermsAndConditions from '../pages/FooterNavlinks/TermsAndConditions.jsx';
 import AdminLogin from '../pages/Admin/AdminLogin.jsx';
 import AdminDashboard from '../pages/Admin/AdminDashboard.jsx';
 
-// Protected Route Component
+// ── Protected Route Component ──────────────────────────────────────────────
+// FIX: read `isLoading` (the field useAuth actually exposes), not `loading`.
 const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, isLoading: loading } = useAuth();
 
   if (loading) {
     return (
@@ -53,9 +66,10 @@ const ProtectedRoute = ({ children }) => {
   return user ? children : <Navigate to="/login" replace />;
 };
 
-// Public Route Component
+// ── Public Route Component ──────────────────────────────────────────────────
+// Same fix as ProtectedRoute above.
 const PublicRoute = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, isLoading: loading } = useAuth();
 
   if (loading) {
     return (
@@ -82,135 +96,151 @@ function AppRoutes() {
     <Routes>
       {/* Public Routes */}
       <Route path="/" element={<Home />} />
-      
+
       {/* Admin Routes */}
       <Route path="/admin/login" element={<AdminLogin />} />
-      <Route 
-        path="/admin/dashboard" 
+      <Route
+        path="/admin/dashboard"
         element={
           <AdminRoute>
             <AdminDashboard />
           </AdminRoute>
-        } 
+        }
       />
 
       {/* Auth Routes */}
-      <Route 
-        path="/login" 
+      <Route
+        path="/login"
         element={
           <PublicRoute>
             <Login />
           </PublicRoute>
-        } 
+        }
       />
 
-
-
-      <Route 
-        path="/forgot-password" 
+      <Route
+        path="/forgot-password"
         element={
           <PublicRoute>
             <ForgotPassword />
           </PublicRoute>
-        } 
+        }
       />
 
-      <Route 
-        path="/reset-password" 
+      <Route
+        path="/reset-password"
         element={
           <PublicRoute>
             <ForgotPassword />
           </PublicRoute>
-        } 
+        }
       />
-      <Route 
-        path="/signup" 
+      <Route
+        path="/signup"
         element={
           <PublicRoute>
             <Signup />
           </PublicRoute>
-        } 
+        }
       />
 
-      <Route 
-        path="/verification-pending" 
-        element={<VerificationPending />} 
+      <Route
+        path="/verification-pending"
+        element={<VerificationPending />}
       />
 
-      <Route 
-        path="/verify-email" 
-        element={<VerifyEmail />} 
+      <Route
+        path="/verify-email"
+        element={<VerifyEmail />}
       />
 
       <Route path="/upcoming-rides" element={<UpcomingRides />} />
       <Route path="/driver/upcoming-rides" element={<DriverUpcomingRides />} />
-      
+
       {/* Protected Routes */}
-      <Route 
-        path="/ride/search" 
+      <Route
+        path="/ride/search"
         element={
           <ProtectedRoute>
             <RideSearch />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/ride/post" 
+      <Route
+        path="/ride/post"
         element={
           <ProtectedRoute>
             <RidePost />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/profile" 
+      <Route
+        path="/profile"
         element={
           <ProtectedRoute>
             <Profile />
           </ProtectedRoute>
-        } 
+        }
       />
 
-      <Route 
-        path="/notifications" 
+      <Route
+        path="/notifications"
         element={
           <ProtectedRoute>
             <NotificationsPage />
           </ProtectedRoute>
-        } 
+        }
       />
 
-      <Route 
-        path="/bookings/my-bookings" 
+      <Route
+        path="/bookings/my-bookings"
         element={
           <ProtectedRoute>
             <MyBookings />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/bookings/driver" 
+      <Route
+        path="/bookings/driver"
         element={
           <ProtectedRoute>
             <DriverRideRequests />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/driver/bookings" 
+      <Route
+        path="/driver/bookings"
         element={
           <ProtectedRoute>
             <DriverRideRequests />
           </ProtectedRoute>
-        } 
+        }
       />
-      <Route 
-        path="/payment/setup" 
-        element={<ProtectedRoute><PaymentSetupForm /></ProtectedRoute>} 
+      <Route
+        path="/payment/setup"
+        element={<ProtectedRoute><PaymentSetupForm /></ProtectedRoute>}
       />
 
       <Route path="/payment-success/:bookingId" element={<PaymentSuccess />} />
       <Route path="/payment-failed/:bookingId" element={<PaymentFailed />} />
+
+      {/* Chat / Negotiation Routes (Milestone 3/4) */}
+      <Route
+        path="/messages"
+        element={
+          <ProtectedRoute>
+            <Inbox />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/messages/:conversationId"
+        element={
+          <ProtectedRoute>
+            <ChatThread />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Footer Nav Routes */}
       <Route path="/about" element={<About />} />
@@ -225,8 +255,8 @@ function AppRoutes() {
       <Route path="/privacy" element={<TermsAndConditions />} />
 
       {/* 404 Not Found Route */}
-      <Route 
-        path="*" 
+      <Route
+        path="*"
         element={
           <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
             <div className="text-center">
@@ -240,8 +270,8 @@ function AppRoutes() {
               <p className="text-gray-600 mb-8 max-w-md mx-auto">
                 The page you're looking for doesn't exist or has been moved.
               </p>
-              <a 
-                href="/" 
+              <a
+                href="/"
                 className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-600 hover:shadow-lg transform hover:scale-105 transition-all duration-200"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,7 +281,8 @@ function AppRoutes() {
               </a>
             </div>
           </div>
-        } 
+          
+        }
       />
     </Routes>
   );

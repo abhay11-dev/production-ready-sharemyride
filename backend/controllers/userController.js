@@ -582,7 +582,7 @@ exports.deleteAccount = async (req, res) => {
     const activeRides = await Ride.countDocuments({
       $or: [
         { driverId: user._id, rideStatus: 'active' },
-        { 'bookings.passengerId': user._id, 'bookings.status': 'confirmed' }
+        { 'bookings.passengerId': user._id, 'bookings.status': 'accepted' }
       ]
     });
 

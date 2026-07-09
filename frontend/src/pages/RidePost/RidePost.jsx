@@ -29,10 +29,15 @@ function formatTime(timeStr) {
   return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`;
 }
 
+// FIXED (session 5): dropped the invalid 'confirmed' booking status.
+// Booking.status's real enum (confirmed against models/Booking.js) is
+// pending|accepted|rejected|cancelled|completed|no_show — 'confirmed' can
+// never match anything, so it was silently dead weight in this filter, same
+// bug class as the backend's now-fixed Bug #2.
 function getAvailableSeats(ride) {
   if (!ride.bookings?.length) return ride.availableSeats ?? ride.seats;
   const booked = ride.bookings
-    .filter(b => ['confirmed', 'pending', 'accepted'].includes(b.status))
+    .filter(b => ['pending', 'accepted'].includes(b.status))
     .reduce((sum, b) => sum + (b.seatsBooked || 1), 0);
   return Math.max(0, ride.seats - booked);
 }
@@ -106,7 +111,7 @@ function RideCard({ ride, onDelete, isDeleting, onExpand, isExpanded }) {
   const bookedSeats = ride.seats - availableSeats;
   const driverCalc = PaymentCalculator.calculateDriverEarnings(parseFloat(ride.fare) || 0, ride.seats);
   const pendingCount = ride.bookings?.filter(b => b.status === 'pending').length || 0;
-  const confirmedCount = ride.bookings?.filter(b => ['confirmed', 'accepted'].includes(b.status)).length || 0;
+  const acceptedCount = ride.bookings?.filter(b => b.status === 'accepted').length || 0;
   const isInactive = ['cancelled', 'completed'].includes(ride.rideStatus);
 
   return (
@@ -201,12 +206,12 @@ function RideCard({ ride, onDelete, isDeleting, onExpand, isExpanded }) {
                 {pendingCount} pending
               </span>
             )}
-            {confirmedCount > 0 && (
+            {acceptedCount > 0 && (
               <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-800 px-2.5 py-1 rounded-full font-semibold">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                {confirmedCount} confirmed
+                {acceptedCount} accepted
               </span>
             )}
             <Link
@@ -712,6 +717,10 @@ function RidePost() {
   if (!isVerified) return <VerificationGate verificationStatus={verificationStatus} />;
 
   // ── Post ride handler ─────────────────────────────────────────────────────
+  // FIXED (session 5): previously discarded response.returnRide entirely,
+  // so posting a round trip only ever showed the outbound leg in "My Posted
+  // Rides" until the next full refetch. Both legs are separate Ride
+  // documents (see ARCHITECTURE.md §7), so both get prepended here.
   const handlePostRide = async (rideData) => {
     setIsPosting(true);
     const postingToast = toastService.loading('Publishing your ride…');
@@ -720,10 +729,16 @@ function RidePost() {
     try {
       const response = await postRide(rideData);
       const newRide = response?.data || response;
-      setRides(prev => [newRide, ...prev]);
+      const returnRide = response?.returnRide || null;
+      setRides(prev => returnRide ? [returnRide, newRide, ...prev] : [newRide, ...prev]);
       setHasPostedAnyRide(true);
       toastService.dismiss(postingToast);
-      toastService.success('Ride published!', 'It is now visible to nearby passengers.');
+      toastService.success(
+        returnRide ? 'Round trip published!' : 'Ride published!',
+        returnRide
+          ? 'Both your outbound and return legs are now visible to nearby passengers.'
+          : 'It is now visible to nearby passengers.'
+      );
       setTimeout(() => {
         document.getElementById('my-rides-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 600);
@@ -837,8 +852,8 @@ function RidePost() {
               color: 'text-blue-600',
             },
             {
-              num: rides.filter(r => ['confirmed', 'accepted'].some(s =>
-                r.bookings?.some(b => b.status === s))).length || 0,
+              num: rides.filter(r =>
+                r.bookings?.some(b => b.status === 'accepted')).length || 0,
               label: 'Rides with bookings',
               color: 'text-green-600',
             },
