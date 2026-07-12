@@ -149,7 +149,14 @@ export default function SearchMap({ allRides, startMarker, selectedRideId, onRid
                   </div>
                   <div className="pt-2 mt-1 border-t border-gray-100">
                     <button 
-                      onClick={(e) => { e.stopPropagation(); navigate('/ride/' + ride._id); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const params = new URLSearchParams();
+                        if (ride.start) params.set('start', ride.start);
+                        if (ride.end) params.set('end', ride.end);
+                        if (ride._id) params.set('selectedRideId', ride._id);
+                        navigate(`/ride/search${params.toString() ? `?${params.toString()}` : ''}#search`);
+                      }}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded-lg transition-colors"
                     >
                       View & Book

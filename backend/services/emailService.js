@@ -45,6 +45,12 @@ const crypto = require('crypto');
  *     Variables: to_email, to_name, bookingId, pickupLocation,
  *                dropLocation, seatsBooked, rideDate, rideTime, ...
  *
+ *   VITE_EMAILJS_TEMPLATE_USER_WARNING  ← NEW (Milestone 5 admin action)
+ *     Sent to a chat participant whose flagged message an admin reviewed
+ *     and decided merits a warning (no account state change — that's what
+ *     Suspend is for). Fired from AdminDashboard.jsx's Moderation tab.
+ *     Variables: to_email, to_name, reason, adminName, sentAt, platformUrl, flagId
+ *
  *   EMAILJS_TEMPLATE_RIDE_REMINDER  ← NOT VITE_-prefixed — used ONLY by the
  *     server cron job (jobs/rideReminderScheduler.js), never by the browser.
  *     One shared template covers all 3 stages; copy differs via
@@ -241,6 +247,34 @@ const sendWelcomeEmail = async (email, name) => {
   } catch (error) {
     console.error(`[${cid}] sendWelcomeEmail failed:`, error);
     throw error;
+  }
+};
+
+// ─── Moderation: Warning to User (NEW — Milestone 5 admin action) ────────────
+// Same EmailJS payload-mode as everything else here — the caller
+// (AdminDashboard.jsx ModerationTab) fires emailjs.send() with this action.
+// Does NOT touch User.accountStatus — this is purely a notice. Suspend
+// (existing accountStatus: SUSPENDED flow via PUT /admin/users/:id) is the
+// separate, real account-state action.
+// Requires a new EmailJS template: VITE_EMAILJS_TEMPLATE_USER_WARNING
+//   Variables: to_email, to_name, reason, adminName, sentAt, platformUrl, flagId
+
+const sendUserWarningEmail = async (user, { reason, adminName, flagId } = {}) => {
+  const cid = getCorrelationId();
+  try {
+    const emailAction = buildAction('user-warning', {
+      to_email: user.email,
+      to_name: user.name || 'there',
+      reason: reason || 'A recent message in one of your conversations was flagged for violating our platform safety guidelines.',
+      adminName: adminName || 'ShareMyRide Trust & Safety',
+      sentAt: fmtIST(new Date()),
+      platformUrl: process.env.FRONTEND_URL || 'https://sharemyride.in',
+      flagId: flagId || '',
+    });
+    return { success: true, emailAction };
+  } catch (error) {
+    console.error(`[${cid}] sendUserWarningEmail failed:`, error);
+    return { success: false, emailAction: null };
   }
 };
 
@@ -538,6 +572,9 @@ module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,
+
+  // Moderation — NEW
+  sendUserWarningEmail,
 
   // Inquiry — user submission flow
   sendUserConfirmationEmail,

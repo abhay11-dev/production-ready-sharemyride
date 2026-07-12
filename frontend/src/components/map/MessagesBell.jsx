@@ -7,7 +7,7 @@ import { getMyConversations } from '../../services/chatService';
 import Icon from '../../components/ui/Icon.jsx';
 
 export default function MessagesBell() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { socket } = useSocketContext();
   const navigate = useNavigate();
   const [unreadByConv, setUnreadByConv] = useState({}); // conversationId -> count
@@ -18,7 +18,7 @@ export default function MessagesBell() {
   }, [user?._id]);
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading || !user) return;
     let cancelled = false;
     (async () => {
       try {
@@ -32,7 +32,7 @@ export default function MessagesBell() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user, roleUnread]);
+  }, [user, authLoading, roleUnread]);
 
   useEffect(() => {
     if (!socket || !user) return;

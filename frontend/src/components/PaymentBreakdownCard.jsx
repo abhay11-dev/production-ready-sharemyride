@@ -137,12 +137,17 @@ const PaymentBreakdownCard = ({
                     <p className="text-xs text-orange-700 font-medium mb-2">Passenger-side platform charges:</p>
                     <div className="space-y-1 pl-3">
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">• Passenger-side platform fee (3%)</span>
-                        <span className="text-gray-600">+{formatMoney(driverCalc.platformFee * seatsBooked)}</span>
+                        <span className="text-gray-500">
+                          • Passenger-side platform fee ({(PaymentCalculator.PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}%)
+                          {waivePlatformCharges && <span className="ml-1 text-green-600 font-semibold">(waived this ride)</span>}
+                        </span>
+                        <span className="text-gray-600">+{formatMoney(totalPlatformFee)}</span>
                       </div>
                       <div className="flex justify-between text-xs">
-                        <span className="text-gray-500">• GST (5% on fare + platform fee)</span>
-                        <span className="text-gray-600">+{formatMoney(driverCalc.gstOnPlatformFee * seatsBooked)}</span>
+                        <span className="text-gray-500">
+                          • GST ({(PaymentCalculator.GST_PERCENTAGE * 100).toFixed(0)}% on {waivePlatformCharges ? 'base fare' : 'fare + platform fee'})
+                        </span>
+                        <span className="text-gray-600">+{formatMoney(totalGST)}</span>
                       </div>
                     </div>
                   </div>
@@ -179,10 +184,10 @@ const PaymentBreakdownCard = ({
                 </div>
                 
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Platform Fee (3%)</span>
+                  <span className="text-gray-600">Platform Fee ({(PaymentCalculator.PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}%)</span>
                   {waivePlatformCharges ? (
                     <span className="flex items-center gap-1.5 font-medium">
-                      <span className="text-gray-400 line-through">{formatMoney(baseFare * 0.03 * seatsBooked)}</span>
+                      <span className="text-gray-400 line-through">{formatMoney(passengerCalc.waivedPlatformFee * seatsBooked)}</span>
                       <span className="rounded bg-green-100 px-1 py-0.5 text-[10px] font-bold uppercase text-green-700">waived</span>
                     </span>
                   ) : (
@@ -191,7 +196,9 @@ const PaymentBreakdownCard = ({
                 </div>
                 
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">GST (5% on base fare)</span>
+                  <span className="text-gray-600">
+                    GST ({(PaymentCalculator.GST_PERCENTAGE * 100).toFixed(0)}% on {waivePlatformCharges ? 'base fare' : 'fare + platform fee'})
+                  </span>
                   <span className="font-medium">
                     {formatMoney(totalGST)}
                   </span>
@@ -200,7 +207,7 @@ const PaymentBreakdownCard = ({
                 {waivePlatformCharges && (
                   <div className="flex justify-between rounded-lg bg-emerald-100 px-3 py-2 text-sm">
                     <span className="font-semibold text-emerald-800">First booking waiver</span>
-                    <span className="font-bold text-emerald-700">-{formatMoney(baseFare * 0.03 * seatsBooked)}</span>
+                    <span className="font-bold text-emerald-700">-{formatMoney(passengerCalc.waivedPlatformFee * seatsBooked)}</span>
                   </div>
                 )}
                 

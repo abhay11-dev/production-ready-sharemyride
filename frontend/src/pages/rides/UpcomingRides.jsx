@@ -1,18 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import toast from 'react-hot-toast';
 
 import ReceiptService from '../../services/receiptService';
 import { getMyBookings, getDriverBookings } from '../../services/bookingService';
+import toastService from '../../services/toastService';
+import PaymentCalculator from '../../utils/paymentCalculator';
 
-// ─── Payment math (mirrors utils/paymentCalculator.js — the source of truth) ──
-// Driver ask = driver receives, in full. Platform fee (3%) + GST (5% on
-// fare+fee) are charged ONLY to the passenger, on top of the base fare.
-// See Transaction.calculateAmounts on the backend: driverNetAmount === baseFare,
+// ─── Payment math (uses utils/paymentCalculator.js — the single source of
+// truth for these rates; previously this file kept its own hardcoded copy
+// of PLATFORM_FEE_RATE/GST_RATE, which is exactly the kind of drift spec
+// §12 calls out) ────────────────────────────────────────────────────────
+// Driver ask = driver receives, in full. Platform fee + GST (on fare+fee)
+// are charged ONLY to the passenger, on top of the base fare. See
+// Transaction.calculateAmounts on the backend: driverNetAmount === baseFare,
 // platformFee / gstOnPlatformFee for the driver side are always 0.
-const PLATFORM_FEE_RATE = 0.03;
-const GST_RATE = 0.05;
+const PLATFORM_FEE_RATE = PaymentCalculator.PLATFORM_FEE_PERCENTAGE;
+const GST_RATE = PaymentCalculator.GST_PERCENTAGE;
 
 function calculatePassengerPayment(booking) {
   const baseFare = booking.baseFare || 0;
@@ -40,9 +44,19 @@ const UpcomingRides = () => {
   const [downloadingReceipt, setDownloadingReceipt] = useState(null);
   const [showCallModal, setShowCallModal] = useState(false);
   const [callDetails, setCallDetails] = useState(null);
+  const toastRef = useRef(null);
 
   useEffect(() => {
     fetchAllUpcomingRides();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastRef.current) {
+        toastService.dismiss(toastRef.current);
+        toastRef.current = null;
+      }
+    };
   }, []);
 
   const fetchAllUpcomingRides = async () => {
@@ -87,14 +101,15 @@ const UpcomingRides = () => {
 
       const totalRides = upcomingPassenger.length + upcomingDriver.length;
       if (totalRides > 0) {
-        toast.success(
-          `Found ${totalRides} upcoming ${totalRides === 1 ? 'ride' : 'rides'}!`,
-          { duration: 2500, position: 'top-center', icon: '🚗' }
+        toastRef.current = toastService.success(
+          'Upcoming rides loaded',
+          `Found ${totalRides} upcoming ${totalRides === 1 ? 'ride' : 'rides'}.`,
+          { duration: 900, position: 'top-center', id: 'upcoming-rides-loaded' }
         );
       }
     } catch (error) {
       console.error('Failed to load upcoming rides:', error);
-      toast.error('Failed to load upcoming rides. Please refresh the page.');
+      toastService.error('Failed to load upcoming rides', 'Please refresh the page and try again.');
     } finally {
       setLoading(false);
     }
@@ -112,9 +127,14 @@ const UpcomingRides = () => {
     }
   };
 
-  const handleCallAction = (phoneNumber, role, name) => {
+  const handleCallAction = (booking, phoneNumber, role, name) => {
+    if (!contactAllowed(booking)) {
+      toastService.error('Contact restricted', 'Phone numbers are shared only after payment is complete and the ride is confirmed.');
+      return;
+    }
+
     if (!phoneNumber || phoneNumber === 'Not provided') {
-      toast.error(`${role} phone number is not available`, { duration: 3000, position: 'top-center' });
+      toastService.error('Phone number unavailable', `${role} phone number is not available.`);
       return;
     }
     setCallDetails({ phoneNumber, role, name });
@@ -124,7 +144,7 @@ const UpcomingRides = () => {
   const handleConfirmCall = () => {
     if (callDetails) {
       window.location.href = `tel:${callDetails.phoneNumber}`;
-      toast.success(`Calling ${callDetails.name}...`, { duration: 2000, position: 'top-center', icon: '📞' });
+      toastService.success('Calling now', `${callDetails.name} is being dialed.`, { duration: 2000, position: 'top-center' });
     }
     setShowCallModal(false);
     setCallDetails(null);
@@ -133,14 +153,14 @@ const UpcomingRides = () => {
   const handleCancelCall = () => {
     setShowCallModal(false);
     setCallDetails(null);
-    toast('Call cancelled', { duration: 1500, position: 'top-center', icon: '❌' });
+    toastService.info('Call cancelled', 'You can call again anytime.');
   };
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     const count = tab === 'passenger' ? passengerRides.length : driverRides.length;
     if (count === 0) {
-      toast(`No ${tab} rides scheduled yet`, { duration: 2000, position: 'top-center', icon: '📅' });
+      toastService.info('No rides scheduled', `No ${tab} rides are scheduled yet.`);
     }
   };
 
@@ -160,6 +180,12 @@ const UpcomingRides = () => {
       label: rideDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       dot: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-700'
     };
+  };
+
+  const contactAllowed = (booking) => {
+    const paymentCompleted = booking.paymentStatus === 'completed';
+    const confirmed = UPCOMING_STATUSES.includes(booking.status);
+    return paymentCompleted && confirmed;
   };
 
   // ── Icons (heroicons-outline, stroke-2 — same set as Home.jsx) ──────────────
@@ -213,6 +239,11 @@ const UpcomingRides = () => {
     ticket: (cls) => (
       <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+      </svg>
+    ),
+    route: (cls) => (
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.553 2.776A1 1 0 0021 18.382V7.618a1 1 0 00-.447-.894L15 4m0 13V4m0 0L9 7" />
       </svg>
     ),
     check: (cls) => (
@@ -276,7 +307,7 @@ const UpcomingRides = () => {
           <p className="text-blue-100 text-xs sm:text-sm ml-0.5">
             {totalRides === 0
               ? 'No scheduled rides yet'
-              : `You have ${totalRides} upcoming ${totalRides === 1 ? 'ride' : 'rides'} 🚗`}
+              : `You have ${totalRides} upcoming ${totalRides === 1 ? 'ride' : 'rides'}`}
           </p>
         </div>
       </div>
@@ -426,7 +457,8 @@ const UpcomingRides = () => {
                         </span>
                         {isSegmentBooking && (
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700">
-                            📏 Segment · {booking.userSearchDistance?.toFixed(1)} km
+                            {Icon.route('w-3.5 h-3.5')}
+                            Segment · {booking.userSearchDistance?.toFixed(1)} km
                           </span>
                         )}
                       </div>
@@ -457,45 +489,51 @@ const UpcomingRides = () => {
                         {isPassenger ? Icon.driver('w-4 h-4 text-gray-500') : Icon.passenger('w-4 h-4 text-gray-500')}
                         {isPassenger ? 'Driver information' : 'Passenger information'}
                       </h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-white p-3 rounded-lg">
-                          <p className="text-[11px] text-gray-400 mb-0.5">Name</p>
-                          <p className="text-sm font-medium text-gray-900 truncate">
-                            {isPassenger
-                              ? (booking.ride?.driverId?.name || booking.driver?.name || 'N/A')
-                              : (booking.passenger?.name || 'N/A')}
-                          </p>
+                      {contactAllowed(booking) ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-white p-3 rounded-lg">
+                            <p className="text-[11px] text-gray-400 mb-0.5">Name</p>
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {isPassenger
+                                ? (booking.ride?.driverId?.name || booking.driver?.name || 'N/A')
+                                : (booking.passenger?.name || 'N/A')}
+                            </p>
+                          </div>
+                          <div className="bg-white p-3 rounded-lg">
+                            <p className="text-[11px] text-gray-400 mb-0.5">Phone</p>
+                            <p className="text-sm font-medium text-gray-900 truncate">{phoneNumber || 'Not provided'}</p>
+                          </div>
+                          {isPassenger ? (
+                            <>
+                              <div className="bg-white p-3 rounded-lg">
+                                <p className="text-[11px] text-gray-400 mb-0.5">Vehicle</p>
+                                <p className="text-sm font-medium text-gray-900 truncate">
+                                  {booking.ride?.vehicleNumber || booking.ride?.vehicle || 'N/A'}
+                                </p>
+                              </div>
+                              <div className="bg-white p-3 rounded-lg">
+                                <p className="text-[11px] text-gray-400 mb-0.5">Seats booked</p>
+                                <p className="text-sm font-medium text-gray-900">{booking.seatsBooked}</p>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="bg-white p-3 rounded-lg">
+                                <p className="text-[11px] text-gray-400 mb-0.5">Email</p>
+                                <p className="text-sm font-medium text-gray-900 truncate">{booking.passenger?.email || 'N/A'}</p>
+                              </div>
+                              <div className="bg-white p-3 rounded-lg">
+                                <p className="text-[11px] text-gray-400 mb-0.5">Seats booked</p>
+                                <p className="text-sm font-medium text-gray-900">{booking.seatsBooked}</p>
+                              </div>
+                            </>
+                          )}
                         </div>
-                        <div className="bg-white p-3 rounded-lg">
-                          <p className="text-[11px] text-gray-400 mb-0.5">Phone</p>
-                          <p className="text-sm font-medium text-gray-900 truncate">{phoneNumber || 'Not provided'}</p>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-gray-200 p-4 text-sm text-gray-600 bg-white">
+                          Contact information is shared only after payment is complete and the ride is confirmed.
                         </div>
-                        {isPassenger ? (
-                          <>
-                            <div className="bg-white p-3 rounded-lg">
-                              <p className="text-[11px] text-gray-400 mb-0.5">Vehicle</p>
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {booking.ride?.vehicleNumber || booking.ride?.vehicle || 'N/A'}
-                              </p>
-                            </div>
-                            <div className="bg-white p-3 rounded-lg">
-                              <p className="text-[11px] text-gray-400 mb-0.5">Seats booked</p>
-                              <p className="text-sm font-medium text-gray-900">{booking.seatsBooked}</p>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="bg-white p-3 rounded-lg">
-                              <p className="text-[11px] text-gray-400 mb-0.5">Email</p>
-                              <p className="text-sm font-medium text-gray-900 truncate">{booking.passenger?.email || 'N/A'}</p>
-                            </div>
-                            <div className="bg-white p-3 rounded-lg">
-                              <p className="text-[11px] text-gray-400 mb-0.5">Seats booked</p>
-                              <p className="text-sm font-medium text-gray-900">{booking.seatsBooked}</p>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                      )}
                     </div>
 
                     {/* Payment */}
@@ -526,7 +564,7 @@ const UpcomingRides = () => {
                               <span className="font-medium text-gray-900">₹{paymentDetails.serviceFee.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-500">GST on service (5%)</span>
+                              <span className="text-gray-500">GST ({(GST_RATE * 100).toFixed(0)}% on fare + fee)</span>
                               <span className="font-medium text-gray-900">₹{paymentDetails.gst.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between pt-2.5 border-t border-gray-100">
@@ -564,17 +602,18 @@ const UpcomingRides = () => {
                     <div className="flex items-center gap-2 pt-4 border-t border-gray-100 flex-wrap">
                       <button
                         onClick={() => handleCallAction(
+                          booking,
                           phoneNumber,
                           isPassenger ? 'Driver' : 'Passenger',
                           isPassenger
                             ? (booking.ride?.driverId?.name || booking.driver?.name || 'N/A')
                             : (booking.passenger?.name || 'N/A')
                         )}
-                        className={`${isPassenger ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'
-                          } text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5 shadow-sm`}
+                        disabled={!contactAllowed(booking) || !phoneNumber}
+                        className={`${isPassenger ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'} text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5 shadow-sm ${(!contactAllowed(booking) || !phoneNumber) ? 'opacity-50 cursor-not-allowed hover:bg-none' : ''}`}
                       >
                         {Icon.phone('w-4 h-4')}
-                        Call {isPassenger ? 'driver' : 'passenger'}
+                        {contactAllowed(booking) && phoneNumber ? `Call ${isPassenger ? 'driver' : 'passenger'}` : 'Contact after confirmation'}
                       </button>
 
                       <button

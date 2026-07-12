@@ -1,20 +1,6 @@
 import axios from 'axios';
 
-/**
- * ADMIN SERVICE
- *
- * ⚠️ RECONSTRUCTION NOTE:
- * I don't have your actual original adminService.js file — only the exports
- * your codebase visibly imports from it (`fetchRequests`, `updateRequestStatus`,
- * `adminAxios` in AdminDashboard.jsx). This file rebuilds those plus the
- * enquiry/report reply + email-sync flow, plus (NEW, this pass) the
- * Moderation admin API (Phase 5 / Milestone 5's missing frontend half).
- *
- * If your real file has more exports than this (it likely does — things like
- * fetchVerificationDocument per the build guide, or other admin helpers),
- * copy this file's NEW sections (marked below) into your actual file instead
- * of replacing it wholesale.
- */
+
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -115,11 +101,10 @@ export const fetchUpcomingRides = (page = 1, limit = 15) =>
 export const runReminderCheckNow = () =>
   adminAxios.post('/run-reminder-check').then((r) => r.data);
 
-// ─── Moderation — NEW (Phase 5 / Milestone 5 admin UI) ───────────────────────
-// IMPORTANT: /api/moderation is mounted as its OWN router in server.js, a
-// sibling of /api/admin, NOT nested under it (see ARCHITECTURE.md §6 / §11
-// and CODEBASE_GUIDE.md §4). That means it cannot go through `adminAxios`
-// (baseURL `${API_URL}/admin`) — a call like `adminAxios.get('/moderation/flags')`
+// ─── Moderation ─────────────────────────────────────────────────────────────
+// /api/moderation is mounted as its own router in server.js, a sibling of
+// /api/admin, not nested under it — so it cannot go through `adminAxios`
+// (baseURL `${API_URL}/admin`); a call like `adminAxios.get('/moderation/flags')`
 // would resolve to `${API_URL}/admin/moderation/flags`, which doesn't exist.
 // It still uses the same adminToken/protectAdmin auth, just a different base
 // path, so it gets its own axios instance mirroring adminAxios exactly.
@@ -184,4 +169,37 @@ export const reviewModerationFlag = (id, { adminNote, adminName } = {}) =>
   moderationAxios.post(`/flags/${id}/review`, { adminNote, adminName }).then((r) => r.data);
 
 // ─── Export the raw instances too, for ad-hoc calls (as AdminDashboard.jsx does) ──
+
+/**
+ * Send a warning email to a flagged message's sender. No account state
+ * change — pairs with suspend/block/ban below for a real state change.
+ * POST /api/moderation/flags/:id/warn
+ */
+export const warnModerationFlag = (id, { reason, adminName } = {}) =>
+  moderationAxios.post(`/flags/${id}/warn`, { reason, adminName }).then((r) => r.data);
+
+/**
+ * Suspend the flagged message's sender. Reversible — an admin can set the
+ * account back to ACTIVE from the Users tab.
+ * POST /api/moderation/flags/:id/suspend
+ */
+export const suspendModerationFlag = (id, { reason, adminName } = {}) =>
+  moderationAxios.post(`/flags/${id}/suspend`, { reason, adminName }).then((r) => r.data);
+
+/**
+ * Block the flagged message's sender.
+ * POST /api/moderation/flags/:id/block
+ */
+export const blockModerationFlag = (id, { reason, adminName } = {}) =>
+  moderationAxios.post(`/flags/${id}/block`, { reason, adminName }).then((r) => r.data);
+
+/**
+ * Permanently ban the flagged message's sender. The most severe action —
+ * confirm with the admin before calling this.
+ * POST /api/moderation/flags/:id/ban
+ */
+export const banModerationFlag = (id, { reason, adminName } = {}) =>
+  moderationAxios.post(`/flags/${id}/ban`, { reason, adminName }).then((r) => r.data);
+
+
 export { adminAxios, moderationAxios };

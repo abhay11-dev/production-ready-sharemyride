@@ -1,25 +1,35 @@
 // models/Negotiation.js
-//
-// MILESTONE 3 — Negotiation data model (see PROJECT_STATE.md §6/§7)
-//
-// Design decision (Q1, PROJECT_STATE.md §5): a Negotiation is its OWN
-// collection, completely separate from Ride and Booking. The original Ride
-// is NEVER modified by a negotiation. When a negotiation is finalized, a
-// normal Booking is created (with `negotiated: true` + `negotiationId`),
-// reusing the existing booking/payment pipeline unchanged.
-//
-// Full proposal history is kept in `proposals[]` — nothing is ever deleted
-// or overwritten, satisfying "never lose negotiation history" from the spec.
-//
-// `source` matches the 5 canonical action keys already defined on the
-// frontend in Milestone 2 (frontend/src/utils/negotiationActions.js) —
-// chat / negotiate_fare / request_partial / discuss_pickup / discuss_drop —
-// so there's no translation layer between what the UI offers and what the
-// API records.
-//
-// Verified this session — no changes needed.
+
 
 const mongoose = require('mongoose');
+
+// Each preference key mirrors a card in the frontend Preference panel.
+// `status` tracks what's on the table for that single preference within
+// this negotiation; it is intentionally independent of the overall
+// Negotiation.status so a passenger/driver can be negotiating fare AND
+// preferences in the same thread without them clobbering each other.
+const PREFERENCE_KEYS = [
+  'smoking', 'music', 'pets', 'luggage',
+  'womenOnly', 'talkative', 'childSeat', 'flexiblePickup',
+];
+
+const preferenceStateSchema = new mongoose.Schema({
+  requested: { type: Boolean, default: null }, // true = passenger wants it allowed, false = wants it disallowed
+  status: {
+    type: String,
+    enum: ['pending', 'accepted', 'rejected', 'counter_offered'],
+    default: 'pending',
+  },
+  note: { type: String, trim: true, maxlength: 300 },
+}, { _id: false });
+
+const preferencesSchema = new mongoose.Schema(
+  PREFERENCE_KEYS.reduce((shape, key) => {
+    shape[key] = { type: preferenceStateSchema, default: undefined };
+    return shape;
+  }, {}),
+  { _id: false }
+);
 
 const termsSchema = new mongoose.Schema({
   pickupLocation: { type: String, trim: true },
@@ -30,6 +40,10 @@ const termsSchema = new mongoose.Schema({
   time: { type: String, trim: true }, // e.g. "14:30"
   date: { type: Date },
   seats: { type: Number, min: 1, max: 8 },
+  // Only populated when this negotiation/proposal concerns preferences
+  // (source: 'preference'). Sparse by design — most negotiations never
+  // touch this key.
+  preferences: { type: preferencesSchema, default: undefined },
 }, { _id: false });
 
 const proposalSchema = new mongoose.Schema({
@@ -60,11 +74,20 @@ const negotiationSchema = new mongoose.Schema({
     index: true,
   },
 
-  // Which negotiation-card action started this (see Milestone 2)
+  // Which negotiation-card action started this thread
   source: {
     type: String,
-    enum: ['chat', 'negotiate_fare', 'request_partial', 'discuss_pickup', 'discuss_drop'],
+    enum: ['chat', 'negotiate_fare', 'request_partial', 'discuss_pickup', 'discuss_drop', 'preference'],
     required: true,
+  },
+
+  // Only set when source === 'preference' — which single preference this
+  // negotiation thread is about (e.g. a passenger can open separate
+  // preference negotiations for 'pets' and 'music' on the same ride).
+  preferenceKey: {
+    type: String,
+    enum: [...PREFERENCE_KEYS, null],
+    default: null,
   },
 
   // Q2 default: passenger-initiated only for now (driver-initiated deferred —
@@ -122,8 +145,7 @@ negotiationSchema.index({ driver: 1, status: 1 });
 negotiationSchema.index({ passenger: 1, status: 1 });
 negotiationSchema.index({ status: 1, expiresAt: 1 });
 
-// Lazy expiry: called on read paths (getById / list) rather than a cron job
-// in this milestone — see PROJECT_STATE.md §7 Milestone 3 "deferred" notes.
+// Lazy expiry: checked on read paths (getById / list) rather than a cron job.
 negotiationSchema.methods.checkExpiry = function () {
   if (['pending', 'countered'].includes(this.status) && this.expiresAt < new Date()) {
     this.status = 'expired';
@@ -132,3 +154,4 @@ negotiationSchema.methods.checkExpiry = function () {
 };
 
 module.exports = mongoose.model('Negotiation', negotiationSchema);
+module.exports.PREFERENCE_KEYS = PREFERENCE_KEYS;

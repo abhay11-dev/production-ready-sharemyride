@@ -1,14 +1,3 @@
-// src/services/chatService.js
-//
-// MILESTONE 4 (frontend) — thin axios wrapper around /api/chat/*, matching
-// the exact pattern every other service file in this app uses (rideService.js,
-// bookingService.js): one exported function per endpoint, no JSX, uses the
-// shared `api` instance so auth/refresh is handled transparently.
-//
-// Real-time delivery goes through services/socketClient.js + hooks/useChat.js
-// instead — this file only covers what a socket can't do: get-or-create,
-// conversation list, and paginated history (plus a REST fallback send).
-
 import api from '../config/api';
 
 /**
@@ -18,6 +7,18 @@ import api from '../config/api';
  */
 export const getOrCreateConversation = async (rideId) => {
   const response = await api.post('/chat/conversations', { rideId });
+  return response.data?.data || response.data;
+};
+
+/**
+ * Single conversation, with ride/passenger/driver populated. Used to build
+ * the in-chat preference cards and to know which side (passenger/driver)
+ * the current user is on.
+ * @param {string} conversationId
+ * @returns {Promise<Object>}
+ */
+export const getConversationById = async (conversationId) => {
+  const response = await api.get(`/chat/conversations/${conversationId}`);
   return response.data?.data || response.data;
 };
 
@@ -52,6 +53,18 @@ export const getMessages = async (conversationId, opts = {}) => {
 };
 
 /**
+ * AI-generated summary of the conversation + all negotiation threads on it
+ * (fare, seats, pickup/drop, accepted/rejected preferences, conditions,
+ * special agreements).
+ * @param {string} conversationId
+ * @returns {Promise<Object>}
+ */
+export const getConversationSummary = async (conversationId) => {
+  const response = await api.get(`/chat/conversations/${conversationId}/summary`);
+  return response.data?.data || response.data;
+};
+
+/**
  * REST fallback send — used only when the socket isn't connected. The
  * primary send path is useChat's `sendMessage`, which uses the socket.
  * @param {string} conversationId
@@ -65,7 +78,9 @@ export const sendMessageRest = async (conversationId, text) => {
 
 export default {
   getOrCreateConversation,
+  getConversationById,
   getMyConversations,
   getMessages,
+  getConversationSummary,
   sendMessageRest,
 };

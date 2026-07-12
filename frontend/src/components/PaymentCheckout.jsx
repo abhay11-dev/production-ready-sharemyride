@@ -6,6 +6,21 @@ import { useAuth } from '../hooks/useAuth';
 import  PaymentCalculator from '../utils/paymentCalculator';
 import PaymentBreakdownCard from './PaymentBreakdownCard';
 
+const formatRazorpayFailure = (response) => {
+  const error = response?.error;
+  if (!error) {
+    return 'Payment failed. Please try again.';
+  }
+
+  const baseMessage = error.description || error.reason || error.code || 'Payment failed.';
+  const details = [];
+  if (error.reason) details.push(`Reason: ${error.reason}`);
+  if (error.step) details.push(`Step: ${error.step}`);
+  if (error.source) details.push(`Source: ${error.source}`);
+
+  return details.length ? `${baseMessage} (${details.join(', ')})` : baseMessage;
+};
+
 function PaymentCheckout({ booking, onSuccess, onCancel }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -16,22 +31,46 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
 
   // Load Razorpay script
   useEffect(() => {
+    const existingScript = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existingScript) {
+      return;
+    }
+
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.async = true;
     document.body.appendChild(script);
-    
+
     return () => {
-      document.body.removeChild(script);
+      if (script.parentNode) {
+        document.body.removeChild(script);
+      }
     };
   }, []);
 
-  // Calculate passenger-side breakdown using 3% platform fee + 5% GST on fare plus fee.
+  // Calculate passenger-side breakdown using PaymentCalculator — the single
+  // source of truth for the platform fee/GST formula (spec §12: "exact same
+  // pricing logic everywhere").
   const calculatePassengerBreakdown = () => {
     if (!booking) return null;
-    
+
     const seats = booking.seatsBooked || 1;
-    const baseFare = booking.baseFare || (booking.totalFare / (1 + 0.03 + (1.03 * 0.05)));
+    let baseFare = booking.baseFare;
+    if (baseFare == null) {
+      // Fallback: reverse-engineer baseFare from totalFare when the booking
+      // record doesn't carry it directly. Must branch on isFirstRideFree —
+      // a waived booking's total was computed as base*(1+GST_RATE), while a
+      // standard booking's total was base*(1+FEE_RATE)*(1+GST_RATE)-ish
+      // (see PaymentCalculator.calculatePassengerTotal) — using the wrong
+      // divisor here would silently deflate/inflate the recovered baseFare.
+      const feeRate = PaymentCalculator.PLATFORM_FEE_PERCENTAGE;
+      const gstRate = PaymentCalculator.GST_PERCENTAGE;
+      const divisor = isFirstRideFree
+        ? (1 + gstRate)
+        : (1 + feeRate + (1 + feeRate) * gstRate);
+      baseFare = (booking.totalFare || 0) / divisor;
+    }
+
     const passengerCalc = PaymentCalculator.calculatePassengerTotal(baseFare, seats, {
       waivePlatformCharges: isFirstRideFree,
     });
@@ -66,24 +105,42 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
 
     try {
       // Step 1: Create Razorpay order with Route
-      const orderResponse = await createPaymentOrder(booking._id);
+      const rideId = booking.ride?._id || booking.rideId?._id || booking.rideId;
+      const orderResponse = await createPaymentOrder(booking._id, rideId);
       
       if (!orderResponse.success) {
         throw new Error(orderResponse.message || 'Failed to create order');
       }
 
-      const { orderId, amount, currency, razorpayKeyId } = orderResponse.data;
+      const {
+        orderId,
+        order_id,
+        amount,
+        currency,
+        razorpayKeyId,
+        key_id
+      } = orderResponse.data;
+      const razorpayOrderId = orderId || order_id;
+      const razorpayKey = razorpayKeyId || key_id;
       setCommissionBreakdown(orderResponse.data.commissionBreakdown);
 
       // Step 2: Configure Razorpay Checkout options
+      console.log('Opening Razorpay Checkout with:', {
+        key: razorpayKey,
+        order_id: razorpayOrderId,
+        amount,
+        currency,
+        name: 'ShareMyRide'
+      });
+
       const options = {
-        key: razorpayKeyId, // Razorpay Key ID from backend
+        key: razorpayKey, // Razorpay Key ID from backend
         amount: amount, // Total amount in paise
         currency: currency || 'INR',
         name: 'ShareMyRide',
         description: `Booking: ${booking.pickupLocation} to ${booking.dropLocation}`,
         image: '/logo.png', // Your app logo
-        order_id: orderId, // Razorpay Order ID
+        order_id: razorpayOrderId, // Razorpay Order ID
         
         // Pre-fill customer details
         prefill: {
@@ -180,16 +237,27 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
       
       // Handle payment failures
       razorpay.on('payment.failed', function (response) {
-        console.error('Payment failed:', response.error);
-        setError(`Payment failed: ${response.error.description || 'Please try again'}`);
+        console.error('Payment failed object:', response);
+        console.error('Payment failed details:', {
+          code: response.error?.code,
+          description: response.error?.description,
+          reason: response.error?.reason,
+          source: response.error?.source,
+          step: response.error?.step,
+          metadata: response.error?.metadata
+        });
+
+        const failureMessage = formatRazorpayFailure(response);
+        setError(failureMessage);
         setIsLoading(false);
         
         // Navigate to failure page
         navigate(`/payment-failed/${booking._id}`, {
           state: {
-            error: response.error.description,
-            errorCode: response.error.code,
-            booking: booking
+            error: failureMessage,
+            errorCode: response.error?.code,
+            booking: booking,
+            razorpayError: response.error
           }
         });
       });
@@ -259,7 +327,12 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
           </div>
         </div>
 
-        {/* Professional Payment Breakdown */}
+        {/* Professional Payment Breakdown — single source of truth. Previously
+            this rendered a compact PaymentBreakdownCard AND a second,
+            hand-rolled "Detailed breakdown" block below it with its own
+            independent copy of the fee/GST math and labels — a real drift
+            risk (spec §12: "exact same pricing logic everywhere"). Now it's
+            just PaymentBreakdownCard in full mode, once. */}
         <div className="border-t border-gray-200 pt-4">
           <PaymentBreakdownCard
             baseFare={passengerBreakdown?.baseFare || 0}
@@ -267,56 +340,8 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
             showPassengerView={true}
             showDriverView={false}
             waivePlatformCharges={isFirstRideFree}
-            compact={true}
             className="mb-4"
           />
-          
-          {/* Detailed breakdown */}
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between text-gray-600">
-              <span>Base Fare ({booking.seatsBooked} seat{booking.seatsBooked > 1 ? 's' : ''})</span>
-              <span>₹{(passengerBreakdown?.baseFareTotal || 0).toFixed(2)}</span>
-            </div>
-            
-            <div className="flex justify-between text-gray-600">
-              <span>Platform Fee (3%)</span>
-              {isFirstRideFree ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 line-through">
-                    ₹{(passengerBreakdown?.waivedPlatformFeeTotal || 0).toFixed(2)}
-                  </span>
-                  <span className="inline-flex items-center rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-700">
-                    waived
-                  </span>
-                </div>
-              ) : (
-                <span>
-                  ₹{(passengerBreakdown?.passengerServiceFeeTotal || 0).toFixed(2)}
-                </span>
-              )}
-            </div>
-            
-            <div className="flex justify-between text-gray-600">
-              <span>GST (5% on base fare)</span>
-              <span>
-                ₹{(passengerBreakdown?.passengerServiceFeeGSTTotal || 0).toFixed(2)}
-              </span>
-            </div>
-
-            {isFirstRideFree && (
-              <div className="flex justify-between rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800">
-                <span className="font-semibold">First booking platform fee waiver</span>
-                <span className="font-bold">
-                  -₹{(passengerBreakdown?.waivedPlatformFeeTotal || 0).toFixed(2)}
-                </span>
-              </div>
-            )}
-            
-            <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t">
-              <span>Total Amount</span>
-              <span>₹{(passengerBreakdown?.total || 0).toFixed(2)}</span>
-            </div>
-          </div>
         </div>
 
         {/* Enhanced Info Note */}
@@ -331,7 +356,7 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
               <p className="font-semibold mb-2">🔒 Secure Payment with Automatic Payout</p>
               <div className="space-y-1 text-xs">
                 <p>• Your payment is processed securely through Razorpay</p>
-                <p>• Driver receives the fare they set; passenger-side add-ons follow the 3% + 5% GST model</p>
+                <p>• Driver receives the fare they set; passenger-side add-ons follow the {(PaymentCalculator.PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}% + {(PaymentCalculator.GST_PERCENTAGE * 100).toFixed(0)}% GST model</p>
                 <p>• 256-bit SSL encryption protects your payment data</p>
                 <p>• Full refund available if ride is cancelled by driver</p>
               </div>

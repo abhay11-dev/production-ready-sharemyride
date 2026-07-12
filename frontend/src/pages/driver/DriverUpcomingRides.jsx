@@ -28,6 +28,7 @@ const DriverUpcomingRides = () => {
 
         return (
           ['accepted', 'completed'].includes(booking.status) &&
+          booking.paymentStatus === 'completed' &&
           !Number.isNaN(rideDate.getTime()) &&
           rideDate >= today
         );
@@ -164,30 +165,36 @@ const DriverUpcomingRides = () => {
                       </div>
                     </div>
 
-                    {/* Passenger info */}
+                            {/* Passenger info */}
                     <div className="bg-gray-50 rounded-xl p-4 mb-4">
                       <h4 className="font-semibold text-gray-900 text-sm mb-3 flex items-center gap-1.5">
                         <Icon name="User" size="sm" className="text-gray-500" />
                         Passenger information
                       </h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <p className="text-xs text-gray-400 mb-0.5">Name</p>
-                          <p className="text-sm font-medium text-gray-900 truncate">{booking.passengerId?.name || 'N/A'}</p>
+                      {booking.paymentStatus === 'completed' ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Name</p>
+                            <p className="text-sm font-medium text-gray-900 truncate">{booking.passengerId?.name || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Email</p>
+                            <p className="text-sm font-medium text-gray-900 truncate">{booking.passengerId?.email || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Phone</p>
+                            <p className="text-sm font-medium text-gray-900">{booking.passengerId?.phone || 'Not provided'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Seats booked</p>
+                            <p className="text-sm font-medium text-gray-900">{booking.seatsBooked}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs text-gray-400 mb-0.5">Email</p>
-                          <p className="text-sm font-medium text-gray-900 truncate">{booking.passengerId?.email || 'N/A'}</p>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-gray-200 p-4 text-sm text-gray-600 bg-white">
+                          Passenger contact details are shared only after payment is complete and the ride is confirmed.
                         </div>
-                        <div>
-                          <p className="text-xs text-gray-400 mb-0.5">Phone</p>
-                          <p className="text-sm font-medium text-gray-900">{booking.passengerId?.phone || 'Not provided'}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-400 mb-0.5">Seats booked</p>
-                          <p className="text-sm font-medium text-gray-900">{booking.seatsBooked}</p>
-                        </div>
-                      </div>
+                      )}
                     </div>
 
                     {/* Actions */}
@@ -197,7 +204,7 @@ const DriverUpcomingRides = () => {
                         <p className="text-xl font-bold text-gray-900">₹{booking.totalFare.toFixed(2)}</p>
                       </div>
                       <div className="flex gap-2">
-                        {booking.passengerId?.phone && (
+                        {booking.paymentStatus === 'completed' && booking.passengerId?.phone ? (
                           <a
                             href={`tel:${booking.passengerId.phone}`}
                             className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
@@ -205,6 +212,11 @@ const DriverUpcomingRides = () => {
                             <Icon name="Phone" size="sm" />
                             Call passenger
                           </a>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 bg-gray-100 text-gray-600 px-4 py-2 rounded-xl text-sm font-semibold">
+                            <Icon name="Shield" size="sm" className="text-gray-400" />
+                            Contact after confirmation
+                          </div>
                         )}
                         <Link
                           to="/driver/bookings"

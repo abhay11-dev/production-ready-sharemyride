@@ -21,15 +21,7 @@ export const clearAccessToken = ()     => { _accessToken = null; };
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser]           = useState(() => {
-    // Restore non-sensitive user object from localStorage on page load
-    try {
-      const stored = localStorage.getItem('user');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);  // true while silently refreshing on mount
   const refreshTimer = useRef(null);
 
@@ -61,14 +53,31 @@ export function AuthProvider({ children }) {
   // ── Mount: try to restore session via refresh token cookie ─────────────────
   useEffect(() => {
     const restoreSession = async () => {
+      let storedUser = null;
+      try {
+        const saved = localStorage.getItem('user');
+        storedUser = saved ? JSON.parse(saved) : null;
+      } catch {
+        storedUser = null;
+      }
+
       try {
         const token = await silentRefresh();
         if (token) {
-          // Fetch fresh user profile to make sure stored user isn't stale
-          const profileRes = await api.get('/auth/profile');
-          if (profileRes.data?.user) {
-            setUser(profileRes.data.user);
-            localStorage.setItem('user', JSON.stringify(profileRes.data.user));
+          if (storedUser) {
+            setUser(storedUser);
+          }
+          try {
+            const profileRes = await api.get('/auth/profile');
+            if (profileRes.data?.user) {
+              setUser(profileRes.data.user);
+              localStorage.setItem('user', JSON.stringify(profileRes.data.user));
+            } else if (!storedUser) {
+              setUser(null);
+            }
+          } catch (profileError) {
+            console.warn('Auth profile refresh failed:', profileError?.message || profileError);
+            if (!storedUser) setUser(null);
           }
         }
       } catch {

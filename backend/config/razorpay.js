@@ -7,11 +7,18 @@ const razorpayPayment = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
-// RazorpayX Payout Instance using environment variables
-const razorpayPayout = new Razorpay({
-  key_id: process.env.RAZORPAYX_KEY_ID,
-  key_secret: process.env.RAZORPAYX_KEY_SECRET
-});
+let razorpayPayout = null;
+const payoutKeyId = process.env.RAZORPAYX_KEY_ID;
+const payoutKeySecret = process.env.RAZORPAYX_KEY_SECRET;
+
+if (payoutKeyId && payoutKeySecret) {
+  razorpayPayout = new Razorpay({
+    key_id: payoutKeyId,
+    key_secret: payoutKeySecret
+  });
+} else {
+  console.warn('RazorpayX payout credentials not configured. Payout services will be disabled.');
+}
 
 // Helper function to verify webhook signature
 const verifyWebhookSignature = (payload, signature, secret) => {

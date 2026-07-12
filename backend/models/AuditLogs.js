@@ -27,6 +27,10 @@ const auditLogSchema = new mongoose.Schema(
                 'negotiation.reject', 'negotiation.cancel', 'negotiation.finalize',
                 // Moderation actions (Milestone 5)
                 'moderation.flag',
+                // Ride Safety Platform — Phase 5 (Privacy, Consent & Retention)
+                'ride.location_view', 'ride.location_consent_change',
+                'ride.journey_auto_archive', 'ride.telemetry_minimized',
+                'contact.add', 'contact.update', 'contact.remove',
                 // System
                 'export.data', 'admin.login',
             ],

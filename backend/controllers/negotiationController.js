@@ -1,37 +1,8 @@
 // controllers/negotiationController.js
-//
-// MILESTONE 3 — Negotiation API (see PROJECT_STATE.md §6/§7)
-//
-// Endpoints implemented here (wired in routes/negotiationRoutes.js, mounted
-// at /api/negotiations in server.js):
-//   POST   /api/negotiations               initiateNegotiation
-//   GET    /api/negotiations/my            getMyNegotiations
-//   GET    /api/negotiations/:id           getNegotiationById
-//   POST   /api/negotiations/:id/counter   counterOffer
-//   POST   /api/negotiations/:id/accept    acceptNegotiation
-//   POST   /api/negotiations/:id/reject    rejectNegotiation
-//   POST   /api/negotiations/:id/cancel    cancelNegotiation
-//   POST   /api/negotiations/:id/finalize  finalizeNegotiation  (driver only)
-//
-// FIX (this session): initiateNegotiation previously saved the negotiation,
-// logged the audit, and sent the response — then fell through into a
-// SECOND identical save/log/response block. That second res.json() call
-// threw ERR_HTTP_HEADERS_SENT on every single request because Express
-// cannot send two responses to one request. The duplicate block has been
-// removed; behavior is otherwise unchanged.
-//
-// IMPORTANT — things this file deliberately does NOT do:
-//   - Never modifies the original Ride document's route/schema fields.
-//     Only touches `ride.availableSeats` on finalize, mirroring the exact
-//     decrement pattern already used in bookingController.createBooking,
-//     so seat accounting stays consistent across both booking paths.
-//   - Never bypasses the existing Booking/payment pipeline. finalize()
-//     creates a normal `pending` Booking via Booking.calculateFare() (the
-//     model's own method) — the SAME lifecycle every other booking goes
-//     through from that point on (accept/payment/cancellation all reuse
-//     existing bookingController logic untouched).
+
 
 const Negotiation = require('../models/Negotiation');
+const { PREFERENCE_KEYS } = require('../models/Negotiation');
 const Ride = require('../models/Ride');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
@@ -66,7 +37,18 @@ function roleOf(negotiation, userId) {
     return null;
 }
 
-const VALID_SOURCES = ['chat', 'negotiate_fare', 'request_partial', 'discuss_pickup', 'discuss_drop'];
+const VALID_SOURCES = ['chat', 'negotiate_fare', 'request_partial', 'discuss_pickup', 'discuss_drop', 'preference'];
+
+const PREFERENCE_LABELS = {
+  smoking: 'smoking',
+  music: 'playing music',
+  pets: 'travelling with a pet',
+  luggage: 'extra luggage',
+  womenOnly: 'women-only seating',
+  talkative: 'conversation preference',
+  childSeat: 'a child seat',
+  flexiblePickup: 'a flexible pickup point',
+};
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/negotiations — start a new negotiation on a ride
@@ -79,6 +61,7 @@ exports.initiateNegotiation = async (req, res) => {
             rideId, source,
             proposedFare, pickupLocation, pickupCoordinates,
             dropLocation, dropCoordinates, time, date, seats, message,
+            preferenceKey, preferenceRequested, preferenceNote,
         } = req.body;
 
         if (!rideId || !source || !VALID_SOURCES.includes(source)) {
@@ -86,6 +69,21 @@ exports.initiateNegotiation = async (req, res) => {
                 success: false,
                 message: `rideId and a valid source (${VALID_SOURCES.join(', ')}) are required`,
             });
+        }
+
+        if (source === 'preference') {
+            if (!preferenceKey || !PREFERENCE_KEYS.includes(preferenceKey)) {
+                return res.status(400).json({
+                    success: false,
+                    message: `preferenceKey is required and must be one of: ${PREFERENCE_KEYS.join(', ')}`,
+                });
+            }
+            if (typeof preferenceRequested !== 'boolean') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'preferenceRequested (boolean) is required when source is "preference"',
+                });
+            }
         }
 
         if (message && typeof message === 'string' && message.length > 500) {
@@ -106,7 +104,7 @@ exports.initiateNegotiation = async (req, res) => {
         }
 
         // A specific rule per action type, per the eligibility logic already
-        // enforced on the frontend (Milestone 2) — re-checked server-side so
+        // enforced on the frontend — re-checked server-side so
         // the API can't be called directly to bypass it.
         if (source === 'negotiate_fare' && !ride.negotiableFare) {
             return res.status(400).json({ success: false, message: 'This ride does not allow fare negotiation' });
@@ -119,17 +117,26 @@ exports.initiateNegotiation = async (req, res) => {
             return res.status(400).json({ success: false, message: 'proposedFare must be a non-negative number' });
         }
 
-        // Prevent duplicate open negotiations between the same passenger/ride
-        const existing = await Negotiation.findOne({
+        // Prevent duplicate open negotiations between the same passenger/ride.
+        // Scoped by source (and preferenceKey, when applicable) so a passenger
+        // can have an open fare negotiation and an open "pets" preference
+        // negotiation on the same ride at the same time without collision.
+        const dupQuery = {
             ride: rideId,
             passenger: req.user._id,
+            source,
             status: { $in: ['pending', 'countered', 'accepted'] },
             isActive: true,
-        });
+        };
+        if (source === 'preference') dupQuery.preferenceKey = preferenceKey;
+
+        const existing = await Negotiation.findOne(dupQuery);
         if (existing) {
             return res.status(409).json({
                 success: false,
-                message: 'You already have an open negotiation on this ride',
+                message: source === 'preference'
+                    ? `You already have an open negotiation about "${preferenceKey}" on this ride`
+                    : 'You already have an open negotiation of this type on this ride',
                 negotiationId: existing._id,
             });
         }
@@ -151,11 +158,22 @@ exports.initiateNegotiation = async (req, res) => {
             seats: seatsRequested,
         };
 
+        if (source === 'preference') {
+            terms.preferences = {
+                [preferenceKey]: {
+                    requested: preferenceRequested,
+                    status: 'pending',
+                    note: preferenceNote || '',
+                },
+            };
+        }
+
         const negotiation = new Negotiation({
             ride: rideId,
             passenger: req.user._id,
             driver: driverId,
             source,
+            preferenceKey: source === 'preference' ? preferenceKey : null,
             initiatedBy: 'passenger',
             currentTerms: terms,
             proposals: [{
@@ -203,6 +221,7 @@ exports.initiateNegotiation = async (req, res) => {
                 discuss_pickup: 'wants to discuss the pickup point',
                 discuss_drop: 'wants to discuss the drop point',
                 chat: 'started a negotiation',
+                preference: `asked about ${PREFERENCE_LABELS[preferenceKey] || 'a ride preference'}`,
             };
             const sysMsg = await Message.create({
                 conversation: conversation._id,
@@ -215,8 +234,16 @@ exports.initiateNegotiation = async (req, res) => {
             await conversation.save();
 
             try {
-                const { getIO } = require('../services/socket');
+                const { getIO, emitToUser } = require('../services/socket');
                 getIO().to(`conversation:${conversation._id}`).emit('message:new', sysMsg);
+                emitToUser(driverId, 'negotiation:new', {
+                    negotiationId: negotiation._id,
+                    conversationId: conversation._id,
+                    source,
+                    preferenceKey: source === 'preference' ? preferenceKey : null,
+                    fromUser: { id: req.user._id, name: req.user.name },
+                    message: sysMsg.text,
+                });
             } catch {
                 // Socket.IO not initialized (e.g. tests) — non-fatal
             }
@@ -248,12 +275,14 @@ exports.initiateNegotiation = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 exports.getMyNegotiations = async (req, res) => {
     try {
-        const { role, status } = req.query;
+        const { role, status, rideId } = req.query;
         const query = { isActive: true };
 
         if (role === 'passenger') query.passenger = req.user._id;
         else if (role === 'driver') query.driver = req.user._id;
         else query.$or = [{ passenger: req.user._id }, { driver: req.user._id }];
+
+        if (rideId) query.ride = rideId;
 
         if (status) {
             const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
@@ -345,7 +374,7 @@ exports.counterOffer = async (req, res) => {
             });
         }
 
-        const { pickupLocation, pickupCoordinates, dropLocation, dropCoordinates, fare, time, date, seats, message } = req.body;
+        const { pickupLocation, pickupCoordinates, dropLocation, dropCoordinates, fare, time, date, seats, message, preferenceNote } = req.body;
 
         if (fare != null && (isNaN(parseFloat(fare)) || parseFloat(fare) < 0)) {
             return res.status(400).json({ success: false, message: 'fare must be a non-negative number' });
@@ -364,6 +393,22 @@ exports.counterOffer = async (req, res) => {
             date: date ? new Date(date) : negotiation.currentTerms.date,
             seats: seats != null ? Math.min(8, Math.max(1, parseInt(seats))) : negotiation.currentTerms.seats,
         };
+
+        // A counter-offer on a preference negotiation carries the preference
+        // forward unchanged (same requested value) but flips its status to
+        // 'counter_offered' and lets the countering party attach a note
+        // (e.g. "I can allow a small pet carrier but not a large dog").
+        if (negotiation.source === 'preference' && negotiation.preferenceKey) {
+            const key = negotiation.preferenceKey;
+            const prevPref = negotiation.currentTerms.preferences?.[key] || {};
+            newTerms.preferences = {
+                [key]: {
+                    requested: prevPref.requested,
+                    status: 'counter_offered',
+                    note: preferenceNote != null ? preferenceNote : (prevPref.note || ''),
+                },
+            };
+        }
 
         negotiation.currentTerms = newTerms;
         negotiation.proposals.push({
@@ -388,18 +433,26 @@ exports.counterOffer = async (req, res) => {
         try {
             const conversation = await Conversation.findOne({ negotiationId: negotiation._id });
             if (conversation) {
+                const actorName = req.user.name || (role === 'passenger' ? 'Passenger' : 'Driver');
+                const counterText = negotiation.source === 'preference'
+                    ? `${actorName} countered on ${PREFERENCE_LABELS[negotiation.preferenceKey] || 'the preference request'}${preferenceNote ? `: "${preferenceNote}"` : '.'}`
+                    : `${actorName} countered: ₹${newTerms.fare} for ${newTerms.seats} seat(s).`;
                 const sysMsg = await Message.create({
                     conversation: conversation._id,
                     type: 'system',
-                    text: `${req.user.name || (role === 'passenger' ? 'Passenger' : 'Driver')} countered: ₹${newTerms.fare} for ${newTerms.seats} seat(s).`,
+                    text: counterText,
                 });
                 const otherRole = role === 'passenger' ? 'driver' : 'passenger';
                 conversation.lastMessage = { text: sysMsg.text, sender: null, sentAt: sysMsg.createdAt };
                 conversation.unreadCount[otherRole] += 1;
                 await conversation.save();
                 try {
-                    const { getIO } = require('../services/socket');
+                    const { getIO, emitToUser } = require('../services/socket');
                     getIO().to(`conversation:${conversation._id}`).emit('message:new', sysMsg);
+                    const otherUserId = otherRole === 'passenger' ? negotiation.passenger : negotiation.driver;
+                    emitToUser(otherUserId, 'negotiation:countered', {
+                        negotiationId: negotiation._id, conversationId: conversation._id, message: sysMsg.text,
+                    });
                 } catch { /* non-fatal */ }
             }
         } catch (convErr) {
@@ -435,6 +488,13 @@ exports.acceptNegotiation = async (req, res) => {
         }
 
         negotiation.status = 'accepted';
+        if (negotiation.source === 'preference' && negotiation.preferenceKey) {
+            const key = negotiation.preferenceKey;
+            if (negotiation.currentTerms.preferences?.[key]) {
+                negotiation.currentTerms.preferences[key].status = 'accepted';
+                negotiation.markModified('currentTerms.preferences');
+            }
+        }
         await negotiation.save();
         await logAudit({
             actor: req.user, action: 'negotiation.accept', resourceId: negotiation._id,
@@ -454,8 +514,12 @@ exports.acceptNegotiation = async (req, res) => {
                 conversation.unreadCount[otherRole] += 1;
                 await conversation.save();
                 try {
-                    const { getIO } = require('../services/socket');
+                    const { getIO, emitToUser } = require('../services/socket');
                     getIO().to(`conversation:${conversation._id}`).emit('message:new', sysMsg);
+                    const otherUserId = otherRole === 'passenger' ? negotiation.passenger : negotiation.driver;
+                    emitToUser(otherUserId, 'negotiation:accepted', {
+                        negotiationId: negotiation._id, conversationId: conversation._id, message: sysMsg.text,
+                    });
                 } catch { /* non-fatal */ }
             }
         } catch (convErr) {
@@ -488,6 +552,13 @@ exports.rejectNegotiation = async (req, res) => {
         }
 
         negotiation.status = 'rejected';
+        if (negotiation.source === 'preference' && negotiation.preferenceKey) {
+            const key = negotiation.preferenceKey;
+            if (negotiation.currentTerms.preferences?.[key]) {
+                negotiation.currentTerms.preferences[key].status = 'rejected';
+                negotiation.markModified('currentTerms.preferences');
+            }
+        }
         await negotiation.save();
         await logAudit({
             actor: req.user, action: 'negotiation.reject', resourceId: negotiation._id,
@@ -507,8 +578,12 @@ exports.rejectNegotiation = async (req, res) => {
                 conversation.unreadCount[otherRole] += 1;
                 await conversation.save();
                 try {
-                    const { getIO } = require('../services/socket');
+                    const { getIO, emitToUser } = require('../services/socket');
                     getIO().to(`conversation:${conversation._id}`).emit('message:new', sysMsg);
+                    const otherUserId = otherRole === 'passenger' ? negotiation.passenger : negotiation.driver;
+                    emitToUser(otherUserId, 'negotiation:rejected', {
+                        negotiationId: negotiation._id, conversationId: conversation._id, message: sysMsg.text,
+                    });
                 } catch { /* non-fatal */ }
             }
         } catch (convErr) {
@@ -557,8 +632,12 @@ exports.cancelNegotiation = async (req, res) => {
                 conversation.unreadCount[otherRole] += 1;
                 await conversation.save();
                 try {
-                    const { getIO } = require('../services/socket');
+                    const { getIO, emitToUser } = require('../services/socket');
                     getIO().to(`conversation:${conversation._id}`).emit('message:new', sysMsg);
+                    const otherUserId = otherRole === 'passenger' ? negotiation.passenger : negotiation.driver;
+                    emitToUser(otherUserId, 'negotiation:cancelled', {
+                        negotiationId: negotiation._id, conversationId: conversation._id, message: sysMsg.text,
+                    });
                 } catch { /* non-fatal */ }
             }
         } catch (convErr) {
@@ -586,6 +665,13 @@ exports.finalizeNegotiation = async (req, res) => {
 
         if (negotiation.driver.toString() !== req.user._id.toString()) {
             return res.status(403).json({ success: false, message: 'Only the driver can finalize a negotiation' });
+        }
+
+        if (negotiation.source === 'preference') {
+            return res.status(400).json({
+                success: false,
+                message: 'Preference negotiations don\'t create a booking on their own — accepting is the final step. Finalize the ride via a fare/chat negotiation or the normal booking flow instead.',
+            });
         }
 
         negotiation.checkExpiry();
@@ -620,7 +706,7 @@ exports.finalizeNegotiation = async (req, res) => {
             dropCoordinates: terms.dropCoordinates,
             status: 'pending',
             paymentStatus: 'pending',
-            // Milestone 3 additions to Booking schema (additive, see PROJECT_STATE.md §7)
+            // Additive fields on the Booking schema (negotiated / negotiationId)
             negotiated: true,
             negotiationId: negotiation._id,
         });
@@ -651,8 +737,12 @@ exports.finalizeNegotiation = async (req, res) => {
                 conversation.unreadCount.passenger += 1;
                 await conversation.save();
                 try {
-                    const { getIO } = require('../services/socket');
+                    const { getIO, emitToUser } = require('../services/socket');
                     getIO().to(`conversation:${conversation._id}`).emit('message:new', sysMsg);
+                    emitToUser(negotiation.passenger, 'negotiation:finalized', {
+                        negotiationId: negotiation._id, conversationId: conversation._id,
+                        bookingId: booking._id, message: sysMsg.text,
+                    });
                 } catch { /* socket not initialized — non-fatal */ }
             }
         } catch (convErr) {

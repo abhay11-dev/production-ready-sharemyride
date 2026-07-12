@@ -31,17 +31,61 @@ const OLA_KEY = import.meta.env.VITE_OLA_MAPS_API_KEY || '';
 const INDIA_LNG = 78.9629;
 const INDIA_LAT = 20.5937;
 
+const OSM_RASTER_STYLE = {
+  version: 8,
+  name: 'OpenStreetMap Road',
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [{ id: 'osm-base', type: 'raster', source: 'osm' }],
+};
+
+const DARK_RASTER_STYLE = {
+  version: 8,
+  name: 'Dark Base',
+  sources: {
+    dark: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [{ id: 'dark-base', type: 'raster', source: 'dark' }],
+};
+
+const SATELLITE_RASTER_STYLE = {
+  version: 8,
+  name: 'Satellite',
+  sources: {
+    satellite: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [{ id: 'satellite-base', type: 'raster', source: 'satellite' }],
+};
+
+const isOLAEnabled = Boolean(OLA_KEY);
+
 // OLA Maps tile styles
 const MAP_STYLES = {
-  road: OLA_KEY
+  road: isOLAEnabled
     ? `https://api.olamaps.io/tiles/vector/v1/styles/default-light-standard/style.json?api_key=${OLA_KEY}`
-    : 'https://demotiles.maplibre.org/style.json',
-  dark: OLA_KEY
+    : OSM_RASTER_STYLE,
+  dark: isOLAEnabled
     ? `https://api.olamaps.io/tiles/vector/v1/styles/default-dark-standard/style.json?api_key=${OLA_KEY}`
-    : 'https://demotiles.maplibre.org/style.json',
-  satellite: OLA_KEY
+    : DARK_RASTER_STYLE,
+  satellite: isOLAEnabled
     ? `https://api.olamaps.io/tiles/vector/v1/styles/default-light-standard-mr/style.json?api_key=${OLA_KEY}`
-    : 'https://demotiles.maplibre.org/style.json',
+    : SATELLITE_RASTER_STYLE,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -250,6 +294,16 @@ function RouteInfoPanel({ ride, onBook, onClose }) {
 
 // ─── Map style switcher ───────────────────────────────────────────────────────
 function StyleSwitcher({ current, onChange }) {
+  const styleOptions = isOLAEnabled
+    ? [
+        { key: 'road', label: '🗺️' },
+        { key: 'dark', label: '🌙' },
+        { key: 'satellite', label: '🛰️' },
+      ]
+    : [
+        { key: 'road', label: '🗺️' },
+      ];
+
   return (
     <div style={{
       position: 'absolute', top: 12, right: 12, zIndex: 10,
@@ -258,12 +312,9 @@ function StyleSwitcher({ current, onChange }) {
       boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
       border: '1px solid #e5e7eb',
     }}>
-      {[
-        { key: 'road', label: '🗺️' },
-        { key: 'dark', label: '🌙' },
-        { key: 'satellite', label: '🛰️' },
-      ].map(({ key, label }) => (
+      {styleOptions.map(({ key, label }) => (
         <button
+          type="button"
           key={key}
           onClick={() => onChange(key)}
           title={key}
@@ -392,15 +443,6 @@ export default function RideMap({
 
     function initMap(ml) {
       if (!containerRef.current || mapRef.current) return;
-
-      // Inject required MapLibre CSS once
-      if (!document.querySelector('link[data-maplibre]')) {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css';
-        link.setAttribute('data-maplibre', '1');
-        document.head.appendChild(link);
-      }
 
       const map = new ml.Map({
         container: containerRef.current,

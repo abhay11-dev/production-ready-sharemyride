@@ -4,12 +4,19 @@ const Transaction = require('../models/Transaction');
 const DriverBankAccount = require('../models/DriverBankAccount');
 const { razorpayPayout } = require('../config/razorpay');
 
+const ensurePayoutConfigured = () => {
+  if (!razorpayPayout) {
+    throw new Error('RazorpayX payout credentials are not configured. Set RAZORPAYX_KEY_ID and RAZORPAYX_KEY_SECRET in .env.');
+  }
+};
+
 /**
  * Create RazorpayX Contact for Driver
  * This is a one-time setup per driver
  */
 const createRazorpayContact = async (driver) => {
   try {
+    ensurePayoutConfigured();
     const contact = await razorpayPayout.contacts.create({
       name: driver.name,
       email: driver.email,
@@ -34,6 +41,7 @@ const createRazorpayContact = async (driver) => {
  */
 const createRazorpayFundAccount = async (contactId, bankDetails) => {
   try {
+    ensurePayoutConfigured();
     const fundAccount = await razorpayPayout.fundAccount.create({
       contact_id: contactId,
       account_type: 'bank_account',
@@ -152,6 +160,7 @@ const createDriverPayout = async (transactionId, mode = 'IMPS') => {
     // Calculate payout amount (in paise)
     const payoutAmountInPaise = Math.round(transaction.driverNetAmount * 100);
     
+    ensurePayoutConfigured();
     // Create payout in RazorpayX
     const razorpayxPayout = await razorpayPayout.payouts.create({
       account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER,
@@ -300,6 +309,7 @@ const retryFailedPayout = async (payoutId) => {
  */
 const getPayoutStatus = async (razorpayxPayoutId) => {
   try {
+    ensurePayoutConfigured();
     const payout = await razorpayPayout.payouts.fetch(razorpayxPayoutId);
     return payout;
   } catch (error) {

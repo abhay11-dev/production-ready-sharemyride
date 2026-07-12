@@ -1,54 +1,56 @@
-// models/Message.js
-//
-// MILESTONE 4 — Chat service (see PROJECT_STATE.md §6/§7)
-//
-// v1 scope (default, Q11 from PROJECT_STATE.md §4 — not yet confirmed by
-// user): TEXT ONLY. No images/voice/documents/GIFs/reactions/edit/delete in
-// this milestone — the spec's chat feature list was large, and v1 was
-// trimmed deliberately to ship something real rather than a half-built
-// version of everything. `type` is an enum specifically so those can be
-// added later as additive values without a schema migration.
-//
-// Verified this session — no changes needed.
+// models/LocationPing.js
+
 
 const mongoose = require('mongoose');
 
-const messageSchema = new mongoose.Schema({
-  conversation: {
+const RETENTION_DAYS = 90;
+
+const locationPingSchema = new mongoose.Schema({
+  ride: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Conversation',
+    ref: 'Ride',
     required: true,
-    index: true,
+    index: true
   },
-  sender: {
+  user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: function () { return this.type !== 'system'; },
-    default: null,
+    required: true,
+    index: true
   },
-  type: {
+  role: {
     type: String,
-    enum: ['text', 'system'], // 'system' = e.g. "Negotiation finalized" auto-messages
-    default: 'text',
+    enum: ['driver', 'passenger'],
+    required: true
   },
-  text: {
-    type: String,
-    trim: true,
-    maxlength: 1000,
-    required: function () { return this.type === 'text'; },
-  },
+  lat: { type: Number, required: true },
+  lng: { type: Number, required: true },
+  speed: { type: Number, default: null }, // m/s
+  heading: { type: Number, default: null }, // degrees
+  accuracy: { type: Number, default: null }, // meters
+  battery: { type: Number, default: null }, // 0-100, if the device reports it
 
-  // Read receipts — array of {user, readAt} rather than a boolean, since a
-  // conversation only has 2 participants but this shape survives group
-  // chat later without a migration
-  readBy: [{
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    readAt: { type: Date, default: Date.now },
-  }],
+  // Client-reported capture time. Can be well before `receivedAt` if the
+  // point was buffered offline and uploaded later — that gap is exactly
+  // how "was this device offline" gets detected, so both timestamps are
+  // kept rather than collapsing to one.
+  at: { type: Date, required: true, index: true },
+  receivedAt: { type: Date, default: Date.now },
 
-  isActive: { type: Boolean, default: true }, // soft delete, matches app convention
-}, { timestamps: true });
+  // TTL trigger field, set to `at + RETENTION_DAYS` at insert time (see
+  // liveTrackingService.ingestLocation). Deliberately separate from `at`
+  // itself: services/emergencyService.js "locks" a ride's telemetry by
+  // $unset-ing this field on all of its pings — a document with no
+  // `expireAt` is permanently skipped by MongoDB's TTL monitor, which is
+  // exactly the "lock and preserve all ride telemetry for investigation"
+  // requirement from the Emergency flow, done correctly rather than as a
+  // best-effort flag an unrelated job has to remember to check.
+  expireAt: { type: Date, default: null }
+});
 
-messageSchema.index({ conversation: 1, createdAt: -1 });
+locationPingSchema.index({ ride: 1, at: 1 });
+locationPingSchema.index({ expireAt: 1 }, { expireAfterSeconds: 0 });
 
-module.exports = mongoose.model('Message', messageSchema);
+locationPingSchema.statics.RETENTION_DAYS = RETENTION_DAYS;
+
+module.exports = mongoose.model('LocationPing', locationPingSchema);

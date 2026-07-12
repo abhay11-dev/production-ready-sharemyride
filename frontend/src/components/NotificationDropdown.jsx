@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 function NotificationDropdown() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -14,12 +14,12 @@ function NotificationDropdown() {
   const dropdownRef = useRef(null);
 
   useEffect(() => {
-    if (user) {
+    if (!authLoading && user) {
       fetchNotifications();
       const interval = setInterval(fetchNotifications, 30000);
       return () => clearInterval(interval);
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -96,6 +96,7 @@ function NotificationDropdown() {
       });
       
       setNotifications(notifications.filter(n => n._id !== bookingId));
+      setIsOpen(false);
     } catch (error) {
       console.error('Error accepting booking:', error);
       toast.error(error.response?.data?.message || 'Failed to accept ride request', {
@@ -187,6 +188,7 @@ function NotificationDropdown() {
       });
     } finally {
       setProcessingId(null);
+      setIsOpen(false);
     }
   };
 

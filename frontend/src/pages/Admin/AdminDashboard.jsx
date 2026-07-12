@@ -7,15 +7,19 @@ import {
   updateRequestStatus,
   updateEnquiryAction,
   updateReportAction,
-  fetchUpcomingRides,   // NEW
-  runReminderCheckNow,  // NEW
-  fetchModerationStats,      // NEW — Phase 5
-  fetchModerationFlags,      // NEW — Phase 5
-  fetchModerationFlagById,   // NEW — Phase 5
-  reviewModerationFlag,      // NEW — Phase 5
+  fetchUpcomingRides,
+  runReminderCheckNow,
+  fetchModerationStats,
+  fetchModerationFlags,
+  fetchModerationFlagById,
+  reviewModerationFlag,
+  warnModerationFlag,
+  suspendModerationFlag,
+  blockModerationFlag,
+  banModerationFlag,
 } from '../../services/adminService.js';
 import RequestDetailsModal from './RequestDetailsModal.jsx';
-import UserDetailModal from './UserDetailModal.jsx';
+import UserDetailModal, { SuspendModal } from './UserDetailModal.jsx'; // SuspendModal reused for Moderation tab (generic suspend/block/ban)
 import RideDetailModal from './RideDetailModal.jsx';
 import BookingDetailModal from './BookingDetailModal.jsx';
 
@@ -42,6 +46,7 @@ const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY;
 const EMAILJS_TEMPLATES = {
   'admin-reply': import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_REPLY,
   'admin-sync': import.meta.env.VITE_EMAILJS_TEMPLATE_ADMIN_SYNC,
+  'user-warning': import.meta.env.VITE_EMAILJS_TEMPLATE_USER_WARNING,
 };
 
 async function fireEmailAction(action) {
@@ -93,7 +98,7 @@ const Icon = {
   eye: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><circle cx="12" cy="12" r="3" strokeWidth={1.8} /></svg>),
   logout: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>),
   sync: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>),
-  // NEW — Phase 5 (Moderation tab). Simple flag glyph, matches the existing
+  // Simple flag glyph, matches the existing
   // 1.8 stroke-width / 24x24 viewBox convention used by every other icon here.
   flag: (p) => (<svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 21V4a1 1 0 011-1h11.382a1 1 0 01.894 1.447L16 9l2.276 4.553A1 1 0 0117.382 15H6" /></svg>),
 };
@@ -104,12 +109,12 @@ const TABS = [
   { id: 'users', label: 'Users', icon: Icon.users },
   { id: 'rides', label: 'Rides', icon: Icon.ride },
   { id: 'bookings', label: 'Bookings', icon: Icon.booking },
-  { id: 'upcoming', label: 'Upcoming Rides', icon: Icon.calendar }, // NEW
+  { id: 'upcoming', label: 'Upcoming Rides', icon: Icon.calendar },
   { id: 'payments', label: 'Payments', icon: Icon.payment },
   { id: 'verification', label: 'Driver Verification', icon: Icon.shield },
   { id: 'enquiries', label: 'Enquiries', icon: Icon.chat },
   { id: 'reports', label: 'Reports', icon: Icon.alert },
-  { id: 'moderation', label: 'Moderation', icon: Icon.flag }, // NEW — Phase 5
+  { id: 'moderation', label: 'Moderation', icon: Icon.flag },
   { id: 'blogs', label: 'Blogs', icon: Icon.document },
 ];
 
@@ -1372,12 +1377,12 @@ function ReportsTab() {
   );
 }
 
-/* ─── Moderation Tab — NEW (Phase 5 / Milestone 5 admin UI) ──────────────────
+/* ─── Moderation Tab ──────────────────────────────────────────────────────
    Consumes /api/moderation/* (getModerationStats / getFlags / getFlagById /
-   reviewFlag — controllers/moderationController.js). This is a SEPARATE
-   Express router from /api/admin (see ARCHITECTURE.md §6/§11), hence
-   `moderationAxios` in adminService.js rather than the shared `api`
-   (adminAxios) instance every other tab in this file uses.
+   reviewFlag / warnUser / suspendUser / blockUser / banUser —
+   controllers/moderationController.js). This is a separate Express router
+   from /api/admin, hence `moderationAxios` in adminService.js rather than
+   the shared `api` (adminAxios) instance every other tab in this file uses.
 
    originalText (the unmasked message) only ever appears on these admin-only
    routes — Message.text always stores the masked version. It is rendered
@@ -1385,6 +1390,17 @@ function ReportsTab() {
    in the app receives or displays it. Follows the same inline-expand +
    ReplyComposer-style pattern as EnquiriesTab/ReportsTab above rather than a
    separate modal file, to match those two tabs exactly.
+
+   Account actions on the flagged sender:
+   - Warn: POST /api/moderation/flags/:id/warn — email + audit log only, no
+     account state change.
+   - Suspend / Block / Ban: each POST /api/moderation/flags/:id/{action} —
+     updates the sender's accountStatus, marks the flag reviewed, and emails
+     the user. All three share the same SuspendModal confirmation UI
+     (imported from UserDetailModal.jsx) via its `action` prop, rather than
+     three near-identical modals.
+   - Ignore: reuses the existing "Mark reviewed" review action below — no
+     separate endpoint needed for a no-action review.
 ─────────────────────────────────────────────────────────────────────── */
 function QuickScanPills({ matches }) {
   if (!matches || matches.length === 0) return null;
@@ -1465,14 +1481,57 @@ function FlagReviewForm({ flag, onSubmit, submitting }) {
   );
 }
 
+// Sends a warning email to the flag's sender without touching account
+// state. Mirrors FlagReviewForm's shape/spacing so both forms sit
+// consistently inside ExpandedFlag.
+function WarnUserForm({ senderName, onSubmit, submitting }) {
+  const [reason, setReason] = useState('');
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <div>
+        <label className="text-xs font-bold uppercase text-gray-400 block mb-1.5">
+          Warning reason (optional)
+        </label>
+        <textarea
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          rows={2}
+          placeholder="e.g. Sharing a phone number to move the conversation off-platform…"
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none placeholder-gray-400"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-gray-400">
+          Emails {senderName || 'the sender'} a notice. Does not change their account status.
+        </p>
+        <button
+          onClick={() => onSubmit({ reason: reason.trim() || undefined, adminName: 'ShareMyRide Trust & Safety' })}
+          disabled={submitting}
+          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+        >
+          {submitting ? (
+            <>
+              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />
+              Sending…
+            </>
+          ) : 'Send warning'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Detail fetch happens on expand (getFlagById), not for every row in the
 // list, because it's the only call that returns the fully-populated
 // conversation → passenger/driver detail. If it fails for any reason
 // (network blip), falls back to rendering the list-row data instead of
 // blocking the whole expanded panel.
-function ExpandedFlag({ flag, onReview, submitting }) {
+function ExpandedFlag({ flag, onReview, submitting, onWarn, warning, onSuspended }) {
   const [detail, setDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(true);
+  const [accountModalAction, setAccountModalAction] = useState(null); // 'suspend' | 'block' | 'ban' | null
+  const [actioning, setActioning] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1487,6 +1546,31 @@ function ExpandedFlag({ flag, onReview, submitting }) {
   const d = detail || flag;
   const passenger = d.conversation?.passenger;
   const driver = d.conversation?.driver;
+  const sender = d.sender; // populated { _id, name, email, phone } — the flagged message's author
+
+  const ACCOUNT_ACTION_FN = {
+    suspend: suspendModerationFlag,
+    block: blockModerationFlag,
+    ban: banModerationFlag,
+  };
+
+  const handleConfirmAccountAction = async (reason) => {
+    if (!sender?._id) {
+      toast.error('Sender account not found — cannot proceed');
+      return;
+    }
+    setActioning(true);
+    try {
+      await ACCOUNT_ACTION_FN[accountModalAction](flag._id, { reason, adminName: 'ShareMyRide Trust & Safety' });
+      toast.success(`${sender.name || 'User'} ${accountModalAction === 'ban' ? 'banned' : `${accountModalAction}ed`}`);
+      setAccountModalAction(null);
+      onSuspended?.();
+    } catch {
+      toast.error(`Failed to ${accountModalAction} user`);
+    } finally {
+      setActioning(false);
+    }
+  };
 
   return (
     <div className="px-5 pb-5 pt-4 border-t border-gray-100 bg-gray-50 space-y-4">
@@ -1546,10 +1630,59 @@ function ExpandedFlag({ flag, onReview, submitting }) {
           )}
 
           <div>
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <span className="text-xs font-bold uppercase text-gray-400 block">
+                Actions on {sender?.name || 'this sender'}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAccountModalAction('suspend')}
+                  disabled={!sender?._id}
+                  className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg text-xs font-semibold hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Suspend
+                </button>
+                <button
+                  onClick={() => setAccountModalAction('block')}
+                  disabled={!sender?._id}
+                  className="px-3 py-1.5 bg-orange-50 text-orange-700 rounded-lg text-xs font-semibold hover:bg-orange-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Block
+                </button>
+                <button
+                  onClick={() => setAccountModalAction('ban')}
+                  disabled={!sender?._id}
+                  className="px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-semibold hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Permanently ban
+                </button>
+              </div>
+            </div>
+            <WarnUserForm
+              senderName={sender?.name}
+              submitting={warning}
+              onSubmit={(payload) => onWarn(flag._id, payload)}
+            />
+          </div>
+
+          <div>
             <span className="text-xs font-bold uppercase text-gray-400 mb-2 block">Review</span>
+            <p className="text-xs text-gray-400 mb-2">
+              "Ignore" is the same as marking this flag reviewed with no account action taken.
+            </p>
             <FlagReviewForm flag={d} submitting={submitting} onSubmit={(payload) => onReview(d._id, payload)} />
           </div>
         </>
+      )}
+
+      {accountModalAction && (
+        <SuspendModal
+          action={accountModalAction}
+          userName={sender?.name || 'this user'}
+          submitting={actioning}
+          onCancel={() => setAccountModalAction(null)}
+          onConfirm={handleConfirmAccountAction}
+        />
       )}
     </div>
   );
@@ -1565,6 +1698,7 @@ function ModerationTab() {
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState(null);
   const [submittingId, setSubmittingId] = useState(null);
+  const [warningId, setWarningId] = useState(null); // tracks in-flight Warn action per flag
   const LIMIT = 20;
 
   const load = useCallback(async () => {
@@ -1602,6 +1736,30 @@ function ModerationTab() {
     finally { setSubmittingId(null); }
   };
 
+  // Fires the warning email via the same emailjs.send()
+  // pattern every other admin action in this file uses (fireEmailAction),
+  // since the backend only ever builds { template, payload } and never
+  // sends server-side.
+  const handleWarn = async (id, payload) => {
+    setWarningId(id);
+    try {
+      const res = await warnModerationFlag(id, payload);
+      const fired = await fireEmailAction(res.emailAction);
+      toast.success(fired.fired ? 'Warning email sent' : 'Warning logged (email send failed — check EmailJS config)');
+    } catch {
+      toast.error('Failed to send warning');
+    } finally {
+      setWarningId(null);
+    }
+  };
+
+  // After an account action from inside ExpandedFlag, refresh the
+  // list/stats so the row reflects the latest state on next expand.
+  const handleSuspended = () => {
+    load();
+    loadStats();
+  };
+
   const SEVERITY_OPTS = [
     { value: 'all', label: 'All' }, { value: 'critical', label: 'Critical' },
     { value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' },
@@ -1626,7 +1784,7 @@ function ModerationTab() {
           <StatCard label="Unreviewed" value={stats.totalUnreviewed} icon={Icon.flag} color="amber" />
           <StatCard label="Critical (unreviewed)" value={stats.unreviewedBySeverity?.critical || 0} icon={Icon.alert} color="red" />
           <StatCard label="High (unreviewed)" value={stats.unreviewedBySeverity?.high || 0} icon={Icon.alert} color="amber" />
-          <StatCard label="Admin notified" value={stats.totalAdminNotified} icon={Icon.shield} color="purple" sub="Critical flags — email send is Milestone 8, not built yet" />
+          <StatCard label="Admin notified" value={stats.totalAdminNotified} icon={Icon.shield} color="purple" sub="Critical flags that triggered an admin email" />
         </div>
       )}
 
@@ -1667,7 +1825,14 @@ function ModerationTab() {
                   </div>
 
                   {expanded === f._id && (
-                    <ExpandedFlag flag={f} onReview={handleReview} submitting={submittingId === f._id} />
+                    <ExpandedFlag
+                      flag={f}
+                      onReview={handleReview}
+                      submitting={submittingId === f._id}
+                      onWarn={handleWarn}
+                      warning={warningId === f._id}
+                      onSuspended={handleSuspended}
+                    />
                   )}
                 </div>
               ))}

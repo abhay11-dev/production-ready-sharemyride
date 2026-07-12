@@ -1,20 +1,13 @@
-// src/services/negotiationService.js
-//
-// MILESTONE 3 (frontend) — thin axios wrapper around /api/negotiations/*,
-// matching the same one-function-per-endpoint pattern as rideService.js /
-// bookingService.js / chatService.js. This is the file that was missing —
-// NegotiationActions.jsx previously called placeholder toasts instead of
-// these functions.
-
 import api from '../config/api';
 
 /**
  * Start a new negotiation on a ride.
  * @param {{
  *   rideId: string,
- *   source: 'chat'|'negotiate_fare'|'request_partial'|'discuss_pickup'|'discuss_drop',
+ *   source: 'chat'|'negotiate_fare'|'request_partial'|'discuss_pickup'|'discuss_drop'|'preference',
  *   proposedFare?: number, pickupLocation?: string, dropLocation?: string,
- *   time?: string, date?: string, seats?: number, message?: string
+ *   time?: string, date?: string, seats?: number, message?: string,
+ *   preferenceKey?: string, preferenceRequested?: boolean, preferenceNote?: string
  * }} payload
  * @returns {Promise<{ success: boolean, data: Object, conversationId: string|null }>}
  */
@@ -25,7 +18,7 @@ export const initiateNegotiation = async (payload) => {
 
 /**
  * List the current user's negotiations (as passenger and/or driver).
- * @param {{ role?: 'passenger'|'driver', status?: string }} [params]
+ * @param {{ role?: 'passenger'|'driver', status?: string, rideId?: string }} [params]
  * @returns {Promise<Array>}
  */
 export const getMyNegotiations = async (params = {}) => {
@@ -47,7 +40,7 @@ export const getNegotiationById = async (id) => {
  * Counter-offer with new terms. Either party may call this while status is
  * 'pending' or 'countered'.
  * @param {string} id
- * @param {{ pickupLocation?, dropLocation?, fare?, time?, date?, seats?, message? }} payload
+ * @param {{ pickupLocation?, dropLocation?, fare?, time?, date?, seats?, message?, preferenceNote? }} payload
  * @returns {Promise<Object>}
  */
 export const counterOffer = async (id, payload) => {

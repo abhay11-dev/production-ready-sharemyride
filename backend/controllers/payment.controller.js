@@ -21,10 +21,10 @@ exports.createPaymentOrder = async (req, res) => {
     console.log('Booking ID:', bookingId);
     console.log('Passenger ID:', passengerId);
     
-    if (!rideId || !bookingId) {
+    if (!bookingId) {
       return res.status(400).json({
         success: false,
-        message: 'Ride ID and Booking ID are required'
+        message: 'Booking ID is required'
       });
     }
     
@@ -53,8 +53,9 @@ exports.createPaymentOrder = async (req, res) => {
     console.log('Payment Status:', booking.paymentStatus);
     
     const ride = booking.ride;
+    const resolvedRideId = rideId || booking.ride?._id || booking.rideId;
     
-    if (!ride) {
+    if (!ride && !resolvedRideId) {
       return res.status(404).json({
         success: false,
         message: 'Ride information not found'
@@ -116,7 +117,7 @@ exports.createPaymentOrder = async (req, res) => {
       receipt: receipt,
       notes: {
         booking_id: bookingId.toString(),
-        ride_id: rideId.toString(),
+        ride_id: resolvedRideId ? resolvedRideId.toString() : 'unknown',
         passenger_id: passengerId.toString(),
         driver_id: booking.driver._id.toString(),
         route: `${booking.pickupLocation} → ${booking.dropLocation}`,
@@ -128,18 +129,30 @@ exports.createPaymentOrder = async (req, res) => {
     
     let razorpayOrder;
     try {
+      console.log("Order Options:");
+console.dir(orderOptions, { depth: null });
       razorpayOrder = await razorpayInstance.orders.create(orderOptions);
       console.log('✅ Order created:', razorpayOrder.id);
-    } catch (razorpayError) {
-      console.error('❌ Razorpay Error:', razorpayError.message);
-      console.error('Details:', razorpayError);
-      
-      return res.status(500).json({
-        success: false,
-        message: 'Razorpay API error: ' + razorpayError.message,
-        error: razorpayError.message
-      });
-    }
+    } 
+  catch (razorpayError) {
+  console.log("\n========== FULL RAZORPAY ERROR ==========\n");
+
+  console.log("Type:", typeof razorpayError);
+  console.log("Constructor:", razorpayError?.constructor?.name);
+
+  console.dir(razorpayError, { depth: null });
+
+  console.log("message:", razorpayError?.message);
+  console.log("statusCode:", razorpayError?.statusCode);
+  console.log("error:", razorpayError?.error);
+  console.log("response:", razorpayError?.response);
+  console.log("stack:", razorpayError?.stack);
+
+  return res.status(500).json({
+    success: false,
+    message: razorpayError?.message || "Unknown Razorpay error"
+  });
+}
     
     const transaction = new Transaction({
       rideId,
@@ -197,17 +210,19 @@ exports.createPaymentOrder = async (req, res) => {
       message: 'Payment order created successfully',
       data: {
         orderId: razorpayOrder.id,
+        order_id: razorpayOrder.id,
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
         bookingId: booking._id,
-        rideId: ride._id,
+        rideId: resolvedRideId || (ride?._id || booking.rideId),
         fare: fareAmount,
         route: {
           pickup: booking.pickupLocation,
           drop: booking.dropLocation,
           seatsBooked: booking.seatsBooked || 1
         },
-        razorpayKeyId: process.env.RAZORPAY_KEY_ID
+        razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+        key_id: process.env.RAZORPAY_KEY_ID
       }
     });
     

@@ -1,16 +1,6 @@
 /**
  * toastService.js — Centralized toast service for ShareMyRide
- *
- * Single source of truth for all notifications. Built on react-hot-toast.
- * Every component should import from here instead of calling toast() directly.
- *
- * Design system:
- *  - Soft semantic colors (no harsh gradients)
- *  - Lucide SVG icons (no emojis)
- *  - Consistent padding, border-radius, shadow
- *  - 14px body, 600 weight title
- *  - Smooth slide-up entrance / fade exit
- *  - Max-width 380px, mobile-friendly
+
  */
 
 import { toast as hotToast } from 'react-hot-toast';

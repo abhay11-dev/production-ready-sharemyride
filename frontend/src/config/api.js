@@ -46,10 +46,18 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+const isRefreshRequest = (config) => 
+  config?.url?.includes('/auth/refresh-token') ||
+  config?.baseURL?.includes('/auth/refresh-token');
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    if (!originalRequest || isRefreshRequest(originalRequest)) {
+      return Promise.reject(error);
+    }
 
     // ── Token expired — attempt one silent refresh ──────────────────────────
     if (
@@ -71,8 +79,12 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const response = await api.post('/auth/refresh-token');
-        const newToken = response.data?.token;
+        const refreshResponse = await axios.post(
+          `${API_URL}/auth/refresh-token`,
+          {},
+          { withCredentials: true }
+        );
+        const newToken = refreshResponse.data?.token;
 
         if (!newToken) throw new Error('No token returned from refresh');
 

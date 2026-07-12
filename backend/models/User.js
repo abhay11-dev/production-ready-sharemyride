@@ -117,6 +117,28 @@ const userSchema = new mongoose.Schema({
   emergencyContact: { type: String, trim: true },
   emergencyContactName: { type: String, trim: true },
 
+  // ── Trusted Contacts (Ride Safety Platform — Phase 4) ─────────────────────
+  // Superset of the legacy single emergencyContact/emergencyContactName pair
+  // above — kept alongside rather than migrating, so nothing that already
+  // reads those two fields breaks. New SOS flow reads trustedContacts only,
+  // falling back to the legacy pair if a user hasn't set any up yet (see
+  // services/emergencyService.js:getContactsForUser).
+  trustedContacts: [
+    {
+      name: { type: String, trim: true, required: true },
+      phone: { type: String, trim: true, required: true },
+      relationship: {
+        type: String,
+        enum: ['primary', 'secondary', 'guardian', 'family', 'friend'],
+        default: 'primary'
+      },
+      // Consent flag for Phase 5 (privacy) — a contact can be stored
+      // without yet being notifiable if the user hasn't confirmed they
+      // have that person's permission to be contacted during emergencies.
+      notifiable: { type: Boolean, default: true }
+    }
+  ],
+
   // ── Password Reset ────────────────────────────────────────────────────────
   resetPasswordToken: { type: String, default: null },
   resetPasswordExpires: { type: Date, default: null },
@@ -155,7 +177,7 @@ const userSchema = new mongoose.Schema({
   // ── Account Status ────────────────────────────────────────────────────────
   accountStatus: {
     type: String,
-    enum: ['PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED'],
+    enum: ['PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'BLOCKED', 'BANNED'],
     default: 'PENDING_VERIFICATION'
   },
   isActive: { type: Boolean, default: true },

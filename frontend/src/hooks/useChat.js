@@ -78,9 +78,14 @@ export function useChat(conversationId) {
       if (msgConvId !== conversationId) return;
 
       setMessages((prev) => {
-        // Avoid duplicating a message the sender already appended optimistically
-        if (prev.some((m) => m._id === msg._id)) return prev;
-        return [...prev, msg];
+        const idx = prev.findIndex((m) => m._id === msg._id);
+        if (idx === -1) return [...prev, msg];
+        // Already have this message (e.g. sent optimistically, or a
+        // preference-request whose meta.status just changed on accept/
+        // decline) — merge in the latest version rather than dropping it.
+        const next = prev.slice();
+        next[idx] = { ...next[idx], ...msg };
+        return next;
       });
 
       // Any new message from the other party clears their typing indicator

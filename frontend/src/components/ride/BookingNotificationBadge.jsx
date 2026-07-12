@@ -4,17 +4,26 @@ import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
 
 function BookingNotificationBadge() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
-    if (user) {
-      fetchPendingBookings();
-      // Refresh every 30 seconds
-      const interval = setInterval(fetchPendingBookings, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [user]);
+    if (authLoading || !user) return;
+
+    const fetchPendingBookings = async () => {
+      try {
+        const bookings = await getDriverBookings();
+        const pending = bookings.filter(b => b.status === 'pending').length;
+        setPendingCount(pending);
+      } catch (error) {
+        console.error('Error fetching bookings:', error);
+      }
+    };
+
+    fetchPendingBookings();
+    const interval = setInterval(fetchPendingBookings, 30000);
+    return () => clearInterval(interval);
+  }, [user, authLoading]);
 
   const fetchPendingBookings = async () => {
     try {

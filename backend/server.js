@@ -43,12 +43,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); // ← Required to read HttpOnly refresh-token cookie
 
-// Allow browser features required by Razorpay checkout.js (suppresses the
-// "Unrecognized feature: 'web-share'" Permissions-Policy console warning).
-app.use((_req, res, next) => {
-  res.setHeader('Permissions-Policy', 'web-share=*, payment=*');
-  next();
-});
+// Razorpay checkout does not require a custom Permissions-Policy header here.
+// Removing unsupported policy features eliminates the browser warning.
 
 // MongoDB connection with better error handling
 let isConnected = false;
@@ -96,6 +92,10 @@ const locationRoutes = require('./routes/locationRoutes');
 const negotiationRoutes = require('./routes/negotiationRoutes'); // Milestone 3
 const chatRoutes = require('./routes/chatRoutes'); // Milestone 4
 const moderationRoutes = require('./routes/moderationRoutes'); // Milestone 5
+const rideLifecycleRoutes = require('./routes/rideLifecycleRoutes'); // Ride Safety Platform — Phase 1
+const emergencyRoutes = require('./routes/emergencyRoutes'); // Ride Safety Platform — Phase 4
+const trustedContactsRoutes = require('./routes/trustedContactsRoutes'); // Ride Safety Platform — Phase 5
+const { startRideDataRetentionScheduler } = require('./services/jobs/rideDataRetentionScheduler'); // Ride Safety Platform — Phase 5
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -128,6 +128,9 @@ app.use('/api/blogs', blogRoutes);
 app.use('/api/negotiations', negotiationRoutes); // Milestone 3
 app.use('/api/chat', chatRoutes); // Milestone 4
 app.use('/api/moderation', moderationRoutes); // Milestone 5
+app.use('/api/ride-journey', rideLifecycleRoutes); // Ride Safety Platform — Phase 1
+app.use('/api/emergency', emergencyRoutes); // Ride Safety Platform — Phase 4
+app.use('/api/trusted-contacts', trustedContactsRoutes); // Ride Safety Platform — Phase 5
 app.use('/api/location', locationRoutes);
 
 app.get('/api', (req, res) => {
@@ -200,6 +203,9 @@ app.use((err, req, res, next) => {
 // need it directly for chat's websocket layer.
 const server = http.createServer(app);
 initSocket(server);
+
+// Ride Safety Platform — Phase 5: periodic auto-archive + data minimization sweep.
+startRideDataRetentionScheduler();
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {

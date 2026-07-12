@@ -10,7 +10,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import RideCard from '../../components/ride/RideCard';
 import RideMap from '../../components/map/RideMap';
 import LocationAutocomplete from '../../components/common/LocationAutocomplete';
-import { searchRides } from '../../services/rideService';
+import { searchRides, getRideById } from '../../services/rideService';
 import { getMyBookings } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
@@ -92,7 +92,7 @@ function FilterToggle({ checked, onChange, label }) {
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${checked ? 'bg-blue-600' : 'bg-gray-200'}`}
+        className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 ${checked ? 'bg-blue-600' : 'bg-gray-200'}`}
       >
         <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
       </button>
@@ -141,11 +141,11 @@ function EmptyResults({ start, end, onClear, onBrowseAll }) {
       </p>
       <div className="flex flex-col sm:flex-row gap-2 justify-center">
         <button onClick={onClear}
-          className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
+          className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1">
           Try a new search
         </button>
         <button onClick={() => onBrowseAll?.()}
-          className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
+          className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1">
           <Icon name="Globe" size="sm" />
           Browse all rides across India
         </button>
@@ -166,7 +166,7 @@ function SearchPrompt({ onBrowseAll }) {
       <button
         type="button"
         onClick={() => onBrowseAll?.()}
-        className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+        className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
       >
         <Icon name="Globe" size="sm" />
         Browse all rides across India
@@ -180,7 +180,7 @@ function SearchPrompt({ onBrowseAll }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function RideSearch() {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const searchCardRef = useRef(null);
   const startRef = useRef(null);
 
@@ -227,7 +227,18 @@ export default function RideSearch() {
   const [startMarker, setStartMarker] = useState(null);
   const [endMarker, setEndMarker] = useState(null);
   const [rideRoutes, setRideRoutes] = useState([]);
-  const [selectedRideId, setSelected] = useState(null);
+  const [selectedRideId, setSelected] = useState(searchParams.get('selectedRideId') || null);
+
+  const selectRide = useCallback((rideId) => {
+    setSelected(rideId);
+    const params = new URLSearchParams(searchParams);
+    if (rideId) {
+      params.set('selectedRideId', rideId);
+    } else {
+      params.delete('selectedRideId');
+    }
+    setSearchParams(params, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Filters
   const [showFilters, setShowFilters] = useState(false);
@@ -242,11 +253,89 @@ export default function RideSearch() {
 
   // Auto-search from URL params
   useEffect(() => {
-    if (searchParams.get('start') && searchParams.get('end')) {
+    const startParam = searchParams.get('start');
+    const endParam = searchParams.get('end');
+    if (startParam && endParam) {
+      // Check for a snapshot from Home so we can show the same list instantly
+      try {
+        const snapRaw = sessionStorage.getItem('SMR_home_rides_snapshot');
+        if (snapRaw) {
+          const snap = JSON.parse(snapRaw);
+          if (snap && Array.isArray(snap.rides) && snap.rides.length > 0) {
+            const ridesList = snap.rides;
+            const selected = searchParams.get('selectedRideId');
+            const matchesParams = () => {
+              if (selected) return ridesList.some(r => r._id === selected);
+              const first = ridesList[0];
+              return first && first.start === startParam && first.end === endParam;
+            };
+            if (matchesParams()) {
+              setExactRides(ridesList);
+              setOnWayRides([]);
+              setNearbyRides([]);
+              setNegotiableRides([]);
+              setAllRides(ridesList);
+              setSearchMeta(null);
+              setHasSearched(true);
+              const connectedIds = new Set(ridesList.map(r => r._id));
+              setRideRoutes(buildMapData(ridesList, connectedIds));
+              const first = ridesList[0];
+              setStartMarker(first?.pickupCoordinates || first?.routeCoordinates?.[0] || null);
+              setEndMarker(first?.dropCoordinates || first?.routeCoordinates?.[first?.routeCoordinates?.length - 1] || null);
+              sessionStorage.removeItem('SMR_home_rides_snapshot');
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        // Fall back to normal search
+        console.warn('[RideSearch] failed to restore snapshot', err);
+      }
+
       handleSearch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!selectedRideId || isLoading) return;
+    const timeout = setTimeout(() => {
+      const el = document.getElementById(`ride-card-${selectedRideId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 180);
+    return () => clearTimeout(timeout);
+  }, [selectedRideId, isLoading, allRides.length, globalRides.length, catchAllRides.length, showGlobalRides, showCatchAll]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadSelectedRide() {
+      if (!selectedRideId) return;
+      if (allRides.some(r => r._id === selectedRideId)) return;
+      setIsLoading(true);
+      try {
+        const ride = await getRideById(selectedRideId);
+        if (!active || !ride) return;
+        setExactRides([ride]);
+        setOnWayRides([]);
+        setNearbyRides([]);
+        setNegotiableRides([]);
+        setAllRides([ride]);
+        setSearchMeta(null);
+        setHasSearched(true);
+        setRideRoutes(buildMapData([ride], new Set([ride._id])));
+        setStartMarker(ride.pickupCoordinates || ride.routeCoordinates?.[0] || null);
+        setEndMarker(ride.dropCoordinates || ride.routeCoordinates?.[ride.routeCoordinates?.length - 1] || null);
+      } catch (error) {
+        console.warn('[RideSearch] Could not load selected ride:', error);
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    }
+    loadSelectedRide();
+    return () => { active = false; };
+  }, [selectedRideId, allRides, isLoading]);
 
   // Check first-ride-free eligibility
   useEffect(() => {
@@ -542,6 +631,10 @@ export default function RideSearch() {
       setAllRides(prev => (targetPage === 1 ? data : [...prev, ...data]));
       setGlobalMeta(meta);
       setShowGlobalRides(true);
+
+      setTimeout(() => {
+        document.getElementById('search-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 120);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Couldn't load all rides right now.");
     } finally {
@@ -562,6 +655,9 @@ export default function RideSearch() {
     setMinSeats(''); setMaxFare(''); setVehicleType('');
     setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false);
     setShowFilters(false);
+    const params = new URLSearchParams(searchParams);
+    params.delete('selectedRideId');
+    setSearchParams(params, { replace: true });
     window.setTimeout(() => {
       searchCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 0);
@@ -674,7 +770,7 @@ export default function RideSearch() {
                 <button
                   type="button"
                   onClick={() => setShowFilters(f => !f)}
-                  className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-semibold hover:text-blue-700"
+                  className="inline-flex items-center gap-1.5 text-sm text-blue-600 font-semibold hover:text-blue-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 rounded"
                 >
                   <Icon name="ChevronDown" size="xs" className={`transition-transform duration-200 ${showFilters ? 'rotate-180' : ''}`} />
                   Filters
@@ -712,7 +808,7 @@ export default function RideSearch() {
                     {activeFilterCount > 0 && (
                       <button type="button"
                         onClick={() => { setMinSeats(''); setMaxFare(''); setVehicleType(''); setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false); }}
-                        className="text-xs text-red-600 font-semibold hover:text-red-700 self-end col-span-full sm:col-auto">
+                        className="text-xs text-red-600 font-semibold hover:text-red-700 self-end col-span-full sm:col-auto transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1 rounded">
                         Clear filters
                       </button>
                     )}
@@ -724,7 +820,7 @@ export default function RideSearch() {
               <button
                 type="submit"
                 disabled={isLoading || !normalizeLocationInput(start).trim() || !normalizeLocationInput(end).trim()}
-                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1"
               >
                 {isLoading ? (
                   <>
@@ -739,10 +835,22 @@ export default function RideSearch() {
                 )}
               </button>
 
+              <div className="mt-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => handleLoadGlobalRides(1)}
+                  disabled={isLoading}
+                  className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
+                >
+                  <Icon name="Globe" size="sm" />
+                  Browse all rides across India
+                </button>
+              </div>
+
               {hasSearched && (
                 <div className="mt-3 text-center">
                   <button type="button" onClick={handleClear}
-                    className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors">
+                    className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1">
                     <Icon name="X" size="xs" />
                     Clear search
                   </button>
@@ -762,7 +870,7 @@ export default function RideSearch() {
             endMarker={endMarker}
             selectedRideId={selectedRideId}
             onRideClick={(ride) => {
-              setSelected(ride._id);
+              selectRide(ride._id);
               document.getElementById(`ride-card-${ride._id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }}
             hasSearched={hasSearched}
@@ -771,6 +879,21 @@ export default function RideSearch() {
 
         {/* Results */}
         <div id="search-results">
+          {selectedRideId && (
+            <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 sm:p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">Selected ride</p>
+                <p className="text-sm font-semibold text-gray-900">We’ve prefilled the route and opened the matching ride for you.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => selectRide(null)}
+                className="inline-flex items-center justify-center rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+              >
+                View all rides
+              </button>
+            </div>
+          )}
 
           {/* Skeletons */}
           {isLoading && (
@@ -857,6 +980,7 @@ export default function RideSearch() {
                     <RideCard
                       ride={ride}
                       isFirstRideFree={isFirstRideFree}
+                      autoOpenDetails={ride._id === selectedRideId}
                       onBookingSuccess={() => {
                         setIsFirstRideFree(false);
                         handleSearch(null, { silent: true });
@@ -930,6 +1054,7 @@ export default function RideSearch() {
                     <RideCard
                       ride={ride}
                       isFirstRideFree={isFirstRideFree}
+                      autoOpenDetails={ride._id === selectedRideId}
                       onBookingSuccess={() => {
                         setIsFirstRideFree(false);
                         handleSearch(null, { silent: true });
@@ -961,7 +1086,7 @@ export default function RideSearch() {
                 type="button"
                 onClick={() => handleLoadCatchAll(1)}
                 disabled={catchAllLoading}
-                className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
+                className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
               >
                 {catchAllLoading ? (
                   <Icon name="Loader2" size="sm" className="animate-spin" />
@@ -989,10 +1114,11 @@ export default function RideSearch() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {catchAllRides.map(ride => (
-                  <div key={ride._id} id={`ride-card-${ride._id}`} className="relative">
+                  <div key={ride._id} id={`ride-card-${ride._id}`} className={`relative transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-emerald-500 ring-offset-2 rounded-2xl' : ''}`}>
                     <RideCard
                       ride={ride}
                       isFirstRideFree={isFirstRideFree}
+                      autoOpenDetails={ride._id === selectedRideId}
                       onBookingSuccess={() => {
                         setIsFirstRideFree(false);
                         handleSearch(null, { silent: true });
@@ -1008,7 +1134,7 @@ export default function RideSearch() {
                     type="button"
                     onClick={() => handleLoadCatchAll(catchAllMeta.page + 1)}
                     disabled={catchAllLoading}
-                    className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
+                    className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
                   >
                     {catchAllLoading ? <Icon name="Loader2" size="sm" className="animate-spin" /> : null}
                     Load more
@@ -1019,7 +1145,7 @@ export default function RideSearch() {
               <button
                 type="button"
                 onClick={() => setShowCatchAll(false)}
-                className="block mx-auto mt-4 text-xs text-gray-400 hover:text-gray-600 font-medium"
+                className="block mx-auto mt-4 text-xs text-gray-400 hover:text-gray-600 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1 rounded"
               >
                 Hide this section
               </button>
@@ -1042,10 +1168,11 @@ export default function RideSearch() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {globalRides.map(ride => (
-                  <div key={ride._id} id={`ride-card-${ride._id}`} className="relative">
+                  <div key={ride._id} id={`ride-card-${ride._id}`} className={`relative transition-all duration-200 ${selectedRideId === ride._id ? 'ring-2 ring-blue-500 ring-offset-2 rounded-2xl' : ''}`}>
                     <RideCard
                       ride={ride}
                       isFirstRideFree={isFirstRideFree}
+                      autoOpenDetails={ride._id === selectedRideId}
                       onBookingSuccess={() => {
                         setIsFirstRideFree(false);
                         handleSearch(null, { silent: true });
@@ -1061,7 +1188,7 @@ export default function RideSearch() {
                     type="button"
                     onClick={() => handleLoadGlobalRides(globalMeta.page + 1)}
                     disabled={globalLoading}
-                    className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
+                    className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1"
                   >
                     {globalLoading ? <Icon name="Loader2" size="sm" className="animate-spin" /> : null}
                     Load more rides
@@ -1072,7 +1199,7 @@ export default function RideSearch() {
               <button
                 type="button"
                 onClick={() => setShowGlobalRides(false)}
-                className="block mx-auto mt-4 text-xs text-gray-400 hover:text-gray-600 font-medium"
+                className="block mx-auto mt-4 text-xs text-gray-400 hover:text-gray-600 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1 rounded"
               >
                 Hide this section
               </button>

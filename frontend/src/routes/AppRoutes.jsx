@@ -1,13 +1,5 @@
 // src/routes/AppRoutes.jsx
-//
-// FIX (this session): ProtectedRoute and PublicRoute were destructuring
-// `loading` from useAuth() — but hooks/useAuth.jsx exposes `isLoading`, not
-// `loading`. Since `loading` was always `undefined`, the spinner branch
-// never ran, so a user could get bounced to /login for a frame while the
-// silent token refresh was still resolving on page load. Fixed by reading
-// `isLoading` (aliased locally to `loading` so the rest of each component
-// didn't need to change). This directly affects the new /messages routes
-// added below, since Inbox/ChatThread are both protected.
+
 
 import { Routes, Route, Navigate } from 'react-router-dom';
 import React from 'react';

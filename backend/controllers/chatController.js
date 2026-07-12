@@ -1,43 +1,29 @@
 // controllers/chatController.js
-//
-// MILESTONE 4 — Chat REST API (see PROJECT_STATE.md §6/§7)
-//
-// Socket.IO (services/socket.js) handles LIVE message delivery, typing, and
-// read receipts. This controller handles everything a socket connection
-// doesn't: initial conversation list, paginated message history (a client
-// needs this on first load / scroll-back — you can't get chat history
-// through a live socket event), and a REST fallback for sending a message
-// if the socket isn't connected for some reason.
-//
-// Endpoints (wired in routes/chatRoutes.js, mounted at /api/chat):
-//   POST /api/chat/conversations              getOrCreateConversation
-//   GET  /api/chat/conversations               getMyConversations
-//   GET  /api/chat/conversations/:id/messages  getMessages (paginated)
-//   POST /api/chat/conversations/:id/messages  sendMessageRest
-//
-// FIX (this session): driver-ref lookup now falls back across
-// driverId/postedBy/driver (matching the $or convention documented in
-// CODEBASE_GUIDE.md §8.7 for "this driver's rides" queries elsewhere in the
-// app), and sendMessageRest now validates message length up front instead
-// of letting a Mongoose validation error surface as a raw 500.
+
 
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const Ride = require('../models/Ride');
-const { scanAndMask, scheduleAnalysis } = require('../services/moderationService'); // Milestone 5
+const Negotiation = require('../models/Negotiation');
+const { scanAndMask, scheduleAnalysis, summarizeConversation } = require('../services/moderationService');
+
+function refId(ref) {
+    if (!ref) return null;
+    return typeof ref === 'object' ? (ref._id ? ref._id.toString() : ref.toString()) : ref.toString();
+}
 
 function roleOf(conversation, userId) {
     const uid = userId.toString();
-    if (conversation.passenger.toString() === uid) return 'passenger';
-    if (conversation.driver.toString() === uid) return 'driver';
+    if (refId(conversation.passenger) === uid) return 'passenger';
+    if (refId(conversation.driver) === uid) return 'driver';
     return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/chat/conversations — get-or-create the conversation for a ride
 // body: { rideId }
-// This is the entry point for the "Chat with Driver" negotiation card
-// (Milestone 2) — it's called whether or not a negotiation exists yet.
+// This is the entry point for the "Chat with Driver" negotiation card —
+// it's called whether or not a negotiation exists yet.
 // ─────────────────────────────────────────────────────────────────────────
 exports.getOrCreateConversation = async (req, res) => {
     try {
@@ -100,7 +86,7 @@ exports.getMyConversations = async (req, res) => {
             $or: [{ passenger: req.user._id }, { driver: req.user._id }],
             isActive: true,
         })
-            .populate('ride', 'start end date time fare rideStatus')
+            .populate('ride', 'start end date time fare rideStatus preferences negotiableFare allowPartialRoute availableSeats seats')
             .populate('passenger', 'name avatar')
             .populate('driver', 'name avatar')
             .sort({ updatedAt: -1 })
@@ -110,6 +96,25 @@ exports.getMyConversations = async (req, res) => {
         res.json({ success: true, count: conversations.length, data: conversations });
     } catch (error) {
         console.error('❌ getMyConversations error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+exports.getConversationById = async (req, res) => {
+    try {
+        const conversation = await Conversation.findById(req.params.id)
+            .populate('ride', 'start end date time fare rideStatus preferences negotiableFare allowPartialRoute availableSeats seats')
+            .populate('passenger', 'name avatar ratingSummary')
+            .populate('driver', 'name avatar ratingSummary');
+
+        if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+        if (!roleOf(conversation, req.user._id)) {
+            return res.status(403).json({ success: false, message: 'Not authorized' });
+        }
+
+        res.json({ success: true, data: conversation });
+    } catch (error) {
+        console.error('❌ getConversationById error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
@@ -168,8 +173,8 @@ exports.sendMessageRest = async (req, res) => {
         const role = roleOf(conversation, req.user._id);
         if (!role) return res.status(403).json({ success: false, message: 'Not authorized' });
 
-        // Milestone 5, step 1: quick-scan (synchronous, regex) BEFORE saving —
-        // the masked version is what actually gets stored/delivered.
+        // Quick-scan (synchronous, regex) BEFORE saving — the masked
+        // version is what actually gets stored/delivered.
         const { maskedText, quickScanMatches, originalText } = scanAndMask(text.trim());
 
         const message = await Message.create({
@@ -179,8 +184,8 @@ exports.sendMessageRest = async (req, res) => {
             text: maskedText,
         });
 
-        // Milestone 5, step 2: now that the message has a real _id, schedule
-        // the background AI analysis (fire-and-forget, never awaited here).
+        // Now that the message has a real _id, schedule the background AI
+        // analysis (fire-and-forget, never awaited here).
         scheduleAnalysis({ message, conversation, senderId: req.user._id, originalText, quickScanMatches });
 
         conversation.lastMessage = { text: maskedText, sender: req.user._id, sentAt: message.createdAt };
@@ -201,6 +206,39 @@ exports.sendMessageRest = async (req, res) => {
         res.status(201).json({ success: true, data: message });
     } catch (error) {
         console.error('❌ sendMessageRest error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+exports.getConversationSummary = async (req, res) => {
+    try {
+        const conversation = await Conversation.findById(req.params.id);
+        if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+        if (!roleOf(conversation, req.user._id)) {
+            return res.status(403).json({ success: false, message: 'Not authorized' });
+        }
+
+        const messages = await Message.find({ conversation: conversation._id, isActive: true })
+            .sort({ createdAt: 1 })
+            .limit(200)
+            .populate('sender', 'name')
+            .lean();
+
+        const negotiations = await Negotiation.find({
+            ride: conversation.ride,
+            passenger: conversation.passenger,
+            driver: conversation.driver,
+            isActive: true,
+        }).lean();
+
+        const summary = await summarizeConversation({ messages, negotiations });
+        if (!summary) {
+            return res.status(503).json({ success: false, message: 'Summary generation is unavailable right now' });
+        }
+
+        res.json({ success: true, data: summary });
+    } catch (error) {
+        console.error('❌ getConversationSummary error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };

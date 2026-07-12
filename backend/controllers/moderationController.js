@@ -1,39 +1,8 @@
-// controllers/moderationController.js
-//
-// MILESTONE 5 — AI moderation, admin review API (see PROJECT_STATE.md §1/§6/§7)
-//
-// This is the last missing piece of Milestone 5: ModerationFlag documents
-// have been created correctly since the moderation pipeline shipped, but
-// until now there was no way for an admin to actually see or act on them.
-//
-// Endpoints implemented here (wired in routes/moderationRoutes.js, mounted
-// at /api/moderation in server.js, all admin-only via protectAdmin):
-//   GET   /api/moderation/flags            getFlags
-//   GET   /api/moderation/flags/:id        getFlagById
-//   POST  /api/moderation/flags/:id/review reviewFlag
-//   GET   /api/moderation/stats            getModerationStats
-//
-// IMPORTANT — things this file deliberately does NOT do:
-//   - Never exposes `originalText` (the unmasked message) on anything other
-//     than these admin-only routes. The Message model only ever stores the
-//     masked text; the unmasked original lives solely on ModerationFlag,
-//     specifically so a non-admin code path can never leak it.
-//   - Does NOT set `reviewedBy` to a real User document reference. Admin
-//     auth in this app (`protectAdmin`, middleware/auth.js) is an isolated
-//     JWT with a synthetic payload ({ role: 'admin', id: 'admin' }) — there
-//     is no real admin User document to point a ref at. This mirrors the
-//     existing convention already used elsewhere in adminController.js
-//     (e.g. updateEnquiry stores `sentBy: adminName || 'ShareMyRide Support'`
-//     as a free-text string, not a User ref) rather than inventing a new
-//     pattern. `reviewedBy` is left unset; the admin's identifying name (if
-//     the frontend sends one) is folded into `adminNote` instead.
-
 const ModerationFlag = require('../models/ModerationFlag');
 const AuditLog = require('../models/AuditLogs');
+const User = require('../models/User');
+const emailService = require('../services/emailService');
 
-// Small helper — write an audit log entry without ever throwing (a failed
-// audit write should never block the actual review action). Same pattern
-// used in negotiationController.js.
 async function logAudit({ action, resourceId, note, changes }) {
     try {
         await AuditLog.create({
@@ -169,9 +138,136 @@ exports.reviewFlag = async (req, res) => {
     }
 };
 
-// @desc    Aggregate counts for an admin dashboard widget (Milestone 7 will
-//          likely surface this; built now since it's a trivial addition
-//          alongside the other three endpoints)
+// @desc    Send a warning email to a flagged message's sender. Does NOT
+//          touch User.accountStatus — that's what the existing Suspend
+//          flow (PUT /api/admin/users/:id) is for. This is purely a
+//          notice + audit trail entry.
+// @route   POST /api/moderation/flags/:id/warn
+// @body    { reason?: string, adminName?: string }
+// @access  Private (Admin)
+exports.warnUser = async (req, res) => {
+    try {
+        const { reason, adminName } = req.body;
+
+        const flag = await ModerationFlag.findById(req.params.id).populate('sender', 'name email');
+        if (!flag) {
+            return res.status(404).json({ success: false, message: 'Moderation flag not found' });
+        }
+        if (!flag.sender?.email) {
+            return res.status(400).json({ success: false, message: 'Flagged sender has no email on file' });
+        }
+
+        const emailResult = await emailService.sendUserWarningEmail(flag.sender, {
+            reason,
+            adminName,
+            flagId: flag._id.toString(),
+        });
+
+        await logAudit({
+            action: 'moderation.warn',
+            resourceId: flag._id,
+            note: `Warning sent to ${flag.sender.email}${reason ? ` — reason: ${reason}` : ''}`,
+        });
+
+        try {
+            const { emitToUser } = require('../services/socket');
+            emitToUser(flag.sender._id, 'moderation:warned', {
+                flagId: flag._id, reason: reason || 'Platform safety guideline warning',
+            });
+        } catch { /* socket not initialized — non-fatal */ }
+
+        res.json({
+            success: true,
+            message: 'Warning email prepared',
+            emailAction: emailResult?.emailAction || null,
+        });
+    } catch (error) {
+        console.error('Moderation warn error:', error);
+        res.status(500).json({ success: false, message: 'Failed to warn user' });
+    }
+};
+
+// @desc    Apply an account-restricting action (Suspend/Block/Ban) to the
+//          sender of a flagged message, in one step from the moderation
+//          queue. Reuses the exact same User.accountStatus fields already
+//          driven by PUT /api/admin/users/:id — this is just a shortcut
+//          that also stamps the triggering flag and returns an emailAction
+//          the frontend fires (same EmailJS payload pattern as warnUser).
+// @route   POST /api/moderation/flags/:id/suspend | /block | /ban
+// @body    { reason?: string, adminName?: string }
+// @access  Private (Admin)
+async function applyAccountAction(req, res, accountStatus, actionLabel) {
+    try {
+        const { reason, adminName } = req.body;
+
+        const flag = await ModerationFlag.findById(req.params.id).populate('sender', 'name email');
+        if (!flag) {
+            return res.status(404).json({ success: false, message: 'Moderation flag not found' });
+        }
+        if (!flag.sender?._id) {
+            return res.status(400).json({ success: false, message: 'Flagged message has no sender on file' });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            flag.sender._id,
+            {
+                accountStatus,
+                isActive: false,
+                suspendedAt: new Date(),
+                suspensionReason: reason || `${actionLabel} due to moderation flag ${flag._id}`,
+            },
+            { new: true }
+        );
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        flag.reviewed = true;
+        flag.reviewedAt = new Date();
+        const notePrefix = adminName ? `[${adminName}] ` : '';
+        flag.adminNote = `${notePrefix}${actionLabel}${reason ? ` — ${reason}` : ''}`.trim();
+        await flag.save();
+
+        let emailResult = null;
+        if (user.email) {
+            emailResult = await emailService.sendUserWarningEmail(user, {
+                reason: reason || `Your account has been ${actionLabel.toLowerCase()} for violating our platform safety guidelines.`,
+                adminName,
+                flagId: flag._id.toString(),
+            });
+        }
+
+        await logAudit({
+            action: `moderation.${accountStatus.toLowerCase()}`,
+            resourceId: flag._id,
+            note: `${actionLabel} applied to ${user.email || user._id}${reason ? ` — reason: ${reason}` : ''}`,
+            changes: { after: { accountStatus, userId: user._id } },
+        });
+
+        try {
+            const { emitToUser } = require('../services/socket');
+            emitToUser(user._id, 'moderation:action', {
+                action: actionLabel, accountStatus, reason: reason || null, flagId: flag._id,
+            });
+        } catch { /* socket not initialized — non-fatal */ }
+
+        res.json({
+            success: true,
+            message: `${actionLabel} applied`,
+            data: { user, flag },
+            emailAction: emailResult?.emailAction || null,
+        });
+    } catch (error) {
+        console.error(`Moderation ${actionLabel.toLowerCase()} error:`, error);
+        res.status(500).json({ success: false, message: `Failed to ${actionLabel.toLowerCase()} user` });
+    }
+}
+
+exports.suspendUser = (req, res) => applyAccountAction(req, res, 'SUSPENDED', 'Suspend');
+exports.blockUser = (req, res) => applyAccountAction(req, res, 'BLOCKED', 'Block');
+exports.banUser = (req, res) => applyAccountAction(req, res, 'BANNED', 'Permanent ban');
+
+// @desc    Aggregate counts for an admin dashboard widget
 // @route   GET /api/moderation/stats
 // @access  Private (Admin)
 exports.getModerationStats = async (req, res) => {

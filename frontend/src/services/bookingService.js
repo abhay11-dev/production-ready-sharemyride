@@ -1,7 +1,3 @@
-// src/services/bookingService.js
-// Uses the shared api.js axios instance (in-memory access token + HttpOnly refresh cookie).
-// Never use localStorage for tokens here — api.js interceptors handle auth transparently.
-
 import api from '../config/api.js';
 
 // ─── Create Booking ───────────────────────────────────────────────────────────

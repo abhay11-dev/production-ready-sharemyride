@@ -1,46 +1,11 @@
 // services/moderationService.js
-//
-// MILESTONE 5 — AI moderation pipeline (see PROJECT_STATE.md §6/§7)
-//
-// Verified this session — no changes needed. Reproduced here unmodified so
-// this file's copy in the repo stays byte-for-byte in sync with what was
-// reviewed as part of the Milestone 3/4 pass.
-//
-// DEFAULT DESIGN (Q13/Q14/Q15/Q19 — not yet confirmed by user, see
-// PROJECT_STATE.md §5 Decisions Log):
-//
-//   Q13 (provider): Claude (Anthropic API) — @anthropic-ai/sdk, installed
-//   in this milestone. No AI SDK existed in package.json before this.
-//
-//   Q14 (real-time vs background): HYBRID.
-//     - quickScan() is SYNCHRONOUS, regex-only, no API call — runs on every
-//       message BEFORE it's saved/sent, because structured PII (phone/email/
-//       UPI/external-app mentions) is exactly the kind of thing that must
-//       never reach the other party unmasked, and regex has ~0ms latency.
-//     - analyzeWithAI() is ASYNC, fire-and-forget — runs AFTER the message
-//       is already saved and delivered, because adding real LLM latency to
-//       every single chat message would make the chat feel slow. Nuanced
-//       categories (scam, harassment, threats, fraud intent) don't need to
-//       block delivery — they need to get flagged for review afterward.
-//
-//   Q19 (mask vs block): MASK, still send. The masked version is what gets
-//     stored/delivered; the original is kept only in ModerationFlag for
-//     admin review. Full block was considered too disruptive for a v1 —
-//     easy to tighten later by changing shouldBlock() below.
-//
-//   Q15 (severity tier actions):
-//     low      — no action, not even a ModerationFlag (avoids flooding the
-//                admin queue with non-issues)
-//     medium   — ModerationFlag created, no user-facing action
-//     high     — ModerationFlag created + a 'system' message is posted to
-//                the conversation reminding both parties to keep
-//                communication on-platform
-//     critical — same as high + `adminNotified` set (Milestone 8 will wire
-//                the actual email; this milestone can't send email yet —
-//                see PROJECT_STATE.md Milestone 5 "deferred" notes)
+
 
 const ModerationFlag = require('../models/ModerationFlag');
 const AuditLog = require('../models/AuditLogs');
+const User = require('../models/User');
+const { sendAdminNotificationEmail } = require('./emailService');
+const { sendServerEmail } = require('./emailjsServerClient');
 
 // ── Quick-scan patterns (synchronous, no API call) ──────────────────────────
 const PATTERNS = {
@@ -154,6 +119,47 @@ Guidance: "low" = normal ride-coordination chat (timing, location, pickup detail
   }
 }
 
+async function summarizeConversation({ messages, negotiations }) {
+  const client = getClient();
+  if (!client) {
+    console.warn('⚠️ ANTHROPIC_API_KEY not set — cannot generate conversation summary');
+    return null;
+  }
+
+  const transcript = messages
+    .map(m => `${m.type === 'system' ? '[system]' : (m.sender?.name || 'user')}: ${m.text}`)
+    .join('\n');
+
+  const negotiationState = negotiations.map(n => ({
+    source: n.source,
+    preferenceKey: n.preferenceKey || null,
+    status: n.status,
+    terms: n.currentTerms,
+  }));
+
+  const systemPrompt = `You summarize a ride-share negotiation chat between a passenger and driver on an Indian carpooling marketplace. Respond with ONLY a JSON object, no other text, in exactly this shape:
+{"agreedFare":number|null,"reservedSeats":number|null,"pickup":string|null,"drop":string|null,"partialRoute":string|null,"acceptedPreferences":[string],"rejectedPreferences":[string],"driverConditions":[string],"passengerConditions":[string],"specialAgreements":[string],"summary":"2-3 sentence plain-language recap"}
+Use the negotiation records as the source of truth for status (accepted/rejected/pending); use the chat transcript to fill in anything the negotiation records don't cover, like conditions mentioned in free text.`;
+
+  const userContent = `Negotiation records:\n${JSON.stringify(negotiationState, null, 2)}\n\nChat transcript:\n${transcript || '(no messages yet)'}`;
+
+  try {
+    const response = await client.messages.create({
+      model: MODERATION_MODEL,
+      max_tokens: 600,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+    });
+
+    const raw = response.content?.find(b => b.type === 'text')?.text?.trim() || '';
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error('❌ Conversation summary generation failed:', err.message);
+    return null;
+  }
+}
+
 // ── Main entry points — two separate steps, deliberately not combined ──────
 //
 // 1. scanAndMask(text) — SYNCHRONOUS, pure, no DB writes. Call this BEFORE
@@ -224,36 +230,61 @@ async function runBackgroundAnalysis({ message, conversation, senderId, original
     await postSystemWarning(conversation._id);
   }
   if (severity === 'critical') {
-    // Milestone 8 will replace this with a real admin email. For now the
-    // flag is marked so nothing gets silently lost once email exists.
-    flag.adminNotified = false;
+    const adminSent = await notifyAdminForCriticalFlag(flag, conversation, senderId);
+    flag.adminNotified = adminSent;
     await flag.save();
-    console.warn(`🚨 CRITICAL moderation flag ${flag._id} — admin email notification deferred to Milestone 8`);
-  }
-}
-
-async function postSystemWarning(conversationId) {
-  try {
-    const Message = require('../models/Message');
-    const warningMessage = await Message.create({
-      conversation: conversationId,
-      sender: null,
-      type: 'system',
-      text: '⚠️ For your safety, please keep all communication and payments on ShareMyRide.',
-    });
-
-    // Deliver live to anyone connected, same as a normal message — socket.js
-    // may not be initialized in a test/script context, so this is non-fatal
-    try {
-      const { getIO } = require('./socket');
-      getIO().to(`conversation:${conversationId}`).emit('message:new', warningMessage);
-    } catch (err) {
-      // Socket.IO not initialized — the message is still saved and will
-      // show up next time the conversation/messages are fetched via REST
+    if (adminSent) {
+      console.log(`🚨 CRITICAL moderation flag ${flag._id} — admin notification email sent`);
+    } else {
+      console.warn(`🚨 CRITICAL moderation flag ${flag._id} — admin email notification was not sent`);
     }
-  } catch (err) {
-    console.warn('⚠️ Failed to post system warning message (non-blocking):', err.message);
   }
 }
 
-module.exports = { quickScan, maskText, analyzeWithAI, scanAndMask, scheduleAnalysis };
+async function notifyAdminForCriticalFlag(flag, conversation, senderId) {
+  const templateId = process.env.EMAILJS_TEMPLATE_ADMIN_ALERT || process.env.VITE_EMAILJS_TEMPLATE_ADMIN_ALERT;
+  if (!templateId) {
+    console.warn('⚠️ EMAILJS_TEMPLATE_ADMIN_ALERT / VITE_EMAILJS_TEMPLATE_ADMIN_ALERT not configured — cannot send critical moderation admin email');
+    return false;
+  }
+
+  const sender = await User.findById(senderId).select('name email phone').lean();
+  const senderName = sender?.name || 'Unknown user';
+  const senderEmail = sender?.email || 'unknown@sharemyride.app';
+  const senderPhone = sender?.phone || '';
+
+  const emailResult = await sendAdminNotificationEmail({
+    to: process.env.EMAIL_USER || process.env.EMAIL_CONTACT || 'sharemyride.contact@gmail.com',
+    ticketNumber: flag._id.toString(),
+    type: 'moderation_critical',
+    priority: 'critical',
+    name: senderName,
+    email: senderEmail,
+    subject: `Critical moderation alert in conversation ${conversation._id}`,
+    message: flag.originalText || '(original text unavailable)',
+    meta: {
+      phone: senderPhone,
+      affectedPage: `${process.env.FRONTEND_URL || 'https://sharemyride.in'}/messages/${conversation._id}`,
+      severity: flag.severity,
+    },
+  });
+
+  if (!emailResult?.success || !emailResult.emailAction?.payload) {
+    console.warn('⚠️ Failed to build moderation admin email payload');
+    return false;
+  }
+
+  try {
+    await sendServerEmail(templateId, emailResult.emailAction.payload);
+    return true;
+  } catch (err) {
+    console.error('❌ Failed to send moderation admin email:', err.message);
+    return false;
+  }
+}
+
+module.exports = {
+  scanAndMask,
+  scheduleAnalysis,
+  summarizeConversation,
+};

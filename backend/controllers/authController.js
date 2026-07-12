@@ -46,14 +46,26 @@ const sanitizeUser = (user) => {
 };
 
 // ─── Set Refresh Token Cookie ─────────────────────────────────────────────────
+const getRefreshTokenCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+  path: '/',
+});
+
 const setRefreshTokenCookie = (res, refreshToken) => {
-  res.cookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+  res.cookie('refreshToken', refreshToken, getRefreshTokenCookieOptions());
+};
+
+const clearRefreshTokenCookie = (res) => {
+  const clearOptions = {
     path: '/',
-  });
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  };
+  res.clearCookie('refreshToken', clearOptions);
+  res.clearCookie('refreshToken', { ...clearOptions, path: '/api/auth' });
 };
 
 const generateOtpCode = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -434,8 +446,7 @@ const refreshToken = async (req, res) => {
       );
     } catch {
       // Clear invalid cookie
-      res.clearCookie('refreshToken', { path: '/' });
-      res.clearCookie('refreshToken', { path: '/api/auth' });
+      clearRefreshTokenCookie(res);
       return res.status(401).json({
         success: false,
         message: 'Invalid or expired refresh token. Please log in again.',
@@ -449,8 +460,7 @@ const refreshToken = async (req, res) => {
 
     const user = await User.findById(decoded.id);
     if (!user || !user.isActive || user.accountStatus === 'SUSPENDED') {
-      res.clearCookie('refreshToken', { path: '/' });
-      res.clearCookie('refreshToken', { path: '/api/auth' });
+      clearRefreshTokenCookie(res);
       return res.status(401).json({ success: false, message: 'User not found or inactive' });
     }
 
@@ -472,13 +482,7 @@ const refreshToken = async (req, res) => {
 // ─── Logout ───────────────────────────────────────────────────────────────────
 const logout = async (req, res) => {
   // Clear the HttpOnly refresh token cookie
-  res.clearCookie('refreshToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-    path: '/',
-  });
-  res.clearCookie('refreshToken', { path: '/api/auth' });
+  clearRefreshTokenCookie(res);
 
   return res.status(200).json({
     success: true,

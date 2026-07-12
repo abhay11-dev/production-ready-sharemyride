@@ -1,11 +1,5 @@
 // models/ModerationFlag.js
-//
-// MILESTONE 5 — AI moderation (see PROJECT_STATE.md §6/§7)
-//
-// One document per message that triggered EITHER the quick-scan (regex,
-// synchronous) OR the AI analysis (async) at medium severity or above.
-// Low-severity / clean messages never get a ModerationFlag — this is a
-// review queue, not a log of every message.
+
 
 const mongoose = require('mongoose');
 

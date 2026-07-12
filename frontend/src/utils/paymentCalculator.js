@@ -9,13 +9,11 @@
  *   - Driver ask is the amount shown as their fare.
  *   - Platform fee: 3% of the driver-set fare.
  *   - GST: 5% of (driver-set fare + platform fee).
- *   - Driver net earning = driver-set fare.
  * 
  * Passenger Side:
  *   - Base Fare (what driver set)
  *   - Platform Fee: 3% of base fare
  *   - GST: 5% of (base fare + platform fee)
- *   - Total Passenger Pays = Base Fare + Platform Fee + GST
  */
 
 class PaymentCalculator {

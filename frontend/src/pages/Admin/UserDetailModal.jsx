@@ -13,10 +13,43 @@ function InfoRow({ label, value }) {
   );
 }
 
-/* ── Suspend confirmation modal (reason required) ── */
-function SuspendModal({ userName, onCancel, onConfirm, submitting }) {
+/* ── Suspend confirmation modal (reason required) ──
+   Exported (was module-private before) so ModerationTab in AdminDashboard.jsx
+   can reuse it for suspending a flagged message's sender directly from the
+   Moderation tab, instead of duplicating this modal — same reasoning as the
+   BookingModal.jsx / NegotiationPanel.jsx dead-code lesson: don't grow a
+   second copy of UI that already exists and works. */
+const ACCOUNT_ACTION_COPY = {
+  suspend: {
+    title: (name) => `Suspend ${name}?`,
+    description: "They'll lose access immediately and will see this reason when they try to log in.",
+    reasonLabel: 'Suspension reason',
+    placeholder: 'e.g. Multiple reports of unsafe driving behaviour',
+    confirmLabel: 'Suspend user',
+    submittingLabel: 'Suspending…',
+  },
+  block: {
+    title: (name) => `Block ${name}?`,
+    description: "They'll immediately lose access to their account until an admin reverses this.",
+    reasonLabel: 'Block reason',
+    placeholder: 'e.g. Repeated attempts to move payments off-platform',
+    confirmLabel: 'Block user',
+    submittingLabel: 'Blocking…',
+  },
+  ban: {
+    title: (name) => `Permanently ban ${name}?`,
+    description: "This is the most severe action available — their account will be permanently restricted.",
+    reasonLabel: 'Ban reason',
+    placeholder: 'e.g. Confirmed fraud / serious safety violation',
+    confirmLabel: 'Permanently ban',
+    submittingLabel: 'Banning…',
+  },
+};
+
+export function SuspendModal({ userName, onCancel, onConfirm, submitting, action = 'suspend' }) {
   const [reason, setReason] = useState('');
   const trimmed = reason.trim();
+  const copy = ACCOUNT_ACTION_COPY[action] || ACCOUNT_ACTION_COPY.suspend;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -28,21 +61,21 @@ function SuspendModal({ userName, onCancel, onConfirm, submitting }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h2 className="text-lg font-bold text-gray-900">Suspend {userName}?</h2>
+          <h2 className="text-lg font-bold text-gray-900">{copy.title(userName)}</h2>
           <p className="text-sm text-gray-500 mt-1.5">
-            They'll lose access immediately and will see this reason when they try to log in.
+            {copy.description}
           </p>
         </div>
 
         <div className="px-6 sm:px-7 pt-5 pb-2">
           <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-            Suspension reason
+            {copy.reasonLabel}
           </label>
           <textarea
             autoFocus
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. Multiple reports of unsafe driving behaviour"
+            placeholder={copy.placeholder}
             rows={3}
             disabled={submitting}
             className="w-full border border-gray-200 px-3.5 py-2.5 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-150 outline-none resize-none disabled:bg-gray-50 disabled:cursor-not-allowed"
@@ -69,9 +102,9 @@ function SuspendModal({ userName, onCancel, onConfirm, submitting }) {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                Suspending…
+                {copy.submittingLabel}
               </>
-            ) : 'Suspend user'}
+            ) : copy.confirmLabel}
           </button>
         </div>
       </div>

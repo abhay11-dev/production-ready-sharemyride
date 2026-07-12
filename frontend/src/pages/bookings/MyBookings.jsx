@@ -1,8 +1,36 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { getMyBookings, cancelBooking } from '../../services/bookingService';
 import { createPaymentOrder, verifyPayment } from '../../services/paymentService';
 import { useAuth } from '../../hooks/useAuth';
-import toast from 'react-hot-toast';
+import toastService from '../../services/toastService';
+
+const formatRazorpayFailure = (response) => {
+  const error = response?.error;
+  if (!error) {
+    return 'Payment failed. Please try again.';
+  }
+
+  const baseMessage = error.description || error.reason || error.code || 'Payment failed.';
+  const details = [];
+  if (error.reason) details.push(`Reason: ${error.reason}`);
+  if (error.step) details.push(`Step: ${error.step}`);
+  if (error.source) details.push(`Source: ${error.source}`);
+
+  return details.length ? `${baseMessage} (${details.join(', ')})` : baseMessage;
+};
+
+const getBookingPaymentTotal = (booking) => {
+  const finalAmount = Number(booking?.finalAmount ?? booking?.totalFare ?? 0);
+  if (finalAmount > 0) return finalAmount;
+
+  const baseFare = Number(booking?.baseFare ?? 0);
+  const serviceFee = Number(booking?.passengerServiceFee ?? booking?.platformFee ?? (baseFare * 0.03));
+  const gst = Number(booking?.passengerServiceFeeGST ?? booking?.gst ?? ((baseFare + serviceFee) * 0.05));
+  return Number((baseFare + serviceFee + gst).toFixed(2));
+};
+
+const isPaymentAmountValid = (booking) => getBookingPaymentTotal(booking) > 0;
 
 // ─── Icons (heroicons-outline, stroke-2 — same set as Home.jsx / UpcomingRides.jsx) ──
 const Icon = {
@@ -122,7 +150,7 @@ const MyBookings = () => {
     } catch (error) {
       console.error('Error fetching bookings:', error);
       setBookings([]);
-      toast.error('Failed to load bookings', { duration: 3000, position: 'top-center' });
+      toastService.error('Failed to load bookings', 'Unable to fetch your bookings. Please refresh and try again.');
     } finally {
       setLoading(false);
     }
@@ -130,20 +158,24 @@ const MyBookings = () => {
 
   const handleMakePayment = async (booking) => {
     if (!window.Razorpay) {
-      toast.error('Payment service is not available. Please refresh the page.', {
-        duration: 4000,
-        position: 'top-center',
-      });
+      toastService.error('Payment service unavailable', 'Please refresh the page and try again.');
       return;
     }
 
     setProcessingPayment(booking._id);
 
     try {
+      const bookingPaymentTotal = getBookingPaymentTotal(booking);
+      if (bookingPaymentTotal <= 0) {
+        toastService.error('Unable to start payment', 'This booking has an invalid payable amount. Please refresh or contact support.');
+        setProcessingPayment(null);
+        return;
+      }
+
       const rideId = booking.ride?._id || booking.rideId?._id || booking.rideId;
 
       if (!rideId) {
-        toast.error('Ride information is missing. Please try again.');
+        toastService.error('Ride information missing', 'We could not resolve the ride details for this booking.');
         setProcessingPayment(null);
         return;
       }
@@ -151,7 +183,25 @@ const MyBookings = () => {
       const response = await createPaymentOrder(booking._id, rideId);
 
       if (!response.success) {
-        toast.error('Failed to create payment order: ' + response.message);
+        toastService.error('Unable to create payment', response.message || 'Please try again.');
+        setProcessingPayment(null);
+        return;
+      }
+
+      const {
+        orderId,
+        order_id,
+        amount,
+        currency,
+        razorpayKeyId,
+        key_id
+      } = response.data;
+      const razorpayOrderId = orderId || order_id;
+      const razorpayKey = razorpayKeyId || key_id;
+      const orderAmount = Number(amount ?? 0);
+
+      if (!orderAmount || orderAmount <= 0) {
+        toastService.error('Invalid payment order', 'The Razorpay order returned a zero amount. Please refresh and try again.');
         setProcessingPayment(null);
         return;
       }
@@ -159,15 +209,31 @@ const MyBookings = () => {
       const orderData = response.data;
 
       const options = {
-        key: orderData.razorpayKeyId,
-        amount: orderData.amount,
-        currency: orderData.currency,
+        key: razorpayKey,
+        amount: amount,
+        currency: currency,
         name: 'ShareMyRide',
         description: `${booking.pickupLocation} → ${booking.dropLocation}`,
-        order_id: orderData.orderId,
+        order_id: razorpayOrderId,
+
+        prefill: {
+          name: user?.name || '',
+          email: user?.email || '',
+          contact: user?.phone || '9999999999'
+        },
+
+        theme: { color: '#2563eb' },
+        notes: {
+          booking_id: booking._id,
+          passenger_id: user?.id || user?._id,
+          pickup: booking.pickupLocation,
+          drop: booking.dropLocation,
+          seats: booking.seatsBooked
+        },
+
         handler: async function (razorpayResponse) {
           try {
-            const verifyingToast = toast.loading('Verifying payment...', { position: 'top-center' });
+            const verifyingToast = toastService.loading('Verifying payment…');
 
             const verifyData = await verifyPayment({
               razorpay_order_id: razorpayResponse.razorpay_order_id,
@@ -176,101 +242,100 @@ const MyBookings = () => {
               bookingId: booking._id,
             });
 
-            toast.dismiss(verifyingToast);
+            toastService.dismiss(verifyingToast);
 
             if (verifyData.success) {
-              toast.success('Payment successful!', { duration: 4000, position: 'top-center', icon: '🎉' });
+              toastService.success('Payment successful', 'Your ride payment has been verified.');
               await fetchBookings();
             } else {
-              toast.error('Payment verification failed. Please contact support.');
+              toastService.error('Payment verification failed', 'Your transaction was successful but verification failed. Please contact support.');
             }
           } catch (error) {
             console.error('Payment verification error:', error);
             if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-              toast.success('Payment successful! Verification in progress.', { duration: 5000 });
+              toastService.success('Payment successful', 'Verification is still in progress. We will update your booking shortly.');
               setTimeout(() => fetchBookings(), 3000);
             } else {
-              toast.error('Payment completed but verification failed. Your booking will be updated shortly.');
+              toastService.error('Payment verification failed', 'Your payment completed, but verification failed. Please contact support.');
             }
           } finally {
             setProcessingPayment(null);
           }
         },
-        prefill: {
-          name: user?.name || '',
-          email: user?.email || '',
-          contact: user?.phone || '9999999999',
-        },
-        theme: { color: '#2563eb' },
+
         modal: {
           ondismiss: function () {
-            toast('Payment cancelled', { icon: '⚠️', duration: 3000, position: 'top-center' });
+            toastService.warning('Payment cancelled', 'The payment modal was closed before completion. You can try again when ready.');
             setProcessingPayment(null);
           },
         },
       };
 
+      console.log('Opening Razorpay Checkout with:', {
+        key: razorpayKey,
+        order_id: razorpayOrderId,
+        amount,
+        currency,
+        name: 'ShareMyRide'
+      });
+
       const rzp = new window.Razorpay(options);
 
       rzp.on('payment.failed', function (response) {
-        toast.error(`Payment failed: ${response.error.description || 'Please try again'}`);
+        console.error('Payment failed object:', response);
+        console.error('Payment failed details:', {
+          code: response.error?.code,
+          description: response.error?.description,
+          reason: response.error?.reason,
+          source: response.error?.source,
+          step: response.error?.step,
+          metadata: response.error?.metadata
+        });
+
+        const failureMessage = formatRazorpayFailure(response);
+        toastService.error('Payment failed', failureMessage);
         setProcessingPayment(null);
       });
 
       rzp.open();
     } catch (error) {
       console.error('Payment error:', error);
-      toast.error('Failed to initiate payment: ' + (error.response?.data?.message || error.message));
+      toastService.error('Failed to initiate payment', error.response?.data?.message || error.message || 'Please try again.');
       setProcessingPayment(null);
     }
   };
 
   const handleCancelBooking = async (bookingId) => {
-    toast((t) => (
-      <div className="flex flex-col gap-3">
-        <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center">
-            {Icon.alert('w-5 h-5 text-red-500')}
-          </div>
-          <div className="flex-1">
-            <p className="font-semibold text-gray-900 text-sm">Cancel booking?</p>
-            <p className="text-xs text-gray-500 mt-0.5">This action cannot be undone.</p>
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={() => toast.dismiss(t.id)}
-            className="px-3.5 py-2 text-xs font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            Keep booking
-          </button>
-          <button
-            onClick={async () => {
-              toast.dismiss(t.id);
-              try {
-                await cancelBooking(bookingId);
-                toast.success('Booking cancelled', { duration: 3000 });
-                await fetchBookings();
-              } catch (error) {
-                toast.error('Failed to cancel booking: ' + error.message);
-              }
-            }}
-            className="px-3.5 py-2 text-xs font-semibold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors"
-          >
-            Yes, cancel
-          </button>
-        </div>
-      </div>
-    ), {
-      duration: Infinity,
-      position: 'top-center',
-      style: { background: '#fff', padding: '16px', borderRadius: '16px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)', maxWidth: '420px' },
+    toastService.confirm({
+      title: 'Cancel booking?',
+      message: 'This action cannot be undone.',
+      confirmLabel: 'Yes, cancel',
+      cancelLabel: 'Keep booking',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await cancelBooking(bookingId);
+          toastService.success('Booking cancelled', 'Your booking was cancelled successfully.');
+          await fetchBookings();
+        } catch (error) {
+          toastService.error('Failed to cancel booking', error.message || 'Please try again.');
+        }
+      },
+      onCancel: () => {
+        toastService.info('Cancellation aborted', 'Your booking is still active.');
+      },
     });
   };
 
   const getDisplayStatus = (booking) => {
     if (booking.paymentStatus === 'completed' || booking.status === 'completed') return 'paid';
     return booking.status;
+  };
+
+  const canShowContact = (booking) => {
+    const status = booking.status;
+    const paymentCompleted = booking.paymentStatus === 'completed';
+    return paymentCompleted && (status === 'accepted' || status === 'completed');
   };
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
@@ -364,7 +429,25 @@ const MyBookings = () => {
               {Icon.empty('w-7 h-7 text-gray-400')}
             </div>
             <p className="font-semibold text-gray-900 mb-1">No {filter !== 'all' ? filter : ''} bookings found</p>
-            <p className="text-sm text-gray-500">Your ride bookings will appear here</p>
+            <p className="text-sm text-gray-500 mb-6">Your ride bookings will appear here</p>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              {filter !== 'all' && (
+                <button
+                  onClick={() => setFilter('all')}
+                  className="inline-flex items-center gap-1.5 border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
+                >
+                  {Icon.ticket('w-4 h-4')}
+                  View all bookings
+                </button>
+              )}
+              <Link
+                to="/ride/search"
+                className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
+              >
+                {Icon.pin('w-4 h-4')}
+                Search rides
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="space-y-4 sm:space-y-5">
@@ -377,11 +460,12 @@ const MyBookings = () => {
               const driver = booking.driver || booking.driverId || {};
               const ride = booking.ride || booking.rideId || {};
 
-              // Passenger-side business model: 3% platform fee, then 5% GST on fare + fee.
-              const baseFare = booking.baseFare || 0;
-              const platformDeduction = booking.passengerServiceFee ?? booking.platformFee ?? (baseFare * 0.03);
-              const gstOnPlatformFee = booking.passengerServiceFeeGST ?? booking.gst ?? ((baseFare + platformDeduction) * 0.05);
-              const totalPassengerPays = booking.finalAmount || booking.totalFare || (baseFare + platformDeduction + gstOnPlatformFee);
+              // Booking amount is computed with a safe helper so zero values are handled consistently.
+              const totalPassengerPays = getBookingPaymentTotal(booking);
+              const isPaymentValid = totalPassengerPays > 0;
+              const baseFare = Number(booking?.baseFare ?? 0);
+              const platformDeduction = Number(booking?.passengerServiceFee ?? booking?.platformFee ?? (baseFare * 0.03));
+              const gstOnPlatformFee = Number(booking?.passengerServiceFeeGST ?? booking?.gst ?? ((baseFare + platformDeduction) * 0.05));
 
               return (
                 <div key={booking._id} className="bg-white rounded-2xl border border-gray-100 hover:shadow-lg hover:shadow-blue-50/60 transition-all duration-200 overflow-hidden">
@@ -394,7 +478,11 @@ const MyBookings = () => {
                         </div>
                         <div>
                           <p className="font-semibold text-gray-900 text-sm">{driver.name || 'Unknown Driver'}</p>
-                          <p className="text-xs text-gray-400">{driver.email || 'No email'}</p>
+                          <p className="text-xs text-gray-400">
+                            {canShowContact(booking)
+                              ? (driver.email || 'No email')
+                              : 'Contact details will appear after payment and ride confirmation.'}
+                          </p>
                           <p className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
                             {Icon.calendar('w-3 h-3')}
                             {new Date(booking.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -506,7 +594,7 @@ const MyBookings = () => {
                     {booking.status === 'accepted' && !isPaid && (
                       <div className="bg-green-50 rounded-xl p-4 mb-4">
                         <p className="text-sm font-semibold text-green-800 flex items-center gap-1.5">{Icon.check('w-4 h-4')} Booking confirmed!</p>
-                        <p className="text-xs text-green-700 mt-1">Driver: {driver.name} ({driver.email})</p>
+                        <p className="text-xs text-green-700 mt-1">Driver details are shared after payment is complete.</p>
                         {booking.confirmedAt && (
                           <p className="text-[11px] text-green-600 mt-1">
                             Confirmed {new Date(booking.confirmedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -547,13 +635,15 @@ const MyBookings = () => {
                       {booking.status === 'accepted' && !isPaid && (
                         <button
                           onClick={() => handleMakePayment(booking)}
-                          disabled={processingPayment === booking._id}
+                          disabled={processingPayment === booking._id || !isPaymentValid}
                           className="flex-1 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
                         >
                           {processingPayment === booking._id ? (
                             <>{Icon.spinner('h-4 w-4')} Processing…</>
-                          ) : (
+                          ) : isPaymentValid ? (
                             <>{Icon.card('w-4 h-4')} Pay ₹{totalPassengerPays.toFixed(2)}</>
+                          ) : (
+                            <>Invalid amount</>
                           )}
                         </button>
                       )}

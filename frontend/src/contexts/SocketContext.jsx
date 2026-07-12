@@ -1,10 +1,9 @@
 // src/contexts/SocketContext.jsx
-// Mirrors services/socket.js's handshake contract exactly: same access token
-// used for REST, sent once at connect via socket.handshake.auth.token.
-// No separate socket auth system — see ARCHITECTURE.md §3.2.
 
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useAuth, getAccessToken } from '../hooks/useAuth';
 
 // api.js's VITE_API_URL includes a trailing /api — Socket.IO attaches to the
@@ -20,6 +19,7 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const socketRef = useRef(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!isAuthenticated || !user) {
@@ -48,6 +48,53 @@ export function SocketProvider({ children }) {
     s.on('connect_error', (err) => {
       console.warn('⚠️ Socket connect error:', err.message);
       setConnected(false);
+    });
+
+    const clickableToast = (message, conversationId, opts = {}) => {
+      toast.custom(
+        (t) => (
+          <div
+            onClick={() => {
+              toast.dismiss(t.id);
+              if (conversationId) navigate(`/chat/${conversationId}`);
+            }}
+            className="bg-white shadow-lg rounded-xl border border-gray-100 px-4 py-3 text-sm text-gray-800 cursor-pointer max-w-sm"
+          >
+            {message}
+          </div>
+        ),
+        { duration: opts.duration || 6000 }
+      );
+    };
+
+    s.on('negotiation:new', (payload) => {
+      clickableToast(`🤝 ${payload.message || 'New negotiation request'}`, payload.conversationId, { duration: 8000 });
+    });
+    s.on('negotiation:countered', (payload) => {
+      clickableToast(`🔄 ${payload.message || 'The other party sent a counter-offer'}`, payload.conversationId);
+    });
+    s.on('negotiation:accepted', (payload) => {
+      clickableToast(`✅ ${payload.message || 'Your negotiation was accepted'}`, payload.conversationId);
+    });
+    s.on('negotiation:rejected', (payload) => {
+      clickableToast(`❌ ${payload.message || 'Your negotiation was declined'}`, payload.conversationId);
+    });
+    s.on('negotiation:cancelled', (payload) => {
+      clickableToast(`ℹ️ ${payload.message || 'A negotiation was cancelled'}`, payload.conversationId);
+    });
+    s.on('negotiation:finalized', (payload) => {
+      clickableToast(`🎉 ${payload.message || 'Ride confirmed! Your booking is ready.'}`, payload.conversationId, { duration: 8000 });
+    });
+    s.on('moderation:warned', () => {
+      toast('⚠️ You received a safety warning from the ShareMyRide team. Please review our community guidelines.', {
+        duration: 8000,
+      });
+    });
+    s.on('moderation:action', (payload) => {
+      toast.error(
+        `Your account has been ${(payload.action || 'restricted').toLowerCase()}${payload.reason ? `: ${payload.reason}` : '.'}`,
+        { duration: 10000 }
+      );
     });
 
     socketRef.current = s;

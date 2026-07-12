@@ -173,6 +173,10 @@ function Profile() {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [totalRides, setTotalRides] = useState(0);
+  const [totalEarnings, setTotalEarnings] = useState(0);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [recentCompletedRides, setRecentCompletedRides] = useState([]);
+  const [profileStatsLoading, setProfileStatsLoading] = useState(true);
 
   // ── Verification state ──────────────────────────────────────────────────
   const [verif, setVerif] = useState(null);
@@ -203,7 +207,7 @@ function Profile() {
   useEffect(() => {
     if (user) {
       setProfileData({ name: user.name || '', email: user.email || '' });
-      fetchTotalRides();
+      fetchProfileStats();
       // If we have a cached photo URL, skip showing the loading spinner for verif status
       // and do a silent background refresh instead
       const hasCached = !!getCachedPhotoUrl();
@@ -220,12 +224,33 @@ function Profile() {
     }
   }, [profileData, user]);
 
-  const fetchTotalRides = async () => {
+  const fetchProfileStats = async () => {
     try {
+      setProfileStatsLoading(true);
       const res = await api.get('/rides/user/stats');
-      const data = res.data.data || res.data;
-      setTotalRides(data.totalRides || 0);
-    } catch { setTotalRides(0); }
+      const data = res.data?.data || res.data || {};
+
+      setTotalRides(data.totalRides || data.totalBookings || 0);
+      setCompletedCount(data.completedRides || data.completedTrips || 0);
+      setTotalEarnings(data.totalEarnings ?? data.totalSpent ?? 0);
+
+      if (user?.role === 'driver') {
+        const ridesRes = await api.get('/rides/my', { params: { status: 'completed' } });
+        let ridesData = ridesRes.data?.data || ridesRes.data || [];
+        if (!Array.isArray(ridesData)) ridesData = ridesRes.data?.rides || [];
+        setRecentCompletedRides(Array.isArray(ridesData) ? ridesData.slice(0, 3) : []);
+      } else {
+        setRecentCompletedRides([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch profile stats:', err);
+      setTotalRides(0);
+      setCompletedCount(0);
+      setTotalEarnings(0);
+      setRecentCompletedRides([]);
+    } finally {
+      setProfileStatsLoading(false);
+    }
   };
 
   const fetchVerificationStatus = async ({ silent = false } = {}) => {
@@ -480,6 +505,47 @@ function Profile() {
                   </p>
                   <p className="text-xs text-gray-400 mt-1.5">Driver Status</p>
                 </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Confirmed earnings</h3>
+                  <p className="text-sm text-gray-500">Your verified earnings and recent completed ride details.</p>
+                </div>
+                <div className="rounded-3xl bg-slate-50 px-4 py-3 text-right">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Confirmed earnings</p>
+                  <p className="mt-2 text-2xl font-bold text-green-600">₹{totalEarnings.toLocaleString('en-IN')}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {completedCount} completed {user?.role === 'driver' ? 'rides' : 'trips'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {profileStatsLoading ? (
+                  <div className="space-y-2">
+                    <div className="h-3 bg-gray-200 rounded-full w-28 animate-pulse" />
+                    <div className="h-3 bg-gray-200 rounded-full w-40 animate-pulse" />
+                  </div>
+                ) : recentCompletedRides.length ? (
+                  recentCompletedRides.map((ride) => (
+                    <div key={ride._id} className="flex items-center justify-between gap-3 p-4 rounded-2xl border border-gray-100 bg-white shadow-sm">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">Ride {ride._id?.slice?.(0, 8) || 'N/A'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {ride.start || 'Unknown'} → {ride.end || 'Unknown'} · {ride.date ? new Date(ride.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Date unknown'}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-800">₹{ride.fare ?? ride.baseFare ?? 0}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                    No completed rides found yet. Confirmed earnings will appear here after a completed trip.
+                  </div>
+                )}
               </div>
             </SectionCard>
 

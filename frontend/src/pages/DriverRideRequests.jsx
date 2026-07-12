@@ -553,7 +553,7 @@ const FILTERS = [
 ];
 
 function DriverRideRequests() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [bookings, setBookings] = useState([]);
@@ -582,11 +582,12 @@ function DriverRideRequests() {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!user) { navigate('/login'); return; }
     fetchBookings();
     intervalRef.current = setInterval(() => fetchBookings(true), 30000);
     return () => clearInterval(intervalRef.current);
-  }, [user, fetchBookings, navigate]);
+  }, [user, authLoading, fetchBookings, navigate]);
 
   // ── Filtering + sorting ──────────────────────────────────────────────────
   const filtered = bookings

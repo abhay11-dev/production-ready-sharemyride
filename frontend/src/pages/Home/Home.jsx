@@ -833,16 +833,35 @@ function SkeletonCard() {
 }
 
 // ─── Ride Card ─────────────────────────────────────────────────────────────────
-function RideCard({ ride, onAuthRequired }) {
+function RideCard({ ride, onAuthRequired, onCardClick }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const cardRef = useRef(null);
 
+  const buildRideSearchUrl = (rideItem) => {
+    const params = new URLSearchParams();
+    if (rideItem?.start) params.set('start', rideItem.start);
+    if (rideItem?.end) params.set('end', rideItem.end);
+    if (rideItem?._id) params.set('selectedRideId', rideItem._id);
+    return `/ride/search${params.toString() ? `?${params.toString()}` : ''}#search`;
+  };
+
   const handleClick = (e) => {
+    // If user not signed in, show auth toast and prevent navigation
     if (!user) {
       e.preventDefault();
       if (cardRef.current && onAuthRequired) onAuthRequired(cardRef.current.getBoundingClientRect());
       return;
     }
+
+    // If caller provided a custom click handler, let it control navigation
+    if (typeof onCardClick === 'function') {
+      e.preventDefault();
+      onCardClick(ride);
+      return;
+    }
+
+    // Default behaviour: remember scroll position and allow Link navigation
     sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
   };
 
@@ -862,6 +881,14 @@ function RideCard({ ride, onAuthRequired }) {
     <div
       ref={cardRef}
       onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handleClick(event);
+        }
+      }}
       className={`group relative bg-white rounded-2xl border overflow-hidden transition-all duration-200 cursor-pointer
         ${user
           ? 'border-gray-100 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-50/60'
@@ -988,7 +1015,7 @@ function RideCard({ ride, onAuthRequired }) {
 
   if (user) {
     return (
-      <Link to={`/ride/${ride._id}`} onClick={handleClick} className="block">
+      <Link to={buildRideSearchUrl(ride)} onClick={handleClick} className="block">
         {cardContent}
       </Link>
     );
@@ -1126,7 +1153,19 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
             {ridesLoading
               ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
               : rides.length > 0
-                ? rides.slice(0, 8).map(ride => <RideCard key={ride._id} ride={ride} />)
+                ? rides.slice(0, 8).map(ride => (
+                  <div key={ride._id} className="relative transition-transform duration-200 hover:-translate-y-0.5">
+                    <RideCard
+                      ride={ride}
+                      onCardClick={() => {
+                        // snapshot the current home rides so RideSearch can restore the same list
+                        try { sessionStorage.setItem('SMR_home_rides_snapshot', JSON.stringify({ rides: rides.slice(0, 8), ts: Date.now() })); } catch (e) { /* ignore */ }
+                        handleNavClick();
+                        navigate(`/ride/search?start=${encodeURIComponent(ride.start || '')}&end=${encodeURIComponent(ride.end || '')}&selectedRideId=${ride._id}#search`);
+                      }}
+                    />
+                  </div>
+                ))
                 : <EmptyRideFeed />
             }
           </div>
@@ -1343,9 +1382,14 @@ function PublicLanding({ stats, rides, ridesLoading }) {
               ? Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
               : rides.length > 0
                 ? rides.slice(0, 8).map(ride => (
-                  <RideCard
-                    key={ride._id}
-                    ride={ride}
+                    <RideCard
+                      key={ride._id}
+                      ride={ride}
+                      onCardClick={() => {
+                        try { sessionStorage.setItem('SMR_home_rides_snapshot', JSON.stringify({ rides: rides.slice(0, 8), ts: Date.now() })); } catch (e) { /* ignore */ }
+                        handleNavClick();
+                        navigate(`/ride/search?start=${encodeURIComponent(ride.start || '')}&end=${encodeURIComponent(ride.end || '')}&selectedRideId=${ride._id}#search`);
+                      }}
                     onAuthRequired={(rect) => setToastRect({ rect, to: '/login', message: 'Sign in to view ride details' })}
                   />
                 ))
@@ -1557,11 +1601,14 @@ function Home() {
     const fetchRides = async () => {
       setRidesLoading(true);
       try {
-        let res = await api.get('/rides/featured', { params: { limit: 8 } });
-        let data = res.data?.data || [];
+        let res = await api.get('/rides/search', { params: { globalAllRides: 'true', limit: 8 } });
+        let data = res.data?.data || res.data || [];
+        if (!Array.isArray(data)) data = res.data?.rides || [];
+
         if (!data.length) {
-          res = await api.get('/rides/search', { params: { start: '', end: '', limit: 8 } });
-          data = res.data?.data || [];
+          res = await api.get('/rides/featured', { params: { limit: 8 } });
+          data = res.data?.data || res.data || [];
+          if (!Array.isArray(data)) data = res.data?.rides || [];
         }
         setRides(data);
       } catch {

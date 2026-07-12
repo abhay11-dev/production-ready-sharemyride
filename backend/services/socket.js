@@ -1,49 +1,11 @@
 // services/socket.js
-//
-// MILESTONE 4 — Websocket infra (see PROJECT_STATE.md §6/§7)
-//
-// Attaches Socket.IO to the existing http.Server instance (server.js was
-// changed from `app.listen()` to `http.createServer(app)` + `server.listen()`
-// specifically to make this possible — Express alone has no socket access).
-//
-// Auth: mirrors middleware/auth.js's JWT verification (same JWT_SECRET,
-// same `decoded.id` payload shape) so a client uses the SAME access token
-// for both REST calls and the socket handshake — no separate socket-specific
-// auth system.
-//
-// FIX (this session): the handshake now also rejects a refresh token
-// presented as an access token (decoded.type !== 'access'), matching the
-// same check middleware/auth.js's `protect` already performs on REST calls.
-// Also added a server-side 1000-char cap on `message:send` text, matching
-// the Message schema's maxlength and the REST fallback's validation in
-// chatController.sendMessageRest — previously an over-limit message would
-// throw a raw Mongoose validation error instead of a clean ack failure.
-//
-// Rooms: one Socket.IO room per Conversation (`conversation:<id>`). A user
-// joins the rooms for all conversations they're a participant in in one
-// bulk operation right after connecting, rather than joining per-message.
-//
-// Events (client → server):
-//   'message:send'    { conversationId, text }
-//   'typing:start'     { conversationId }
-//   'typing:stop'      { conversationId }
-//   'message:read'     { conversationId }
-//
-// Events (server → client):
-//   'message:new'      the saved Message document
-//   'typing:update'     { conversationId, userId, isTyping }
-//   'presence:update'   { userId, online }
-//   'conversation:read' { conversationId, userId, readAt }
-//
-// This file exports `initSocket(httpServer)` (call once from server.js) and
-// `getIO()` (so REST controllers — e.g. negotiationController on finalize —
-// can also emit events without needing the socket connection themselves).
+
 
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
-const { scanAndMask, scheduleAnalysis } = require('./moderationService'); // Milestone 5
+const { scanAndMask, scheduleAnalysis } = require('./moderationService');
 
 let io = null;
 
@@ -100,7 +62,7 @@ function initSocket(httpServer) {
 
       const user = await User.findById(decoded.id).select('-password');
       if (!user) return next(new Error('User not found'));
-      if (!user.isActive || user.accountStatus === 'SUSPENDED') {
+      if (!user.isActive || ['SUSPENDED', 'BLOCKED', 'BANNED'].includes(user.accountStatus)) {
         return next(new Error('Account suspended'));
       }
 
@@ -115,7 +77,16 @@ function initSocket(httpServer) {
     const userId = socket.user._id.toString();
     const firstConnection = markOnline(userId, socket.id);
 
-    // Join a room per conversation this user participates in
+    // Join a room per conversation this user participates in, plus a
+    // personal room for in-app notifications that aren't tied to an open
+    // conversation (new negotiation requests, moderation notices, etc.)
+    socket.join(`user:${userId}`);
+    if (socket.user.role === 'admin') {
+      // Ride Safety Platform — Phase 3/4: admin dashboard needs a single
+      // room to receive safety escalations (need_help, SOS) from every
+      // ride at once, without joining each ride room individually.
+      socket.join('admin:global');
+    }
     try {
       const conversations = await Conversation.find({
         $or: [{ passenger: userId }, { driver: userId }],
@@ -131,7 +102,43 @@ function initSocket(httpServer) {
       io.emit('presence:update', { userId, online: true });
     }
 
+    // ── ride journey rooms (Ride Safety Platform — Phase 1) ──────────────
+    // Clients join explicitly (rather than auto-joining every ride like
+    // conversations above) because a user may have many past rides but
+    // only ever needs the room for whichever ride's dashboard is open.
+    // Authorization (is this user actually the driver or a confirmed
+    // passenger?) is checked before responding to the ack, not just before
+    // emitting — joining a room you're not authorized for would let you
+    // silently receive that ride's events.
+    socket.on('ride:join', async ({ rideId }, ack) => {
+      try {
+        if (!rideId) return ack?.({ success: false, message: 'rideId required' });
+
+        const RideJourney = require('../models/RideJourney');
+        const journey = await RideJourney.findOne({ ride: rideId }).select('driver passengers').lean();
+        if (!journey) return ack?.({ success: false, message: 'No ride journey found' });
+
+        const isDriver = journey.driver.toString() === userId;
+        const isPassenger = journey.passengers.some((p) => p.user.toString() === userId);
+        if (!isDriver && !isPassenger) {
+          return ack?.({ success: false, message: 'Not authorized for this ride' });
+        }
+
+        socket.join(`ride:${rideId}`);
+        ack?.({ success: true });
+      } catch (err) {
+        console.warn('⚠️ ride:join error:', err.message);
+        ack?.({ success: false, message: 'Server error' });
+      }
+    });
+
+    socket.on('ride:leave', ({ rideId }) => {
+      if (!rideId) return;
+      socket.leave(`ride:${rideId}`);
+    });
+
     // ── message:send ───────────────────────────────────────────────────
+
     socket.on('message:send', async ({ conversationId, text }, ack) => {
       try {
         if (!text?.trim()) return ack?.({ success: false, message: 'Message text required' });
@@ -146,8 +153,8 @@ function initSocket(httpServer) {
         const isParticipant = [conversation.passenger.toString(), conversation.driver.toString()].includes(userId);
         if (!isParticipant) return ack?.({ success: false, message: 'Not a participant in this conversation' });
 
-        // Milestone 5, step 1: quick-scan/mask BEFORE saving (see chatController
-        // for the identical pattern used on the REST send path — both writers
+        // Quick-scan/mask BEFORE saving (see chatController for the
+        // identical pattern used on the REST send path — both writers
         // go through the same moderationService functions, not duplicated logic)
         const { maskedText, quickScanMatches, originalText } = scanAndMask(text.trim());
 
@@ -158,8 +165,7 @@ function initSocket(httpServer) {
           text: maskedText,
         });
 
-        // Milestone 5, step 2: schedule background AI analysis now that the
-        // message has a real _id
+        // Schedule background AI analysis now that the message has a real _id
         scheduleAnalysis({ message, conversation, senderId: userId, originalText, quickScanMatches });
 
         const isPassenger = conversation.passenger.toString() === userId;
@@ -229,4 +235,27 @@ function getIO() {
   return io;
 }
 
-module.exports = { initSocket, getIO, isOnline };
+// Push an in-app notification event to a specific user's personal room
+// (joined as `user:<id>` on connect above), regardless of which conversation
+// (if any) they currently have open. Non-fatal if Socket.IO isn't
+// initialized (e.g. scripts/tests) — callers already wrap this in try/catch
+// per the existing pattern used for conversation-room emits.
+function emitToUser(userId, event, payload) {
+  getIO().to(`user:${userId}`).emit(event, payload);
+}
+
+// Push a ride-journey event to everyone currently viewing that ride's
+// dashboard (driver + passenger(s), whoever has called `ride:join`).
+// This is what keeps both dashboards synchronized off a single event —
+// see services/rideLifecycleService.js for every call site.
+function emitToRide(rideId, event, payload) {
+  getIO().to(`ride:${rideId}`).emit(event, payload);
+}
+
+// Push a safety escalation (Phase 3 need_help/contact_support responses,
+// Phase 4 SOS) to every connected admin at once.
+function emitToAdmins(event, payload) {
+  getIO().to('admin:global').emit(event, payload);
+}
+
+module.exports = { initSocket, getIO, isOnline, emitToUser, emitToRide, emitToAdmins };

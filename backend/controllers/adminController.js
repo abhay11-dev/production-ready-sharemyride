@@ -642,9 +642,10 @@ exports.updateUser = async (req, res) => {
   try {
     const { accountStatus, suspensionReason, role } = req.body;
     const update = {};
+    const RESTRICTED_STATUSES = ['SUSPENDED', 'BLOCKED', 'BANNED'];
     if (accountStatus) {
       update.accountStatus = accountStatus;
-      if (accountStatus === 'SUSPENDED') {
+      if (RESTRICTED_STATUSES.includes(accountStatus)) {
         update.isActive = false;
         update.suspendedAt = new Date();
         update.suspensionReason = suspensionReason || 'Violated terms';

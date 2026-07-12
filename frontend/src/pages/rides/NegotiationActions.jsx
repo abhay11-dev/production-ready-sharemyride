@@ -1,23 +1,12 @@
 // src/pages/rides/NegotiationActions.jsx
-//
-// MILESTONE 3 (frontend) — real wiring for the negotiation action cards
-// rendered under each RideCard search result. Previously every button here
-// called a placeholder toast ("🚧 coming soon"); this version calls the
-// real negotiationService functions and lands the user in the chat thread
-// (Milestone 4) that the negotiation is automatically attached to.
-//
-// One modal handles all 5 action types (chat / negotiate_fare /
-// request_partial / discuss_pickup / discuss_drop) since they all funnel
-// into the same initiateNegotiation endpoint — only which fields are shown
-// differs per type. This matches the "could literally reuse the chat UI"
-// guidance in PROJECT_STATE.md §8 step 4.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef , useLayoutEffect} from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import toastService from '../../services/toastService';
 import Icon from '../../components/ui/Icon';
 import { useAuth } from '../../hooks/useAuth';
-import { getNegotiationActions } from '../../utils/negotiationActions';
+import { getNegotiationActions, buildPrefillMessage, mapActionToSource } from '../../utils/negotiationActions';
 import { initiateNegotiation } from '../../services/negotiationService';
 
 function ActionModal({ ride, action, onClose }) {
@@ -26,25 +15,47 @@ function ActionModal({ ride, action, onClose }) {
   const [pickupLocation, setPickupLocation] = useState(ride.start || '');
   const [dropLocation, setDropLocation] = useState(ride.end || '');
   const [seats, setSeats] = useState(1);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(() => buildPrefillMessage(action.key, { fare: ride.fare ?? '', pickupLocation: ride.start, dropLocation: ride.end, seats: 1 }));
   const [loading, setLoading] = useState(false);
+  const messageEditedRef = useRef(false);
 
   const needsFare = action.key === 'negotiate_fare';
-  const needsPickup = action.key === 'discuss_pickup' || action.key === 'request_partial';
-  const needsDrop = action.key === 'discuss_drop' || action.key === 'request_partial';
-  const needsSeats = action.key === 'request_partial';
-  const messageRequired = action.key === 'chat';
+  const fareRequired = action.key === 'negotiate_fare';
+  const needsPickup = action.key === 'discuss_pickup' || action.key === 'request_partial' || action.key === 'route_change';
+  const needsDrop = action.key === 'discuss_drop' || action.key === 'request_partial' || action.key === 'route_change';
+  const needsSeats = action.key === 'request_partial' || action.key === 'seat_request';
 
   const availableSeats = ride.availableSeats ?? ride.seats ?? 1;
 
+  // Keep the prefilled message in sync with the fields that feed its
+  // template (fare / pickup / drop) — but only until the user has actually
+  // typed into the message box themselves, so we never clobber an edit
+  // they've made.
+  useEffect(() => {
+    if (messageEditedRef.current) return;
+    setMessage(buildPrefillMessage(action.key, { fare, pickupLocation, dropLocation, seats }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fare, pickupLocation, dropLocation, seats, action.key]);
+
+  const handleMessageChange = (e) => {
+    messageEditedRef.current = true;
+    setMessage(e.target.value);
+  };
+
   const validate = () => {
-    if (messageRequired && !message.trim()) {
+    if (!message.trim()) {
       toastService.error('Please write a short message for the driver.');
       return false;
     }
-    if (needsFare && fare !== '' && (isNaN(parseFloat(fare)) || parseFloat(fare) < 0)) {
-      toastService.error('Enter a valid fare amount.');
-      return false;
+    if (fareRequired) {
+      if (fare === '' || fare === null || fare === undefined) {
+        toastService.error('Enter the fare you want to propose.');
+        return false;
+      }
+      if (isNaN(parseFloat(fare)) || parseFloat(fare) <= 0) {
+        toastService.error('Enter a valid fare amount greater than 0.');
+        return false;
+      }
     }
     if (message.trim().length > 500) {
       toastService.error('Message is too long (max 500 characters).');
@@ -59,22 +70,36 @@ function ActionModal({ ride, action, onClose }) {
 
     setLoading(true);
     try {
-      const payload = { rideId: ride._id, source: action.key, message: message.trim() };
+      const trimmedMessage = message.trim();
+      // action.key drives the UI (7 distinct entry points); the actual
+      // `source` sent to the API is mapped to one of the backend's 5
+      // existing valid values via mapActionToSource() — see
+      // utils/negotiationActions.js for why this stays a frontend-only
+      // concept rather than a Negotiation.source schema change.
+      const payload = { rideId: ride._id, source: mapActionToSource(action.key), message: trimmedMessage };
       if (needsFare && fare !== '') payload.proposedFare = parseFloat(fare);
       if (needsPickup) payload.pickupLocation = pickupLocation;
       if (needsDrop) payload.dropLocation = dropLocation;
       if (needsSeats) payload.seats = seats;
 
       const res = await initiateNegotiation(payload);
-      const conversationId = res.conversationId || res.data?._id;
+      // NOTE: res.data is the Negotiation document, not a Conversation — its
+      // _id must never be used as a conversationId. If the conversation
+      // linkage failed server-side (best-effort, non-fatal there),
+      // conversationId will be null and we fall back to the inbox instead
+      // of building a broken /messages/:id URL.
+      const conversationId = res.conversationId || null;
       const negotiationId = res.data?._id;
 
       toastService.success('Sent to the driver');
       onClose();
 
       if (conversationId) {
-        navigate(`/messages/${conversationId}`, { state: { negotiationId } });
+        navigate(`/messages/${conversationId}`, {
+          state: { negotiationId, prefillText: trimmedMessage },
+        });
       } else {
+        toastService.info('Your request was sent — find the conversation in your inbox.');
         navigate('/messages');
       }
     } catch (err) {
@@ -117,14 +142,15 @@ function ActionModal({ ride, action, onClose }) {
           {needsFare && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Your proposed fare (₹) <span className="text-gray-400 font-normal">(optional)</span>
+                Your proposed fare (₹) <span className="text-red-500">*</span>
               </label>
               <input
-                type="number" min="0" step="1" value={fare} disabled={loading}
+                type="number" min="1" step="1" value={fare} disabled={loading} required
                 onChange={(e) => setFare(e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder={`Listed fare: ₹${ride.fare ?? 0}`}
               />
+              <p className="text-xs text-gray-400 mt-1">The driver will see this amount and can accept, decline, or counter it in chat.</p>
             </div>
           )}
 
@@ -152,7 +178,9 @@ function ActionModal({ ride, action, onClose }) {
 
           {needsSeats && (
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Seats needed</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                {action.key === 'seat_request' ? 'Seats to reserve' : 'Seats needed'}
+              </label>
               <select
                 value={seats} disabled={loading}
                 onChange={(e) => setSeats(parseInt(e.target.value, 10))}
@@ -166,15 +194,15 @@ function ActionModal({ ride, action, onClose }) {
           )}
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-              Message {messageRequired ? '' : <span className="text-gray-400 font-normal">(optional)</span>}
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center justify-between">
+              <span>Message to the driver</span>
+              <span className="text-[11px] font-normal text-gray-400">Prefilled — edit as you like</span>
             </label>
             <textarea
               value={message} disabled={loading} rows={3} maxLength={500}
-              required={messageRequired}
-              onChange={(e) => setMessage(e.target.value)}
+              required
+              onChange={handleMessageChange}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-              placeholder={messageRequired ? 'What would you like to ask?' : 'Add a note for the driver…'}
             />
             <p className="text-xs text-gray-400 mt-1 text-right">{message.length}/500</p>
           </div>
@@ -198,11 +226,95 @@ function ActionModal({ ride, action, onClose }) {
                   </svg>
                   Sending…
                 </>
-              ) : 'Send to driver'}
+              ) : 'Continue to chat'}
             </button>
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ─── Speech-cloud hover tooltip ────────────────────────────────────────────
+// Explains what an action pill does before the user commits to opening the
+// modal. Desktop: pure hover (group-hover), matches the overlay pattern
+// already used on Home.jsx's ride cards. Mobile/touch: a tap toggles it
+// open, and a second tap anywhere (or on the pill again) closes it — since
+// hover doesn't exist on touch devices.
+// ─── Speech-cloud hover tooltip ────────────────────────────────────────────
+// Explains what an action pill does before the user commits to opening the
+// modal. Uses local hover/focus state (NOT Tailwind's group/group-hover) —
+// the card wrapping this component is itself a `.group` for its own hover
+// effects, and group-hover matches ANY ancestor with that class, so nesting
+// another `group` here made every tooltip on the card appear together.
+// Local state scopes visibility to exactly the pill being interacted with.
+
+function ActionPill({ action, onOpen }) {
+  const [isActive, setIsActive] = useState(false);
+  const [coords, setCoords] = useState(null);
+  const btnRef = useRef(null);
+
+  const measure = () => {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setCoords({
+      top: rect.top,
+      left: rect.left + rect.width / 2,
+    });
+  };
+
+  const show = () => { measure(); setIsActive(true); };
+  const hide = () => setIsActive(false);
+
+  // Keep position correct if the page scrolls/resizes while open
+  useLayoutEffect(() => {
+    if (!isActive) return;
+    const onScrollOrResize = () => measure();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [isActive]);
+
+  return (
+    <div className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => onOpen(action)}
+        onFocus={show}
+        onBlur={hide}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 hover:border-indigo-200 hover:-translate-y-0.5 active:translate-y-0 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-1"
+      >
+        <Icon name={action.icon} size="xs" decorative />
+        {action.label}
+      </button>
+
+     {coords && createPortal(
+  <div
+    role="tooltip"
+    aria-hidden={!isActive}
+    style={{ top: coords.top, left: coords.left }}
+    className={`fixed z-[9999] w-56 max-w-[80vw]
+      -translate-x-1/2 -translate-y-[calc(100%+10px)]
+      origin-bottom
+      transition-opacity transition-transform duration-200 ease-out
+      pointer-events-none
+      ${isActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+  >
+    <div className="bg-gray-900 text-white text-xs leading-snug rounded-xl px-3.5 py-3 shadow-xl shadow-black/25">
+      <div className="flex items-center gap-1.5 font-semibold mb-1 text-indigo-200">
+        <Icon name={action.icon} size="xs" className="text-indigo-300" decorative />
+        {action.label}
+      </div>
+      <p className="text-gray-300">{action.description}</p>
+      <div className="absolute top-full left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-gray-900 rotate-45 -mt-1.5" />
+    </div>
+  </div>,
+  document.body
+)}
     </div>
   );
 }
@@ -224,19 +336,11 @@ export default function NegotiationActions({ ride }) {
 
   return (
     <>
-      <div className="flex flex-wrap gap-1.5 mt-3">
-        {actions.map((action) => (
-          <button
-            key={action.key}
-            type="button"
-            onClick={() => handleClick(action)}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
-          >
-            <Icon name={action.icon} size="xs" />
-            {action.label}
-          </button>
-        ))}
-      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+  {actions.map((action) => (
+    <ActionPill key={action.key} action={action} onOpen={handleClick} />
+  ))}
+</div>
 
       {activeAction && (
         <ActionModal ride={ride} action={activeAction} onClose={() => setActiveAction(null)} />
