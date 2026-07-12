@@ -345,18 +345,14 @@ const MyBookings = () => {
         </div>
 
         {/* ── Filters ── */}
-        <div className="flex gap-2 flex-wrap mb-6 bg-white rounded-2xl border border-gray-100 p-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6 bg-white rounded-3xl border border-gray-100 p-4 shadow-sm">
           {FILTERS.map(f => (
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
-              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 ${filter === f.id ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:text-gray-800'
-                }`}
+              className={`w-full rounded-2xl px-4 py-3 text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center ${filter === f.id ? 'bg-blue-600 text-white shadow-md shadow-blue-100' : 'text-gray-600 bg-gray-50 hover:bg-gray-100 hover:text-gray-900'}`}
             >
               {f.label}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${filter === f.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                {f.count}
-              </span>
             </button>
           ))}
         </div>

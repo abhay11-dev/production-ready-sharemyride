@@ -11,8 +11,30 @@ const routeCache = new Map();
 // Add delay between requests to respect rate limits
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+const { ALIAS_TO_CANONICAL } = require('./locationNormalize.js');
+
+// Word-boundary, case-insensitive replacement of known alias city names with
+// their canonical modern form (e.g. "Bangalore" -> "Bengaluru") before
+// geocoding. Deliberately narrow in scope compared to
+// `locationNormalize.buildLocationMatchKey` (used for ride-matching in
+// rideController.js): this only swaps whole recognized city-name tokens and
+// otherwise leaves the address's punctuation, casing, and structure
+// untouched, because real geocoders (Google/Nominatim) already handle minor
+// typos and formatting variance well — aggressively normalizing the string
+// here would risk feeding them a worse-formed address than the user typed.
+const applyCityAliases = (address) => {
+  let result = String(address || '');
+  for (const [variant, canonical] of Object.entries(ALIAS_TO_CANONICAL)) {
+    if (variant === canonical) continue;
+    const pattern = new RegExp(`\\b${variant}\\b`, 'gi');
+    const canonicalTitleCase = canonical.charAt(0).toUpperCase() + canonical.slice(1);
+    result = result.replace(pattern, canonicalTitleCase);
+  }
+  return result;
+};
+
 const normalizeIndianAddress = (address) => {
-  const cleaned = String(address || '').trim().replace(/\s+/g, ' ');
+  const cleaned = applyCityAliases(String(address || '').trim().replace(/\s+/g, ' '));
   if (!cleaned) return '';
   return /\bindia\b/i.test(cleaned) ? cleaned : `${cleaned}, India`;
 };

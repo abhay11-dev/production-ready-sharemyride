@@ -33,9 +33,26 @@ const isValidRideDate = (value, minDate) => {
 };
 
 const normalizeIndiaLocation = (value) => {
-  const cleaned = value.trim().replace(/\s+/g, ' ');
+  const text = typeof value === 'string' ? value : value?.formatted || value?.name || '';
+  const cleaned = text.trim().replace(/\s+/g, ' ');
   if (!cleaned) return '';
   return /\bindia\b/i.test(cleaned) ? cleaned : `${cleaned}, India`;
+};
+
+const normalizeLocationInput = (value) => {
+  if (typeof value === 'string') return value;
+  return value?.formatted || value?.name || '';
+};
+
+const extractLocationCoordinates = (place) => {
+  if (!place || typeof place !== 'object') return null;
+  const lat = place.lat ?? place.latitude ?? place.location?.lat ?? place.location?.latitude ?? null;
+  const lng = place.lng ?? place.longitude ?? place.location?.lng ?? place.location?.longitude ?? null;
+  if (lat == null || lng == null) return null;
+  const parsedLat = parseFloat(lat);
+  const parsedLng = parseFloat(lng);
+  if (Number.isNaN(parsedLat) || Number.isNaN(parsedLng)) return null;
+  return { lat: parsedLat, lng: parsedLng };
 };
 
 // ─── Skeleton card ────────────────────────────────────────────────────────────
@@ -112,7 +129,7 @@ function SectionHeader({ eyebrow, title, subtitle, badge, badgeColor = 'blue', c
 }
 
 // ─── Empty results ────────────────────────────────────────────────────────────
-function EmptyResults({ start, end, onClear }) {
+function EmptyResults({ start, end, onClear, onBrowseAll }) {
   return (
     <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
       <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -127,25 +144,33 @@ function EmptyResults({ start, end, onClear }) {
           className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
           Try a new search
         </button>
-        <Link to="/ride/post"
-          className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
-          <Icon name="Plus" size="sm" />
-          Post a ride on this route
-        </Link>
+        <button onClick={() => onBrowseAll?.()}
+          className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors">
+          <Icon name="Globe" size="sm" />
+          Browse all rides across India
+        </button>
       </div>
     </div>
   );
 }
 
 // ─── Pre-search placeholder ───────────────────────────────────────────────────
-function SearchPrompt() {
+function SearchPrompt({ onBrowseAll }) {
   return (
     <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
       <div className="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4">
         <Icon name="Search" size="lg" className="text-blue-400" />
       </div>
       <p className="font-semibold text-gray-800 text-base mb-1">Search for available rides</p>
-      <p className="text-sm text-gray-500">Enter your origin and destination above to find rides going your way.</p>
+      <p className="text-sm text-gray-500 mb-5">Enter your origin and destination above to find rides going your way.</p>
+      <button
+        type="button"
+        onClick={() => onBrowseAll?.()}
+        className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+      >
+        <Icon name="Globe" size="sm" />
+        Browse all rides across India
+      </button>
     </div>
   );
 }
@@ -166,18 +191,33 @@ export default function RideSearch() {
   const [startPlace, setStartPlace] = useState(null);
   const [endPlace, setEndPlace] = useState(null);
 
-  // Results — Smart Search tiers (Milestone 1: 7-tier ranking collapsed into
-  // 4 display buckets so the existing UI sections stay unchanged)
-  //   exactRides       <- matchTier 1-2 (exact match, same destination)
-  //   nearbyRides      <- matchTier 3-5 (same state / nearby pickup / nearby drop)
-  //   onWayRides       <- matchTier 6   (partial route match)
-  //   negotiableRides  <- matchTier 7   (negotiation possible, last resort)
+  // Results — Smart Search tiers (Step 3: 12 backend match tiers collapsed
+  // into 4 display buckets, per the Ranking Spec's real tier order)
+  //   exactRides       <- matchTier 1-3  (exact both / exact dest / exact pickup)
+  //   onWayRides       <- matchTier 12   (connector — route-verified or heuristic)
+  //   nearbyRides      <- matchTier 4-9  (state-region match, then radius match)
+  //   negotiableRides  <- matchTier 11   (negotiable fare, last resort)
   const [exactRides, setExactRides] = useState([]);
   const [onWayRides, setOnWayRides] = useState([]);
   const [nearbyRides, setNearbyRides] = useState([]);
   const [negotiableRides, setNegotiableRides] = useState([]);
   const [allRides, setAllRides] = useState([]); // all combined for map
   const [searchMeta, setSearchMeta] = useState(null); // pagination + tier counts from backend
+
+  // Step 4 — catch-all section ("See all rides across India"). Deliberately
+  // separate state from the 4 ranked buckets above: never merged into
+  // exact/onWay/nearby/negotiable, and only fetched when the user opts in
+  // by clicking the reveal button (searchMeta.catchAllAvailableCount tells
+  // us up front whether that button is worth showing).
+  const [catchAllRides, setCatchAllRides] = useState([]);
+  const [catchAllMeta, setCatchAllMeta] = useState(null);
+  const [showCatchAll, setShowCatchAll] = useState(false);
+  const [catchAllLoading, setCatchAllLoading] = useState(false);
+
+  const [globalRides, setGlobalRides] = useState([]);
+  const [globalMeta, setGlobalMeta] = useState(null);
+  const [showGlobalRides, setShowGlobalRides] = useState(false);
+  const [globalLoading, setGlobalLoading] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -242,8 +282,31 @@ export default function RideSearch() {
   const activeFilterCount = [minSeats, maxFare, vehicleType, acOnly, womenOnly, verifiedOnly].filter(Boolean).length;
 
   // ── Categorize results into display buckets ───────────────────────────────
-  // Prefers the new `matchTier` (1-7, Smart Search Milestone 1). Falls back
-  // to the legacy `matchType` string for any older cached response shape.
+  // Backend tier table (Ranking Spec — Final, as rebuilt in Step 2 of the
+  // Smart Search Ranking work — see PROGRESS.md for the full old→new tier
+  // renumbering history):
+  //   1  exact          — pickup exact AND destination exact
+  //   2  exact_dest     — destination exact, pickup different
+  //   3  exact_pickup   — pickup exact, destination different
+  //   4  both_state     — origin state AND destination state both match
+  //   5  dest_state     — destination state matches only
+  //   6  pickup_state   — pickup state matches only
+  //   7  both_near      — pickup AND destination both within radius
+  //   8  dest_near      — destination within radius only
+  //   9  pickup_near    — pickup within radius only
+  //   11 negotiation    — last-resort, negotiable fare only
+  //   12 connector     — on the driver's route (route-verified or heuristic)
+  //
+  // UI buckets group these 11 backend tiers into the 4 sections the page
+  // already renders:
+  //   exact (1-3)  → "Rides covering your route" (best matches)
+  //   onWay (4)    → "Rides passing through your region" (connector)
+  //   nearby (5-10)→ "Other rides in this area" (region/radius match)
+  //   negotiable (11) → "Fare is negotiable on these rides" (last resort)
+  //
+  // Prefers the numeric `matchTier` (Step 2+). Falls back to the legacy
+  // `matchType` string for any older cached response shape (e.g. a stale
+  // service-worker cache from before this rebuild).
   function categorizeResults(results) {
     const exact = [];
     const onWay = [];
@@ -253,17 +316,18 @@ export default function RideSearch() {
     results.forEach(ride => {
       const tier = ride.matchTier;
       if (typeof tier === 'number') {
-        if (tier <= 2) exact.push(ride);
-        else if (tier >= 3 && tier <= 5) nearby.push(ride);
-        else if (tier === 6) onWay.push(ride);
-        else negotiable.push(ride);
+        if (tier >= 1 && tier <= 3) exact.push(ride);
+        else if (tier === 12) onWay.push(ride);
+        else if (tier >= 4 && tier <= 9) nearby.push(ride);
+        else if (tier === 11) negotiable.push(ride);
+        else nearby.push(ride);
         return;
       }
-      // Legacy fallback (no matchTier present)
+      // Legacy fallback (no matchTier present — pre-Step-2 cached response)
       const mt = ride.matchType;
-      if (mt === 'exact' || mt === 'on_route') {
+      if (mt === 'exact' || mt === 'exact_dest' || mt === 'exact_pickup' || mt === 'exact_reversed' || mt === 'on_route') {
         exact.push(ride);
-      } else if (mt === 'partial' || mt === 'waypoint' || mt === 'nearby_route') {
+      } else if (mt === 'connector' || mt === 'partial' || mt === 'waypoint' || mt === 'nearby_route') {
         onWay.push(ride);
       } else if (mt === 'negotiation') {
         negotiable.push(ride);
@@ -292,7 +356,9 @@ export default function RideSearch() {
     if (e?.preventDefault) e.preventDefault();
     const silent = options.silent === true;
 
-    if (!start.trim() || !end.trim()) {
+    const startText = normalizeLocationInput(start);
+    const endText = normalizeLocationInput(end);
+    if (!startText.trim() || !endText.trim()) {
       toast.error('Enter both origin and destination');
       return;
     }
@@ -312,23 +378,24 @@ export default function RideSearch() {
     setExactRides([]); setOnWayRides([]); setNearbyRides([]); setNegotiableRides([]); setAllRides([]);
     setRideRoutes([]);
     setSearchMeta(null);
+    setCatchAllRides([]); setCatchAllMeta(null); setShowCatchAll(false);
 
     const loadingId = silent ? null : toast.loading('Searching rides…', {
       style: { background: '#2563eb', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
     });
 
     try {
+      const startCoords = extractLocationCoordinates(startPlace);
+      const endCoords = extractLocationCoordinates(endPlace);
       const { rides: results, meta } = await searchRides(
         normalizeIndiaLocation(start),
         normalizeIndiaLocation(end),
         date || null,
         {
-          pickupLat: startPlace?.lat,
-          pickupLng: startPlace?.lng || startPlace?.lon,
-          destLat: endPlace?.lat,
-          destLng: endPlace?.lng || endPlace?.lon,
-          // Same-state tier (Milestone 1) — pass through state hints when
-          // the Geoapify autocomplete supplied them
+          pickupLat: startCoords?.lat,
+          pickupLng: startCoords?.lng,
+          destLat: endCoords?.lat,
+          destLng: endCoords?.lng,
           originState: startPlace?.state,
           destState: endPlace?.state,
         }
@@ -356,16 +423,16 @@ export default function RideSearch() {
       setRideRoutes(buildMapData(filtered, connectedIds));
 
       // Set map markers
-      if (startPlace?.lat) {
-        setStartMarker({ lat: startPlace.lat, lng: startPlace.lng });
+      if (startCoords) {
+        setStartMarker(startCoords);
       } else if (exact[0]?.pickupCoordinates) {
         setStartMarker(exact[0].pickupCoordinates);
       } else if (filtered[0]?.routeCoordinates?.length) {
         setStartMarker(filtered[0].routeCoordinates[0]);
       }
 
-      if (endPlace?.lat) {
-        setEndMarker({ lat: endPlace.lat, lng: endPlace.lng });
+      if (endCoords) {
+        setEndMarker(endCoords);
       } else if (exact[0]?.dropCoordinates) {
         setEndMarker(exact[0].dropCoordinates);
       } else if (filtered[0]?.routeCoordinates?.length) {
@@ -400,12 +467,98 @@ export default function RideSearch() {
     }
   };
 
+  // ── Step 4: load the catch-all ("See all rides across India") section ────
+  // Deliberately a separate network call from handleSearch, only fired when
+  // the user opts in — never bundled into the ranked search automatically.
+  //
+  // ⚠️ Integration note: this assumes `rideService.searchRides()` passes the
+  // API response's `catchAll` field through untouched (alongside the
+  // `rides`/`meta` fields it already returns). If `rideService.js` only
+  // destructures `{ data: rides, meta }` from the response and drops other
+  // top-level keys, `response.catchAll` below will come back `undefined`
+  // and this will no-op with a console warning rather than fail silently.
+  // That's a one-line fix in `rideService.js` if needed — flagged here
+  // since that file wasn't available to update directly in this pass.
+  const handleLoadCatchAll = async (targetPage = 1) => {
+    setCatchAllLoading(true);
+    setShowGlobalRides(false);
+    try {
+      const startCoords = extractLocationCoordinates(startPlace);
+      const endCoords = extractLocationCoordinates(endPlace);
+      const response = await searchRides(
+        normalizeIndiaLocation(start),
+        normalizeIndiaLocation(end),
+        date || null,
+        {
+          pickupLat: startCoords?.lat,
+          pickupLng: startCoords?.lng,
+          destLat: endCoords?.lat,
+          destLng: endCoords?.lng,
+          originState: startPlace?.state,
+          destState: endPlace?.state,
+          includeCatchAll: 'true',
+          catchAllPage: targetPage,
+        }
+      );
+
+      const catchAll = response?.catchAll;
+      if (!catchAll) {
+        console.warn(
+          '[RideSearch] Expected `catchAll` on the search response but got none — ' +
+          'rideService.searchRides() likely needs to pass that field through from the API response.'
+        );
+        toast.error("Couldn't load rides across India right now.");
+        return;
+      }
+
+      setCatchAllRides(prev => (targetPage === 1 ? catchAll.data : [...prev, ...catchAll.data]));
+      setCatchAllMeta(catchAll.meta);
+      setShowCatchAll(true);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Couldn't load rides across India right now.");
+    } finally {
+      setCatchAllLoading(false);
+    }
+  };
+
+  const handleLoadGlobalRides = async (targetPage = 1) => {
+    setGlobalLoading(true);
+    setHasSearched(true);
+    setShowCatchAll(false);
+    setCatchAllRides([]);
+    setCatchAllMeta(null);
+    setShowGlobalRides(false);
+    setSearchMeta(null);
+
+    try {
+      const response = await searchRides('', '', null, {
+        globalAllRides: 'true',
+        page: targetPage,
+        limit: 20,
+      });
+
+      const { rides: data, meta } = response;
+      setGlobalRides(prev => (targetPage === 1 ? data : [...prev, ...data]));
+      setAllRides(prev => (targetPage === 1 ? data : [...prev, ...data]));
+      setGlobalMeta(meta);
+      setShowGlobalRides(true);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Couldn't load all rides right now.");
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
   const handleClear = () => {
     setStart(''); setEnd(''); setDate('');
     setStartPlace(null); setEndPlace(null);
-    setExactRides([]); setOnWayRides([]); setNearbyRides([]); setAllRides([]);
+    setExactRides([]); setOnWayRides([]); setNearbyRides([]); setNegotiableRides([]); setAllRides([]);
     setRideRoutes([]); setStartMarker(null); setEndMarker(null);
-    setHasSearched(false); setSelected(null);
+    setSearchMeta(null);
+    setCatchAllRides([]); setCatchAllMeta(null); setShowCatchAll(false); setCatchAllLoading(false);
+    setGlobalRides([]); setGlobalMeta(null); setShowGlobalRides(false); setGlobalLoading(false);
+    setHasSearched(false);
+    setSelected(null);
     setMinSeats(''); setMaxFare(''); setVehicleType('');
     setAcOnly(false); setWomenOnly(false); setVerifiedOnly(false);
     setShowFilters(false);
@@ -474,10 +627,9 @@ export default function RideSearch() {
                   <LocationAutocomplete
                     icon="origin"
                     value={start}
-                    onChange={(val) => setStart(val)}
-                    onPlaceSelect={(place) => {
-                      setStart(place.address || start);
-                      setStartPlace(place);
+                    onChange={(val) => {
+                      setStart(typeof val === 'string' ? val : val?.name || '');
+                      setStartPlace(typeof val === 'string' ? null : val);
                     }}
                     placeholder="Origin city, area, village…"
                     disabled={isLoading}
@@ -491,10 +643,9 @@ export default function RideSearch() {
                   <LocationAutocomplete
                     icon="destination"
                     value={end}
-                    onChange={(val) => setEnd(val)}
-                    onPlaceSelect={(place) => {
-                      setEnd(place.address || end);
-                      setEndPlace(place);
+                    onChange={(val) => {
+                      setEnd(typeof val === 'string' ? val : val?.name || '');
+                      setEndPlace(typeof val === 'string' ? null : val);
                     }}
                     placeholder="Destination city, area, village…"
                     disabled={isLoading}
@@ -572,7 +723,7 @@ export default function RideSearch() {
               {/* Submit */}
               <button
                 type="submit"
-                disabled={isLoading || !start.trim() || !end.trim()}
+                disabled={isLoading || !normalizeLocationInput(start).trim() || !normalizeLocationInput(end).trim()}
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
@@ -632,15 +783,15 @@ export default function RideSearch() {
           )}
 
           {/* Empty */}
-          {!isLoading && hasSearched && allRides.length === 0 && (
-            <EmptyResults start={start} end={end} onClear={handleClear} />
+          {!isLoading && hasSearched && allRides.length === 0 && !showGlobalRides && (
+            <EmptyResults start={start} end={end} onClear={handleClear} onBrowseAll={handleLoadGlobalRides} />
           )}
 
           {/* Pre-search */}
-          {!isLoading && !hasSearched && <SearchPrompt />}
+          {!isLoading && !hasSearched && <SearchPrompt onBrowseAll={handleLoadGlobalRides} />}
 
-          {/* ── TIER 1: Exact / on-route matches ── */}
-          {!isLoading && exactRides.length > 0 && (
+          {/* ── TIER 1-3: Exact matches ── */}
+          {!isLoading && !showGlobalRides && exactRides.length > 0 && (
             <div className="mb-8">
               <SectionHeader
                 eyebrow="Best matches"
@@ -681,8 +832,8 @@ export default function RideSearch() {
             </div>
           )}
 
-          {/* ── TIER 2: On-the-way / partial overlap rides ── */}
-          {!isLoading && onWayRides.length > 0 && (
+          {/* ── TIER 12: Connector — on-the-way rides ── */}
+          {!isLoading && !showGlobalRides && onWayRides.length > 0 && (
             <div className="mb-8">
               <SectionHeader
                 eyebrow="On your way"
@@ -723,8 +874,8 @@ export default function RideSearch() {
             </div>
           )}
 
-          {/* ── TIER 3: Nearby rides ── */}
-          {!isLoading && nearbyRides.length > 0 && (
+          {/* ── TIER 4-9: Nearby (region + radius) rides ── */}
+          {!isLoading && !showGlobalRides && nearbyRides.length > 0 && (
             <div className="mb-8">
               <SectionHeader
                 eyebrow="Nearby"
@@ -755,8 +906,8 @@ export default function RideSearch() {
             </div>
           )}
 
-          {/* ── TIER 4: Negotiation-possible rides (Smart Search Milestone 1) ── */}
-          {!isLoading && negotiableRides.length > 0 && (
+          {/* ── TIER 11: Negotiation-possible rides (last resort) ── */}
+          {!isLoading && !showGlobalRides && negotiableRides.length > 0 && (
             <div className="mb-8">
               <SectionHeader
                 eyebrow="Worth asking"
@@ -794,10 +945,149 @@ export default function RideSearch() {
             </div>
           )}
 
+          {/* ── Step 4: tier-10 catch-all — "See all rides across India" ──
+              Deliberately its own section, visually separated with a divider,
+              never mixed into the ranked exact/onWay/nearby/negotiable
+              buckets above. Reveal-on-click: nothing here is fetched until
+              the user asks for it. */}
+          {!isLoading && hasSearched && !showCatchAll && (searchMeta?.catchAllAvailableCount ?? 0) > 0 && (
+            <div className="mb-8 pt-6 border-t border-dashed border-gray-200 text-center">
+              <p className="text-sm text-gray-500 mb-3">
+                Not finding what you need? There {searchMeta.catchAllAvailableCount === 1 ? 'is' : 'are'}{' '}
+                <span className="font-semibold text-gray-700">{searchMeta.catchAllAvailableCount}</span>{' '}
+                more ride{searchMeta.catchAllAvailableCount !== 1 ? 's' : ''} active across India right now.
+              </p>
+              <button
+                type="button"
+                onClick={() => handleLoadCatchAll(1)}
+                disabled={catchAllLoading}
+                className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
+              >
+                {catchAllLoading ? (
+                  <Icon name="Loader2" size="sm" className="animate-spin" />
+                ) : (
+                  <Icon name="Globe" size="sm" />
+                )}
+                See all rides across India
+              </button>
+            </div>
+          )}
+
+          {!isLoading && showCatchAll && (
+            <div className="mb-8 pt-6 border-t border-dashed border-gray-200">
+              <SectionHeader
+                eyebrow="Everywhere else"
+                title="All rides across India"
+                subtitle={`${catchAllMeta?.total ?? catchAllRides.length} active ride${(catchAllMeta?.total ?? catchAllRides.length) !== 1 ? 's' : ''} — not matched to your route, shown separately`}
+                badge="Unfiltered"
+                badgeColor="gray"
+              />
+
+              {catchAllRides.length === 0 && !catchAllLoading && (
+                <p className="text-sm text-gray-400 text-center py-6">No other active rides right now.</p>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {catchAllRides.map(ride => (
+                  <div key={ride._id} id={`ride-card-${ride._id}`} className="relative">
+                    <RideCard
+                      ride={ride}
+                      isFirstRideFree={isFirstRideFree}
+                      onBookingSuccess={() => {
+                        setIsFirstRideFree(false);
+                        handleSearch(null, { silent: true });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {catchAllMeta && catchAllMeta.page < catchAllMeta.totalPages && (
+                <div className="text-center mt-5">
+                  <button
+                    type="button"
+                    onClick={() => handleLoadCatchAll(catchAllMeta.page + 1)}
+                    disabled={catchAllLoading}
+                    className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
+                  >
+                    {catchAllLoading ? <Icon name="Loader2" size="sm" className="animate-spin" /> : null}
+                    Load more
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowCatchAll(false)}
+                className="block mx-auto mt-4 text-xs text-gray-400 hover:text-gray-600 font-medium"
+              >
+                Hide this section
+              </button>
+            </div>
+          )}
+
+          {!isLoading && showGlobalRides && (
+            <div className="mb-8 pt-6 border-t border-dashed border-gray-200">
+              <SectionHeader
+                eyebrow="Global browse"
+                title="All active rides across India"
+                subtitle={`${globalMeta?.total ?? globalRides.length} active ride${(globalMeta?.total ?? globalRides.length) !== 1 ? 's' : ''}`}
+                badge="Global"
+                badgeColor="blue"
+              />
+
+              {globalRides.length === 0 && !globalLoading && (
+                <p className="text-sm text-gray-400 text-center py-6">No active rides available right now.</p>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {globalRides.map(ride => (
+                  <div key={ride._id} id={`ride-card-${ride._id}`} className="relative">
+                    <RideCard
+                      ride={ride}
+                      isFirstRideFree={isFirstRideFree}
+                      onBookingSuccess={() => {
+                        setIsFirstRideFree(false);
+                        handleSearch(null, { silent: true });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {globalMeta && globalMeta.page < globalMeta.totalPages && (
+                <div className="text-center mt-5">
+                  <button
+                    type="button"
+                    onClick={() => handleLoadGlobalRides(globalMeta.page + 1)}
+                    disabled={globalLoading}
+                    className="inline-flex items-center gap-2 border border-gray-200 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60"
+                  >
+                    {globalLoading ? <Icon name="Loader2" size="sm" className="animate-spin" /> : null}
+                    Load more rides
+                  </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowGlobalRides(false)}
+                className="block mx-auto mt-4 text-xs text-gray-400 hover:text-gray-600 font-medium"
+              >
+                Hide this section
+              </button>
+            </div>
+          )}
+
           {/* Pagination footer (Smart Search Milestone 1) */}
-          {!isLoading && searchMeta?.totalPages > 1 && (
+          {!isLoading && !showGlobalRides && searchMeta?.totalPages > 1 && (
             <p className="text-xs text-gray-400 text-center mt-2 mb-4">
               Showing page {searchMeta.page} of {searchMeta.totalPages} ({searchMeta.total} total matching rides)
+            </p>
+          )}
+          {!isLoading && showGlobalRides && globalMeta?.totalPages > 1 && (
+            <p className="text-xs text-gray-400 text-center mt-2 mb-4">
+              Showing page {globalMeta.page} of {globalMeta.totalPages} ({globalMeta.total} total rides)
             </p>
           )}
         </div>

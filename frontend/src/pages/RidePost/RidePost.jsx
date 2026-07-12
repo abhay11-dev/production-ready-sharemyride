@@ -754,6 +754,51 @@ function RidePost() {
     }
   };
 
+  const getMockRideData = () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const mockDate = tomorrow.toISOString().slice(0, 10);
+    return {
+      start: 'New Delhi, India',
+      end: 'Indore, India',
+      pickup: {
+        address: 'New Delhi Railway Station, New Delhi, India',
+        latitude: 28.6448,
+        longitude: 77.2167,
+      },
+      destination: {
+        address: 'Indore, India',
+        latitude: 22.7196,
+        longitude: 75.8577,
+      },
+      date: mockDate,
+      time: '10:00',
+      seats: 4,
+      fare: 2500,
+      phoneNumber: (user?.phone || '9999999999').trim(),
+      address: (user?.address || 'New Delhi, India').trim(),
+      vehicleNumber: (user?.vehicle?.number || user?.vehicleNumber || 'DL1AB1234').toUpperCase(),
+      vehicle: {
+        type: 'Sedan',
+        model: 'Honda City',
+        color: 'White',
+        acAvailable: true,
+      },
+      preferences: {
+        smokingAllowed: false,
+        musicAllowed: true,
+        petFriendly: false,
+        womenOnly: false,
+      },
+      allowPartialRoute: true,
+      negotiableFare: false,
+    };
+  };
+
+  const handlePostMockRide = () => {
+    const mockRide = getMockRideData();
+    handlePostRide(mockRide);
+  };
+
   // ── Delete ride ───────────────────────────────────────────────────────────
   const handleDeleteRide = (rideId) => {
       toastService.confirm({
@@ -940,6 +985,21 @@ function RidePost() {
                   <span className={`text-xs font-semibold ${card.text}`}>{card.label}</span>
                 </Link>
               ))}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">Quick mock test</p>
+              <button
+                type="button"
+                onClick={handlePostMockRide}
+                disabled={isPosting}
+                className="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+              >
+                Post Delhi → Indore mock ride
+              </button>
+              <p className="text-xs text-gray-500 mt-3">
+                Use this button to publish a test ride from Delhi to Indore with the current verified driver session.
+              </p>
             </div>
 
           </div>

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import NotificationDropdown from '../NotificationDropdown.jsx';
 // add near the top with the other imports
-import MessagesBell from './MessagesBell.jsx';
+import MessagesBell from '../map/MessagesBell.jsx';
 function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);

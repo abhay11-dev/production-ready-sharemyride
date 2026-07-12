@@ -12,8 +12,59 @@ const Ride = require('../models/Ride');
 const Booking = require('../models/Booking');
 const { getRouteDetails } = require('../services/utils/routeMatching.js');
 const { checkRouteMatch, calculateSegmentFare } = require('../services/utils/routeMatching.js');
+const { findShortestRegionPath, normalizeRegionKey } = require('../services/utils/regionGraph.js');
+const { buildLocationMatchKey } = require('../services/utils/locationNormalize.js');
 
-// ─── Validators / helpers ─────────────────────────────────────────────────────
+// ─── Search config / scoring constants ──────────────────────────────────────────
+const MAX_RADIUS_KM = 30;
+const PROGRESS_MIN = 0.15;
+const ALIGNMENT_MIN = 0.3;
+const MIN_DISTANCE_FOR_CONNECTOR_KM = 20;
+
+// ─── Tier system (Ranking Spec — Final) ─────────────────────────────────────────
+// Real 9-tier prioritized match system plus optional connector fallback.
+//   1  exact            — pickup exact AND destination exact
+//   2  exact_dest       — destination exact, pickup different
+//   3  exact_pickup     — pickup exact, destination different
+//   4  both_state       — origin state AND destination state both match
+//   5  dest_state       — destination state matches only
+//   6  pickup_state     — pickup state matches only
+//   7  both_near        — pickup AND destination both within radius
+//   8  dest_near        — destination within radius only
+//   9  pickup_near      — pickup within radius only
+//
+// Matches that do not satisfy these nine tiers are not ranked here. A
+// separate catch-all section is used for "See all rides across India".
+// Connector matching remains available as a fallback but is intentionally
+// ranked below the state/nearby tiers so it cannot outrank a higher-priority
+// state or nearby match.
+const TIER_WEIGHTS = {
+  1: 2000,
+  2: 1900,
+  3: 1800,
+  4: 1700,
+  5: 1600,
+  6: 1500,
+  7: 1400,
+  8: 1300,
+  9: 1200,
+  11: 100,
+  12: 50,
+};
+
+const TIER_META = {
+  1: { matchType: 'exact', label: 'Exact match — same pickup and drop' },
+  2: { matchType: 'exact_dest', label: 'Same destination, different pickup point' },
+  3: { matchType: 'exact_pickup', label: 'Same pickup, different destination' },
+  4: { matchType: 'both_state', label: 'Same origin and destination region' },
+  5: { matchType: 'dest_state', label: 'Same destination region' },
+  6: { matchType: 'pickup_state', label: 'Same pickup region' },
+  7: { matchType: 'both_near', label: 'Nearby pickup and drop point' },
+  8: { matchType: 'dest_near', label: 'Nearby drop point' },
+  9: { matchType: 'pickup_near', label: 'Nearby pickup point' },
+  11: { matchType: 'negotiation', label: 'Fare is negotiable — discuss pickup, drop or timing with the driver' },
+  12: { matchType: 'connector', label: "On the driver's route — connector match" },
+};
 
 const isValidISODateOnly = (value) => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -39,31 +90,393 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-const perpendicularDistance = (point, lineStart, lineEnd) => {
-  const A = point.lat - lineStart.lat;
-  const B = point.lng - lineStart.lng;
-  const C = lineEnd.lat - lineStart.lat;
-  const D = lineEnd.lng - lineStart.lng;
-  const dot = A * C + B * D;
-  const lenSq = C * C + D * D;
-  let param = lenSq !== 0 ? dot / lenSq : -1;
-  const xx = param < 0 ? lineStart.lat : param > 1 ? lineEnd.lat : lineStart.lat + param * C;
-  const yy = param < 0 ? lineStart.lng : param > 1 ? lineEnd.lng : lineStart.lng + param * D;
-  return Math.sqrt((point.lat - xx) ** 2 + (point.lng - yy) ** 2) * 111;
+const toRadians = (value) => (value * Math.PI) / 180;
+const toDegrees = (value) => (value * 180) / Math.PI;
+
+const initialBearing = (from, to) => {
+  const φ1 = toRadians(from.lat);
+  const φ2 = toRadians(to.lat);
+  const Δλ = toRadians(to.lng - from.lng);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
+};
+
+const normalizedDistancePenalty = (distanceKm, capKm = MAX_RADIUS_KM) => {
+  if (distanceKm == null || Number.isNaN(distanceKm)) return 0;
+  return Math.min(distanceKm, capKm);
+};
+
+const computeProgressMetrics = (rideStart, rideEnd, destination, searchDistanceKm) => {
+  if (!rideStart || !rideEnd || !destination || searchDistanceKm == null || searchDistanceKm <= 0) {
+    return { progressRatio: null, alignment: null, remainingBeforeKm: null, remainingAfterKm: null };
+  }
+
+  const remainingBeforeKm = calculateDistance(rideStart.lat, rideStart.lng, destination.lat, destination.lng);
+  const remainingAfterKm = calculateDistance(rideEnd.lat, rideEnd.lng, destination.lat, destination.lng);
+  const progress = remainingBeforeKm - remainingAfterKm;
+  const progressRatio = progress / searchDistanceKm;
+  const bearingSearch = initialBearing(rideStart, destination);
+  const bearingRide = initialBearing(rideStart, rideEnd);
+  const alignment = Math.cos(toRadians(bearingRide - bearingSearch));
+
+  return { progressRatio, alignment, remainingBeforeKm, remainingAfterKm };
+};
+
+// `ride.date` is stored date-only (midnight UTC); the actual departure
+// clock time lives separately in `ride.time` (e.g. "14:30"). Comparing
+// `ride.date` alone against `new Date()` makes a ride dated "today" look
+// expired the instant the clock passes midnight, even if its `time` is
+// still hours away. This combines both into one real departure instant.
+const getRideDepartureDateTime = (ride) => {
+  const base = new Date(ride.date);
+  if (Number.isNaN(base.getTime())) return null;
+  const timeStr = typeof ride.time === 'string' ? ride.time.trim() : '';
+  const match = /^(\d{1,2}):(\d{2})$/.exec(timeStr);
+  if (match) {
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    base.setHours(hours, minutes, 0, 0);
+  }
+  return base;
+};
+
+const buildRegionKey = (value) => normalizeRegionKey(value || '');
+const buildLocationPoint = (location) => {
+  if (!location || location.latitude == null || location.longitude == null) return null;
+  return { lat: location.latitude, lng: location.longitude };
+};
+
+const buildLocationMatchTokens = (value) => {
+  const key = buildLocationMatchKey(value);
+  return key ? key.split(' ').filter(Boolean) : [];
+};
+
+const locationMatchContains = (queryKey, targetKey) => {
+  if (!queryKey || !targetKey) return false;
+  if (queryKey === targetKey) return true;
+
+  const queryTokens = buildLocationMatchTokens(queryKey);
+  const targetTokens = buildLocationMatchTokens(targetKey);
+  if (!queryTokens.length || !targetTokens.length) return false;
+
+  const queryJoined = queryTokens.join(' ');
+  const targetJoined = targetTokens.join(' ');
+  if (targetJoined.includes(queryJoined) || queryJoined.includes(targetJoined)) return true;
+
+  const targetSet = new Set(targetTokens);
+  if (queryTokens.every((token) => targetSet.has(token))) return true;
+
+  let qi = 0;
+  for (const token of targetTokens) {
+    if (token === queryTokens[qi]) qi += 1;
+    if (qi >= queryTokens.length) return true;
+  }
+  return false;
 };
 
 const findMatchingWaypoint = (location, waypoints, routeStart, routeEnd) => {
-  const loc = location.toLowerCase().trim();
-  if (routeStart.toLowerCase().includes(loc) || loc.includes(routeStart.toLowerCase()))
+  const loc = buildLocationMatchKey(location);
+  const start = buildLocationMatchKey(routeStart);
+  const end = buildLocationMatchKey(routeEnd);
+  if (start.includes(loc) || loc.includes(start))
     return { location: routeStart, distanceFromStart: 0, matched: true };
-  if (routeEnd.toLowerCase().includes(loc) || loc.includes(routeEnd.toLowerCase()))
+  if (end.includes(loc) || loc.includes(end))
     return { location: routeEnd, matched: true };
   if (waypoints?.length) {
     for (const wp of waypoints) {
-      const wpLoc = wp.location.toLowerCase();
+      const wpLoc = buildLocationMatchKey(wp.location);
       if (wpLoc.includes(loc) || loc.includes(wpLoc)) return { ...wp, matched: true };
     }
   }
+  return null;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIER CLASSIFICATION — single source of truth (Step 2 rebuild). Replaces
+// both the old inline classification block in searchRides AND the unused
+// classifyRideMatch dead-code function, which duplicated most of this logic
+// without ever being called.
+//
+// classifyRide(ride, ctx) returns either:
+//   - { matchTier: 1-12, matchType, matchReason, searchScore, ... }  (ranked match)
+//   - null                                                             (no ranked match)
+//
+// Tiers 1-9 and 11 are synchronous (text/state/radius comparisons only).
+// Tier 12 (connector) may perform an async, geometry-verified route check
+// (checkRouteMatch) when the ride has stored route coordinates; otherwise
+// it falls back to a synchronous progress/alignment heuristic. The async
+// path is only attempted once the cheap heuristic already suggests a
+// plausible connector match, to avoid an expensive geocode/route check on
+// every ride in the result set.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const classifyExactAndStateTiers = (ride, ctx) => {
+  const {
+    startLower, endLower, originStateLower, destStateLower,
+    pickupDist, destDist, pickupRadius, destRadius,
+  } = ctx;
+
+  const rideStartLower = buildLocationMatchKey(ride.start);
+  const rideEndLower = buildLocationMatchKey(ride.end);
+
+  const pickupMatches = !!(startLower && locationMatchContains(startLower, rideStartLower));
+  const dropMatches = !!(endLower && locationMatchContains(endLower, rideEndLower));
+
+  const originStateMatch = !!(originStateLower && ride.pickup?.state && buildRegionKey(ride.pickup.state) === originStateLower);
+  const destStateMatch = !!(destStateLower && ride.destination?.state && buildRegionKey(ride.destination.state) === destStateLower);
+
+  const coordPickupNearby = pickupDist !== null && pickupDist <= pickupRadius;
+  const coordDropNearby = destDist !== null && destDist <= destRadius;
+
+  const penalty = normalizedDistancePenalty(pickupDist) + normalizedDistancePenalty(destDist);
+
+  // Priority 1 — exact both ends
+  if (pickupMatches && dropMatches) {
+    return {
+      matchTier: 1,
+      matchType: TIER_META[1].matchType,
+      matchReason: 'exact_corridor',
+      searchScore: TIER_WEIGHTS[1] - penalty,
+    };
+  }
+
+  // Priority 2 — exact destination, different pickup
+  if (dropMatches && !pickupMatches) {
+    return {
+      matchTier: 2,
+      matchType: TIER_META[2].matchType,
+      matchReason: 'reverse_exact',
+      searchScore: TIER_WEIGHTS[2] - penalty,
+    };
+  }
+
+  // Priority 3 — exact pickup, different destination (previously missing —
+  // used to fall through all the way to state-match or lower)
+  if (pickupMatches && !dropMatches) {
+    return {
+      matchTier: 3,
+      matchType: TIER_META[3].matchType,
+      matchReason: 'pickup_exact',
+      searchScore: TIER_WEIGHTS[3] - penalty,
+    };
+  }
+
+  // Priority 4/5/6 — state-based tiers
+  if (originStateMatch && destStateMatch) {
+    return {
+      matchTier: 4,
+      matchType: TIER_META[4].matchType,
+      matchReason: 'both_state_match',
+      searchScore: TIER_WEIGHTS[4] - penalty,
+    };
+  }
+  if (destStateMatch) {
+    return {
+      matchTier: 5,
+      matchType: TIER_META[5].matchType,
+      matchReason: 'dest_state_match',
+      searchScore: TIER_WEIGHTS[5] - penalty,
+    };
+  }
+  if (originStateMatch) {
+    return {
+      matchTier: 6,
+      matchType: TIER_META[6].matchType,
+      matchReason: 'pickup_state_match',
+      searchScore: TIER_WEIGHTS[6] - penalty,
+    };
+  }
+
+  // Priority 7/8/9 — radius-based tiers
+  if (coordPickupNearby && coordDropNearby) {
+    return {
+      matchTier: 7,
+      matchType: TIER_META[7].matchType,
+      matchReason: 'both_near',
+      searchScore: TIER_WEIGHTS[7] - penalty,
+    };
+  }
+  if (coordDropNearby) {
+    return {
+      matchTier: 8,
+      matchType: TIER_META[8].matchType,
+      matchReason: 'dest_near',
+      searchScore: TIER_WEIGHTS[8] - penalty,
+    };
+  }
+  if (coordPickupNearby) {
+    return {
+      matchTier: 9,
+      matchType: TIER_META[9].matchType,
+      matchReason: 'pickup_near',
+      searchScore: TIER_WEIGHTS[9] - penalty,
+    };
+  }
+
+  return null;
+};
+
+const classifyNegotiationTier = (ride, ctx) => {
+  const { pickupDist, destDist, pickupRadius, destRadius } = ctx;
+  if (!ride.negotiableFare) return null;
+
+  const negotiationRadius = Math.max(pickupRadius, destRadius) * 3;
+  const pickupNearby = pickupDist !== null && pickupDist <= negotiationRadius;
+  const destNearby = destDist !== null && destDist <= negotiationRadius;
+  if (!pickupNearby && !destNearby) return null;
+
+  const penalty = normalizedDistancePenalty(pickupDist) + normalizedDistancePenalty(destDist);
+  return {
+    matchTier: 11,
+    matchType: TIER_META[11].matchType,
+    matchReason: 'negotiable_fare',
+    searchScore: TIER_WEIGHTS[11] - penalty,
+  };
+};
+
+// Cheap, synchronous connector heuristic: is this ride plausibly progressing
+// the passenger toward their destination, based on region path and
+// progress/alignment along the straight-line search vector? Used both as a
+// standalone fallback and as a gate before attempting the expensive
+// geometry-verified route check.
+const connectorHeuristic = (ride, ctx) => {
+  const { searchFromPoint, searchToPoint, searchDistanceKm, regionPath } = ctx;
+
+  const rideStartPoint = buildLocationPoint(ride.pickup);
+  const rideEndPoint = buildLocationPoint(ride.destination);
+  const ridePickupState = buildRegionKey(ride.pickup?.state);
+  const rideDestState = buildRegionKey(ride.destination?.state);
+
+  const onPath = Boolean(regionPath && (
+    (ridePickupState && regionPath.includes(ridePickupState)) ||
+    (rideDestState && regionPath.includes(rideDestState))
+  ));
+
+  const { progressRatio, alignment } = computeProgressMetrics(
+    rideStartPoint, rideEndPoint, searchToPoint, searchDistanceKm
+  );
+
+  const progressValid = progressRatio != null && progressRatio >= PROGRESS_MIN;
+  const alignmentValid = alignment != null && alignment >= ALIGNMENT_MIN;
+  const hasProgress = searchDistanceKm != null && searchDistanceKm >= MIN_DISTANCE_FOR_CONNECTOR_KM && progressValid && alignmentValid;
+
+  if (!onPath && !hasProgress) return null;
+
+  const reachCostKm = rideStartPoint && searchFromPoint
+    ? calculateDistance(searchFromPoint.lat, searchFromPoint.lng, rideStartPoint.lat, rideStartPoint.lng)
+    : 0;
+  const connectorBonus = (progressRatio || 0) * 100 + (alignment || 0) * 50 - normalizedDistancePenalty(reachCostKm);
+
+  return {
+    matchTier: 12,
+    matchType: TIER_META[12].matchType,
+    matchReason: 'route_heuristic',
+    progressRatio,
+    alignment,
+    searchScore: TIER_WEIGHTS[12] + connectorBonus,
+  };
+};
+
+// Cheap, synchronous, text-based partial-route check against a ride's
+// waypoints — a no-network way to confirm a connector match.
+const connectorWaypointMatch = (ride, ctx) => {
+  const { normalizedStart, normalizedEnd, includePartialRoutes } = ctx;
+  if (!normalizedStart || !normalizedEnd) return null;
+  if (!ride.allowPartialRoute || includePartialRoutes === 'false') return null;
+
+  const pickupWp = findMatchingWaypoint(normalizedStart, ride.waypoints, ride.start, ride.end);
+  const dropWp = findMatchingWaypoint(normalizedEnd, ride.waypoints, ride.start, ride.end);
+  if (!pickupWp || !dropWp) return null;
+
+  const pDist = pickupWp.distanceFromStart || 0;
+  const dDist = dropWp.distanceFromStart || ride.totalDistance || 0;
+  if (pDist >= dDist) return null;
+
+  return {
+    matchTier: 12,
+    matchType: TIER_META[12].matchType,
+    matchReason: 'route_waypoint_match',
+    searchScore: TIER_WEIGHTS[12] + 50,
+  };
+};
+
+// Attempts an authoritative, geometry-verified connector match using the
+// ride's stored route polyline/coordinates. Only called when the cheap
+// heuristic above already flagged the ride as plausible, to avoid an
+// expensive geocode/route computation on every candidate in the result set.
+const connectorRouteVerified = async (ride, ctx) => {
+  const { normalizedStart, normalizedEnd, hasCoords, pLat, pLng, dLat, dLng } = ctx;
+  if (!ride.routeCoordinates?.length) return null;
+  if (!(normalizedStart || hasCoords) || !(normalizedEnd || hasCoords)) return null;
+
+  try {
+    const passengerPickup = hasCoords ? { lat: pLat, lng: pLng } : normalizedStart;
+    const passengerDrop = hasCoords ? { lat: dLat, lng: dLng } : normalizedEnd;
+    const match = await checkRouteMatch(
+      {
+        start: ride.start,
+        end: ride.end,
+        coordinates: ride.routeCoordinates,
+        polyline: ride.routePolyline,
+      },
+      passengerPickup,
+      passengerDrop,
+      15000
+    );
+
+    if (!match.isMatch) return null;
+
+    const fareDetails = calculateSegmentFare(ride, match.segmentDistance);
+    return {
+      matchTier: 12,
+      matchType: TIER_META[12].matchType,
+      matchReason: 'route_verified',
+      searchScore: TIER_WEIGHTS[12] + 100 + match.matchQuality,
+      matchedPickup: normalizedStart,
+      matchedDrop: normalizedEnd,
+      segmentDistance: match.segmentDistanceKm,
+      segmentFare: fareDetails.totalFare,
+      fareBreakdown: fareDetails,
+      pickupCoordinates: match.pickupCoordinates,
+      dropCoordinates: match.dropCoordinates,
+      userSearchDistance: parseFloat(match.segmentDistanceKm),
+      userRouteCoordinates: match.segmentCoordinates,
+    };
+  } catch (err) {
+    console.warn(`⚠️ Route match failed for ride ${ride._id}:`, err.message);
+    return null;
+  }
+};
+
+// Full connector classification: cheapest checks first, escalating to the
+// geometry-verified route check only when warranted by the heuristic gate.
+const classifyConnector = async (ride, ctx) => {
+  const heuristic = connectorHeuristic(ride, ctx);
+  if (!heuristic) return null;
+
+  const waypointMatch = connectorWaypointMatch(ride, ctx);
+  if (waypointMatch) return waypointMatch;
+
+  const verified = await connectorRouteVerified(ride, ctx);
+  if (verified) return verified;
+
+  return heuristic;
+};
+
+// Orchestrates the full ranked classification for a single ride.
+// Priority order: exact/state/nearby tiers 1-9 first, then negotiable
+// fallback tier 11, then connector fallback tier 12.
+const classifyRide = async (ride, ctx) => {
+  const exactOrStateOrNear = classifyExactAndStateTiers(ride, ctx);
+  if (exactOrStateOrNear) return exactOrStateOrNear;
+
+  const negotiable = classifyNegotiationTier(ride, ctx);
+  if (negotiable) return negotiable;
+
+  const connector = await classifyConnector(ride, ctx);
+  if (connector) return connector;
+
   return null;
 };
 
@@ -486,18 +899,12 @@ exports.deleteRide = async (req, res) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SEARCH RIDES — UNCHANGED FROM PRIOR SESSION
+// SEARCH RIDES
+// Tier classification now goes through the single classifyRide() function
+// above (Step 2 rebuild): 1-9 ranked match tiers plus optional
+// negotiation (11) and connector fallback (12). Catch-all results are
+// handled separately below.
 // ═══════════════════════════════════════════════════════════════════════════
-const TIER_META = {
-  1: { matchType: 'exact', label: 'Exact match — same pickup and drop' },
-  2: { matchType: 'exact', label: 'Same destination, different pickup point' },
-  3: { matchType: 'nearby', label: 'Same state as your pickup location' },
-  4: { matchType: 'nearby', label: 'Nearby pickup point' },
-  5: { matchType: 'nearby', label: 'Nearby drop point' },
-  6: { matchType: 'partial', label: 'On the driver\'s route — partial ride possible' },
-  7: { matchType: 'negotiation', label: 'Fare is negotiable — discuss pickup, drop or timing with the driver' },
-};
-
 exports.searchRides = async (req, res) => {
   try {
     const {
@@ -506,12 +913,18 @@ exports.searchRides = async (req, res) => {
       musicAllowed, smokingAllowed, includePartialRoutes,
       pickupLat, pickupLng, destLat, destLng,
       originState, destState,
-      radiusKm = 30,
+      pickupRadiusKm, destRadiusKm, radiusKm = 30,
       page = 1,
       limit = 20,
+      includeCatchAll,
+      catchAllPage = 1,
+      catchAllLimit = 20,
+      globalAllRides,
     } = req.query;
 
-    if (!start && !end && !pickupLat && !destLat) {
+    const isGlobalAll = globalAllRides === 'true';
+
+    if (!isGlobalAll && !start && !end && !pickupLat && !destLat) {
       return res.status(400).json({
         success: false,
         message: 'Start and end locations are required'
@@ -532,13 +945,17 @@ exports.searchRides = async (req, res) => {
     const pLng = hasPickupCoords ? parseFloat(pickupLng) : null;
     const dLat = hasDestCoords ? parseFloat(destLat) : null;
     const dLng = hasDestCoords ? parseFloat(destLng) : null;
-    const radius = parseFloat(radiusKm) || 30;
-    const negotiationRadius = radius * 3;
+    const pickupRadius = parseFloat(pickupRadiusKm || radiusKm) || radiusKm || 30;
+    const destRadius = parseFloat(destRadiusKm || radiusKm) || radiusKm || 30;
+    const negotiationRadius = Math.max(pickupRadius, destRadius) * 3;
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(limit) || 20));
 
-    const query = { isActive: true, rideStatus: 'active' };
+    const query = {
+      isActive: true,
+      rideStatus: { $nin: ['cancelled', 'completed', 'expired'] },
+    };
 
     if (date) {
       const searchDate = new Date(date);
@@ -547,10 +964,24 @@ exports.searchRides = async (req, res) => {
       nextDay.setDate(nextDay.getDate() + 1);
       query.date = { $gte: searchDate, $lt: nextDay };
     } else {
-      query.date = { $gte: new Date() };
+      // Query from the start of *today*, not `new Date()` (current instant).
+      // A ride dated today with a departure time later this evening has a
+      // `ride.date` of today-at-midnight, which is already before the
+      // current instant — using `new Date()` here would incorrectly drop
+      // it from the query entirely. The real "has this departure already
+      // passed" check happens below via getRideDepartureDateTime, which
+      // also accounts for `ride.time`.
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      query.date = { $gte: startOfToday };
     }
 
-    if (minSeats) query.availableSeats = { $gte: parseInt(minSeats) };
+    // Always exclude sold-out rides, regardless of whether the user filtered
+    // by a minimum seat count. Previously this was only applied when
+    // `minSeats` was present, so a plain search with no seat filter could
+    // return rides with 0 available seats.
+    const minSeatsRequired = minSeats ? Math.max(1, parseInt(minSeats)) : 1;
+    query.availableSeats = { $gte: minSeatsRequired };
     if (maxFare) query.fare = { $lte: parseFloat(maxFare) };
     if (vehicleType) query['vehicle.type'] = vehicleType;
     if (acAvailable === 'true') query['vehicle.acAvailable'] = true;
@@ -561,26 +992,66 @@ exports.searchRides = async (req, res) => {
 
     const fetchLimit = hasCoords ? 300 : 100;
 
-    const allRides = await Ride.find(query)
+    const fetchedRides = await Ride.find(query)
       .populate('driverId', 'name email phone avatar ratingSummary totalRidesAsDriver isDriverVerified')
       .populate('postedBy', 'name email phone avatar ratingSummary')
       .sort({ date: 1, time: 1 })
       .limit(fetchLimit)
       .lean();
 
+    // Mandatory filter: departure time must not already have passed. The
+    // Mongo query above can only filter on `ride.date` (date-only), so a
+    // ride departing today needs its `ride.time` checked here as well.
+    const now = new Date();
+    const allRides = fetchedRides.filter(ride => {
+      const departure = getRideDepartureDateTime(ride);
+      const validStatus = ride.rideStatus === 'active' || ride.rideStatus === 'scheduled';
+      return validStatus && (departure === null || departure >= now);
+    });
+
+    if (isGlobalAll) {
+      const total = allRides.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const startIdx = (pageNum - 1) * pageSize;
+      const pageData = allRides.slice(startIdx, startIdx + pageSize);
+
+      return res.json({
+        success: true,
+        count: pageData.length,
+        data: pageData,
+        meta: {
+          total,
+          page: pageNum,
+          limit: pageSize,
+          totalPages,
+        },
+      });
+    }
+
     const normalizedStart = start ? normalizeIndiaLocation(start) : '';
     const normalizedEnd = end ? normalizeIndiaLocation(end) : '';
-    const startLower = normalizedStart.toLowerCase().trim();
-    const endLower = normalizedEnd.toLowerCase().trim();
-    const originStateLower = originState ? String(originState).toLowerCase().trim() : '';
-    const destStateLower = destState ? String(destState).toLowerCase().trim() : '';
+    // Match keys (used only for text-matching against ride.start/ride.end)
+    // go through the full normalize + typo-correct + alias-resolve pipeline
+    // (Step 5, findings #11-13). `normalizedStart`/`normalizedEnd` above
+    // stay untouched — they're also passed to the geocoder in the
+    // connector-tier route check, where aggressive punctuation-stripping
+    // and typo "correction" would do more harm than good.
+    const startLower = buildLocationMatchKey(start);
+    const endLower = buildLocationMatchKey(end);
+    const originStateLower = originState ? buildRegionKey(originState) : '';
+    const destStateLower = destState ? buildRegionKey(destState) : '';
+    const searchFromPoint = hasPickupCoords ? { lat: pLat, lng: pLng } : null;
+    const searchToPoint = hasDestCoords ? { lat: dLat, lng: dLng } : null;
+    const searchDistanceKm = (searchFromPoint && searchToPoint)
+      ? calculateDistance(searchFromPoint.lat, searchFromPoint.lng, searchToPoint.lat, searchToPoint.lng)
+      : null;
+    const regionPath = (originStateLower && destStateLower)
+      ? findShortestRegionPath(originStateLower, destStateLower)
+      : null;
 
     const classified = [];
 
     for (const ride of allRides) {
-      const rideStartLower = ride.start.toLowerCase();
-      const rideEndLower = ride.end.toLowerCase();
-
       const ridePickupLat = ride.pickup?.latitude;
       const ridePickupLng = ride.pickup?.longitude;
       const rideDestLat = ride.destination?.latitude;
@@ -595,132 +1066,27 @@ exports.searchRides = async (req, res) => {
         ? calculateDistance(dLat, dLng, rideDestLat, rideDestLng)
         : null;
 
-      const textPickupMatch = !!(startLower && (rideStartLower.includes(startLower) || startLower.includes(rideStartLower)));
-      const textDropMatch = !!(endLower && (rideEndLower.includes(endLower) || endLower.includes(rideEndLower)));
-      const coordPickupExact = pickupDist !== null && pickupDist <= 5;
-      const coordDropExact = destDist !== null && destDist <= 5;
-      const coordPickupNearby = pickupDist !== null && pickupDist <= radius;
-      const coordDropNearby = destDist !== null && destDist <= radius;
+      const ctx = {
+        startLower, endLower, originStateLower, destStateLower,
+        pickupDist, destDist, pickupRadius, destRadius,
+        normalizedStart, normalizedEnd,
+        searchFromPoint, searchToPoint, searchDistanceKm, regionPath,
+        hasCoords, pLat, pLng, dLat, dLng,
+        includePartialRoutes,
+      };
 
-      const pickupMatches = textPickupMatch || coordPickupExact;
-      const dropMatches = textDropMatch || coordDropExact;
+      const classification = await classifyRide(ride, ctx);
 
-      let tier = null;
-      let extra = {};
-
-      if (pickupMatches && dropMatches) {
-        tier = 1;
-        extra.matchQuality = 100;
-      }
-      else if (dropMatches && !pickupMatches) {
-        tier = 2;
-        extra.matchQuality = 90;
-      }
-      else if (
-        originStateLower &&
-        ride.pickup?.state &&
-        ride.pickup.state.toLowerCase().trim() === originStateLower
-      ) {
-        tier = 3;
-        extra.matchQuality = 75;
-      }
-      else if (coordPickupNearby) {
-        tier = 4;
-        extra.matchQuality = Math.max(0, 70 - Math.round(pickupDist));
-      }
-      else if (coordDropNearby) {
-        tier = 5;
-        extra.matchQuality = Math.max(0, 65 - Math.round(destDist));
-      }
-
-      if (tier !== null) {
+      if (classification) {
         classified.push({
           ...ride,
-          matchTier: tier,
-          matchType: TIER_META[tier].matchType,
-          matchReason: TIER_META[tier].label,
-          matchQuality: extra.matchQuality,
+          ...classification,
+          matchType: classification.matchType,
+          matchReason: classification.matchReason,
+          matchQuality: Math.round(classification.searchScore),
           _pickupDistKm: pickupDist !== null ? Math.round(pickupDist * 10) / 10 : null,
           _destDistKm: destDist !== null ? Math.round(destDist * 10) / 10 : null,
         });
-        continue;
-      }
-
-      if (startLower && endLower && ride.allowPartialRoute && includePartialRoutes !== 'false') {
-        const pickupWp = findMatchingWaypoint(normalizedStart, ride.waypoints, ride.start, ride.end);
-        const dropWp = findMatchingWaypoint(normalizedEnd, ride.waypoints, ride.start, ride.end);
-        if (pickupWp && dropWp) {
-          const pDist = pickupWp.distanceFromStart || 0;
-          const dDist = dropWp.distanceFromStart || ride.totalDistance || 0;
-          if (pDist < dDist) {
-            classified.push({
-              ...ride,
-              matchTier: 6,
-              matchType: TIER_META[6].matchType,
-              matchReason: TIER_META[6].label,
-              matchQuality: 55,
-            });
-            continue;
-          }
-        }
-      }
-
-      if (ride.routeCoordinates?.length && (normalizedStart || hasCoords) && (normalizedEnd || hasCoords)) {
-        try {
-          const passengerPickup = hasCoords ? { lat: pLat, lng: pLng } : normalizedStart;
-          const passengerDrop = hasCoords ? { lat: dLat, lng: dLng } : normalizedEnd;
-          const match = await checkRouteMatch(
-            {
-              start: ride.start,
-              end: ride.end,
-              coordinates: ride.routeCoordinates,
-              polyline: ride.routePolyline
-            },
-            passengerPickup,
-            passengerDrop,
-            15000
-          );
-          if (match.isMatch) {
-            const fareDetails = calculateSegmentFare(ride, match.segmentDistance);
-            classified.push({
-              ...ride,
-              matchTier: 6,
-              matchType: TIER_META[6].matchType,
-              matchReason: TIER_META[6].label,
-              matchQuality: Math.max(56, match.matchQuality),
-              matchedPickup: normalizedStart,
-              matchedDrop: normalizedEnd,
-              segmentDistance: match.segmentDistanceKm,
-              segmentFare: fareDetails.totalFare,
-              fareBreakdown: fareDetails,
-              pickupCoordinates: match.pickupCoordinates,
-              dropCoordinates: match.dropCoordinates,
-              userSearchDistance: parseFloat(match.segmentDistanceKm),
-              userRouteCoordinates: match.segmentCoordinates
-            });
-            continue;
-          }
-        } catch (err) {
-          console.warn(`⚠️ Route match failed for ride ${ride._id}:`, err.message);
-        }
-      }
-
-      if (ride.negotiableFare) {
-        const widerPickupOk = pickupDist !== null && pickupDist <= negotiationRadius;
-        const widerDropOk = destDist !== null && destDist <= negotiationRadius;
-        const stateOk =
-          (originStateLower && ride.pickup?.state?.toLowerCase().trim() === originStateLower) ||
-          (destStateLower && ride.destination?.state?.toLowerCase().trim() === destStateLower);
-
-        if (widerPickupOk || widerDropOk || stateOk || (!hasCoords && !originStateLower)) {
-          classified.push({
-            ...ride,
-            matchTier: 7,
-            matchType: TIER_META[7].matchType,
-            matchReason: TIER_META[7].label,
-            matchQuality: 20,
-          });
-        }
       }
     }
 
@@ -747,14 +1113,55 @@ exports.searchRides = async (req, res) => {
 
     allMatched.sort((a, b) => {
       if (a.matchTier !== b.matchTier) return a.matchTier - b.matchTier;
+
       if (b.matchQuality !== a.matchQuality) return b.matchQuality - a.matchQuality;
-      if (hasCoords) {
-        const aDist = (a._pickupDistKm || 0) + (a._destDistKm || 0);
-        const bDist = (b._pickupDistKm || 0) + (b._destDistKm || 0);
-        if (aDist !== bDist) return aDist - bDist;
+
+      const aDeparture = getRideDepartureDateTime(a) || new Date(0);
+      const bDeparture = getRideDepartureDateTime(b) || new Date(0);
+      if (aDeparture.getTime() !== bDeparture.getTime()) {
+        return aDeparture - bDeparture;
       }
-      return new Date(a.date) - new Date(b.date);
+
+      const aCreated = new Date(a.createdAt || a._id.getTimestamp?.() || 0);
+      const bCreated = new Date(b.createdAt || b._id.getTimestamp?.() || 0);
+      if (aCreated.getTime() !== bCreated.getTime()) {
+        return bCreated - aCreated;
+      }
+
+      const aVerified = !!a.driverId?.isDriverVerified || !!a.driverInfo?.verified;
+      const bVerified = !!b.driverId?.isDriverVerified || !!b.driverInfo?.verified;
+      if (aVerified !== bVerified) return bVerified ? 1 : -1;
+
+      const aRating = a.driverId?.ratingSummary ?? a.driverInfo?.ratingSummary ?? 0;
+      const bRating = b.driverId?.ratingSummary ?? b.driverInfo?.ratingSummary ?? 0;
+      if (aRating !== bRating) return bRating - aRating;
+
+      const aId = String(a._id);
+      const bId = String(b._id);
+      if (aId < bId) return -1;
+      if (aId > bId) return 1;
+      return 0;
     });
+
+    if (isGlobalAll) {
+      const total = allMatched.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const startIdx = (pageNum - 1) * pageSize;
+      const pageData = allMatched.slice(startIdx, startIdx + pageSize);
+
+      return res.json({
+        success: true,
+        count: pageData.length,
+        data: pageData,
+        meta: {
+          coordinateBased: false,
+          total,
+          page: pageNum,
+          limit: pageSize,
+          totalPages,
+        },
+      });
+    }
 
     const total = allMatched.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -766,13 +1173,97 @@ exports.searchRides = async (req, res) => {
       tierCounts[r.matchTier] = (tierCounts[r.matchTier] || 0) + 1;
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Step 4 — catch-all section ("See all rides across India").
+    //
+    // This is NOT one of the 11 ranked tiers and is never mixed into
+    // `data`/`allMatched` above. It's a separate, unranked "see everything
+    // else that's active" bucket, surfaced by the frontend as its own
+    // reveal-on-click section.
+    //
+    // Two levels of cost, so a plain search never pays for the expensive
+    // part:
+    //   1. `catchAllAvailableCount` — always computed, cheap (`countDocuments`
+    //      against the same base filters already built into `query` above —
+    //      no per-ride classification work). Lets the frontend show
+    //      "See all N rides across India" immediately without a second
+    //      round trip.
+    //   2. `catchAll.data` — only fetched when the client explicitly passes
+    //      `includeCatchAll=true` (i.e. the user actually clicked the
+    //      reveal button). Uses the same base `query` filters (seats,
+    //      fare, vehicle, prefs, date) as the ranked search, minus any
+    //      geography matching, and explicitly excludes every ride already
+    //      present in the ranked list (`$nin` on `allMatched` ids) so a
+    //      ride never appears in both sections.
+    //
+    // Known limitation: like the ranked path above, the mandatory
+    // "departure hasn't passed" filter (getRideDepartureDateTime) runs
+    // in-memory *after* the DB-level skip/limit for this page, so a page
+    // that happens to contain several just-expired-today rides can come
+    // back with fewer than `catchAllLimit` results. Same trade-off the
+    // pre-existing ranked path already makes; flagging here rather than
+    // building out a full aggregation pipeline for this pass.
+    const matchedIds = allMatched.map(r => r._id);
+    const catchAllQuery = { ...query, _id: { $nin: matchedIds } };
+
+    const catchAllAvailableCount = await Ride.countDocuments(catchAllQuery);
+
+    let catchAllPayload = null;
+    if (includeCatchAll === 'true') {
+      const catchAllPageNum = Math.max(1, parseInt(catchAllPage) || 1);
+      const catchAllPageSize = Math.min(100, Math.max(1, parseInt(catchAllLimit) || 20));
+
+      const [catchAllFetched, catchAllTotal] = await Promise.all([
+        Ride.find(catchAllQuery)
+          .populate('driverId', 'name email phone avatar ratingSummary totalRidesAsDriver isDriverVerified')
+          .populate('postedBy', 'name email phone avatar ratingSummary')
+          .sort({ featured: -1, rideStatus: 1, date: 1, time: 1 })
+          .skip((catchAllPageNum - 1) * catchAllPageSize)
+          .limit(catchAllPageSize)
+          .lean(),
+        Ride.countDocuments(catchAllQuery),
+      ]);
+
+      const catchAllRides = catchAllFetched
+        .filter(ride => {
+          const departure = getRideDepartureDateTime(ride);
+          return departure === null || departure >= now;
+        })
+        .map(ride => ({
+          ...ride,
+          matchTier: null,
+          matchType: 'catch_all',
+          matchReason: 'See all rides across India',
+          isCatchAll: true,
+          availableSeats: ride.availableSeats ?? ride.seats,
+          isFull: (ride.availableSeats ?? ride.seats) === 0,
+        }));
+
+      catchAllPayload = {
+        data: catchAllRides,
+        meta: {
+          page: catchAllPageNum,
+          limit: catchAllPageSize,
+          total: catchAllTotal,
+          totalPages: Math.max(1, Math.ceil(catchAllTotal / catchAllPageSize)),
+        },
+      };
+    }
+
     res.json({
       success: true,
       count: pageData.length,
       data: pageData,
+      // Step 4: always separate from `data` — never merged into the ranked
+      // list. `null` unless `includeCatchAll=true` was passed; the button
+      // to trigger that request is driven by `meta.catchAllAvailableCount`
+      // below, which is always populated.
+      catchAll: catchAllPayload,
       meta: {
         coordinateBased: hasCoords,
-        radiusKm: radius,
+        pickupRadiusKm: pickupRadius,
+        destRadiusKm: destRadius,
+        radiusKm: Math.max(pickupRadius, destRadius),
         total,
         page: pageNum,
         limit: pageSize,
@@ -781,6 +1272,7 @@ exports.searchRides = async (req, res) => {
         tierLabels: Object.fromEntries(
           Object.entries(TIER_META).map(([tier, meta]) => [tier, meta.label])
         ),
+        catchAllAvailableCount,
       }
     });
   } catch (error) {
@@ -920,7 +1412,7 @@ exports.checkRideAvailability = async (req, res) => {
 exports.getRideById = async (req, res) => {
   try {
     const ride = await Ride.findById(req.params.id)
-      .populate('driverId', 'name email phone avatar ratingSummary isDriverVerified')
+      .populate('driverId', 'name email phone avatar isDriverVerified')
       .populate('bookings')
       .lean();
     if (!ride) return res.status(404).json({ success: false, message: 'Ride not found' });

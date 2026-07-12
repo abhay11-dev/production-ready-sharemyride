@@ -250,14 +250,14 @@ function NotificationDropdown() {
         </svg>
         
         {notifications.length > 0 && (
-          <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full animate-pulse">
+          <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 text-[10px] font-bold leading-none text-white bg-blue-600 rounded-full ring-2 ring-white">
             {notifications.length > 9 ? '9+' : notifications.length}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="fixed sm:absolute right-0 left-0 sm:left-auto mt-2 sm:w-96 bg-white rounded-xl shadow-2xl border-2 border-gray-200 z-50 max-h-[600px] sm:max-h-[600px] max-h-[calc(100vh-80px)] overflow-hidden flex flex-col mx-2 sm:mx-0">
+        <div className="absolute right-0 top-full mt-2 w-screen max-w-[22rem] sm:w-96 bg-white rounded-[28px] border border-gray-200 shadow-2xl z-50 overflow-hidden flex flex-col">
           <div className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-3 sm:px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">

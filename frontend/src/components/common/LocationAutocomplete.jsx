@@ -135,14 +135,17 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
 
     // Sync display when value changes externally
     useEffect(() => {
-        if (value?.name) {
+        if (typeof value === 'string') {
+            setQuery(value);
+            setHasSelected(false);
+        } else if (value?.name) {
             setQuery(value.name);
             setHasSelected(true);
         } else {
             setQuery('');
             setHasSelected(false);
         }
-    }, [value?.placeId, value?.id]);
+    }, [value]);
 
     // Click-outside to close
     useEffect(() => {
@@ -184,12 +187,13 @@ const LocationAutocomplete = forwardRef(function LocationAutocomplete(
             });
 
             const uniqueParsed = [];
-            const seenNames = new Set();
+            const seenIds = new Set();
+
             for (const item of response.data) {
-                if (!seenNames.has(item.name)) {
-                    seenNames.add(item.name);
-                    uniqueParsed.push(item);
-                }
+                const itemId = item.placeId || item.id || item.name;
+                if (!itemId || seenIds.has(itemId)) continue;
+                seenIds.add(itemId);
+                uniqueParsed.push(item);
             }
 
             setSuggestions(uniqueParsed);

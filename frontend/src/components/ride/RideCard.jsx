@@ -673,6 +673,7 @@ function ContactModal({ ride, onClose }) {
   const vehicle = ride.vehicle || {};
   const name = driverInfo.name || driver.name || 'Driver';
   const phone = driverInfo.phone || driver.phone || ride.phoneNumber || 'Not provided';
+  const hasConfirmedBooking = ride.bookingStatus === 'accepted' || ride.bookingStatus === 'completed' || ride.bookingStatus === 'paid';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -686,7 +687,7 @@ function ContactModal({ ride, onClose }) {
         <div className="p-6 space-y-3">
           {[
             { label: 'Driver', val: name },
-            { label: 'Phone', val: phone },
+            { label: 'Phone', val: hasConfirmedBooking ? phone : 'Hidden until booking confirmation' },
             { label: 'Vehicle', val: [vehicle.color, vehicle.model, vehicle.type].filter(Boolean).join(' ') || 'N/A' },
             { label: 'Reg. No.', val: vehicle.number || ride.vehicleNumber || 'N/A' },
           ].map(({ label, val }) => (
@@ -759,6 +760,15 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
       toast.error('Sign in to view contact', { style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' } });
       return;
     }
+
+    const hasConfirmedBooking = ride.bookingStatus === 'accepted' || ride.bookingStatus === 'completed' || ride.bookingStatus === 'paid';
+    if (!hasConfirmedBooking) {
+      toast.info('Contact details are available after booking confirmation. Use chat to negotiate and confirm your ride.', {
+        style: { background: '#2563EB', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
+      });
+      return;
+    }
+
     setModal('contact');
   };
 
@@ -918,6 +928,8 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false }) {
               onClick={handleContact}
               className="border border-blue-200 text-blue-600 hover:bg-blue-50 py-2 rounded-xl text-xs font-semibold transition-all"
             >
+              Contact
+            </button>
               Contact
             </button>
             <button
