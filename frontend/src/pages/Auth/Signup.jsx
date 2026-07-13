@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signupUser } from '../../services/authService';
 import { useAuth } from '../../hooks/useAuth';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 
 function getPasswordStrength(pwd) {
   if (!pwd) return { strength: 0, label: '', color: '' };

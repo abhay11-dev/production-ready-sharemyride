@@ -1,7 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { UserContext } from '../../contexts/UserContext';
 import { createBooking } from '../../services/bookingService';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import PaymentCalculator from '../../utils/paymentCalculator';
 
 function BookingModal({ ride, onClose, onSuccess, isFirstRideFree = false }) {

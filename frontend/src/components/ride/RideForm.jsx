@@ -36,16 +36,16 @@ import { Route, CalendarDays, Car, SlidersHorizontal, ClipboardCheck, MapPin, Cl
 // ─── Constants ────────────────────────────────────────────────────────────────
 const STEP_ICONS = [
   <Route size={14} strokeWidth={2} aria-hidden="true" />,
-  <CalendarDays size={14} strokeWidth={2} aria-hidden="true" />,
   <Car size={14} strokeWidth={2} aria-hidden="true" />,
+  <CalendarDays size={14} strokeWidth={2} aria-hidden="true" />,
   <SlidersHorizontal size={14} strokeWidth={2} aria-hidden="true" />,
   <ClipboardCheck size={14} strokeWidth={2} aria-hidden="true" />,
 ];
 
 const STEPS = [
   { id: 1, label: 'Route' },
-  { id: 2, label: 'Schedule' },
-  { id: 3, label: 'Vehicle' },
+  { id: 2, label: 'Vehicle' },
+  { id: 3, label: 'Schedule' },
   { id: 4, label: 'Preferences' },
   { id: 5, label: 'Review' },
 ];
@@ -592,6 +592,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
   const [vehicleColor, setVehicleColor] = useState('');
   const [acAvailable, setAcAvailable] = useState(true);
   const [luggageSpace, setLuggageSpace] = useState('Medium');
+  const [saveVehicle, setSaveVehicle] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [address, setAddress] = useState('');
   const [pickupInstructions, setPickupInstructions] = useState('');
@@ -607,6 +608,17 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
   useEffect(() => {
     if (user?.phone) setPhoneNumber(user.phone);
   }, [user]);
+
+  const autofillVehicle = () => {
+    if (user?.savedVehicle) {
+      setVehicleType(user.savedVehicle.type || 'Sedan');
+      setVehicleModel(user.savedVehicle.model || '');
+      setVehicleColor(user.savedVehicle.color || '');
+      setVehicleNumber(user.savedVehicle.number || '');
+      setAcAvailable(user.savedVehicle.acAvailable ?? true);
+      setLuggageSpace(user.savedVehicle.luggageSpace || 'Medium');
+    }
+  };
 
   const handleRoundTripToggle = (value) => {
     setIsRoundTrip(value);
@@ -666,6 +678,23 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
     }
 
     if (s === 2) {
+      if (!vehicleNumber.trim()) {
+        errs.vehicleNumber = 'Vehicle number is required';
+      } else {
+        const plate = vehicleNumber.replace(/\s/g, '').toUpperCase();
+        const plateRegex = /^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$/;
+        if (!plateRegex.test(plate)) errs.vehicleNumber = 'e.g. PB10AB1234 or MH02XY5678';
+      }
+      if (!phoneNumber.trim()) {
+        errs.phoneNumber = 'Contact number is required';
+      } else if (!/^[6-9]\d{9}$/.test(phoneNumber.replace(/\s/g, ''))) {
+        errs.phoneNumber = 'Enter a valid 10-digit Indian mobile number';
+      }
+      if (!address.trim()) errs.address = 'Pickup address is required';
+      else if (address.trim().length < 10) errs.address = 'Add more detail (landmark, area)';
+    }
+
+    if (s === 3) {
       if (!date) errs.date = 'Select a departure date';
       else if (!isValidRideDate(date)) errs.date = 'Enter a valid 4-digit date';
       else {
@@ -675,6 +704,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
       if (!time) errs.time = 'Select departure time';
       const s_ = parseInt(seats);
       if (!s_ || s_ < 1 || s_ > 8) errs.seats = 'Must be between 1 and 8';
+      else if (vehicleType === 'Bike' && s_ > 1) errs.seats = 'Bike can only have 1 seat';
       const f = parseFloat(fare);
       if (!fare || isNaN(f) || f < 1) errs.fare = 'Enter a valid fare (min ₹1)';
       else if (f > 10000) errs.fare = 'Fare seems too high — double-check';
@@ -721,7 +751,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const allErrors = { ...validateStep(1), ...validateStep(2), ...validateStep(3) };
     if (Object.keys(allErrors).length) {
@@ -764,6 +794,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
         model: vehicleModel.trim(),
         color: vehicleColor.trim(),
         acAvailable, luggageSpace,
+        saveVehicle,
       },
       phoneNumber: phoneNumber.replace(/\s/g, ''),
       address: address.trim(),
@@ -782,8 +813,13 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
       notes: notes.trim(),
     };
 
-    onSubmit(payload);
-    resetForm();
+    try {
+      await onSubmit(payload);
+      resetForm();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      // Parent component handles toast notification for errors
+    }
   };
 
   const resetForm = () => {
@@ -794,7 +830,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
     setFare(''); setTollIncluded(false); setNegotiable(false);
     setIsRoundTrip(false); setReturnDate(''); setReturnTime(''); setReusePreviousTripOptions(true);
     setVehicleNumber(''); setVehicleType('Sedan'); setVehicleModel('');
-    setVehicleColor(''); setAcAvailable(true); setLuggageSpace('Medium');
+    setVehicleColor(''); setAcAvailable(true); setLuggageSpace('Medium'); setSaveVehicle(false);
     setPhoneNumber(user?.phone || ''); setAddress(''); setPickupInstructions('');
     setSmokingAllowed(false); setMusicAllowed(true); setPetFriendly(false);
     setLuggageAllowed(true); setWomenOnly(false); setNotes('');
@@ -803,7 +839,25 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
   const today = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="bg-white shadow-2xl rounded-2xl w-full max-w-2xl border border-gray-100 overflow-hidden">
+    <div className="bg-white shadow-2xl rounded-2xl w-full max-w-2xl border border-gray-100 overflow-hidden relative">
+      {/* Loading Modal Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 z-50 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center rounded-2xl">
+          <div className="bg-white p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center max-w-xs mx-4 text-center border border-gray-100 animate-in fade-in zoom-in duration-200">
+             <div className="relative mb-4">
+               <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+               <div className="absolute inset-0 flex items-center justify-center">
+                 <svg className="w-6 h-6 text-blue-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                 </svg>
+               </div>
+             </div>
+             <h3 className="text-lg font-bold text-gray-900 mb-1">Publishing your ride</h3>
+             <p className="text-sm text-gray-500">Please wait while we set everything up...</p>
+          </div>
+        </div>
+      )}
+
       <StepBar current={step} total={STEPS.length} />
 
       <form onSubmit={handleSubmit} noValidate>
@@ -881,8 +935,123 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
             </div>
           )}
 
-          {/* ── STEP 2: Schedule + Seats + Pricing ───────────────────────── */}
+          {/* ── STEP 2: Vehicle + Contact ─────────────────────────────────── */}
           {step === 2 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 mb-1">Vehicle &amp; contact</h2>
+                <p className="text-sm text-gray-500">Passengers need this to identify your vehicle and reach you.</p>
+              </div>
+
+              {user?.savedVehicle && user.savedVehicle.number && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-blue-900">Saved Vehicle Found</p>
+                    <p className="text-xs text-blue-700">Use your saved {user.savedVehicle.model || user.savedVehicle.type} ({user.savedVehicle.number})?</p>
+                  </div>
+                  <button type="button" onClick={autofillVehicle} className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0">
+                    Autofill
+                  </button>
+                </div>
+              )}
+
+              <Field label="Registration number" required error={errors.vehicleNumber} hint="e.g. PB10AB1234">
+                <input
+                  type="text" placeholder="PB10AB1234"
+                  value={vehicleNumber}
+                  onChange={e => { setVehicleNumber(e.target.value.toUpperCase().replace(/\\s/g, '')); setErrors(p => ({ ...p, vehicleNumber: '' })); }}
+                  maxLength={13}
+                  className={`${inputCls(errors.vehicleNumber)} uppercase font-mono tracking-widest`}
+                />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Vehicle type">
+                  <div className="relative">
+                    <select value={vehicleType} onChange={e => {
+                      setVehicleType(e.target.value);
+                      if (e.target.value === 'Bike' && seats > 1) {
+                        setSeats(1);
+                      }
+                    }} className={selectCls(false)}>
+                      {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </Field>
+                <Field label="Luggage space">
+                  <div className="relative">
+                    <select value={luggageSpace} onChange={e => setLuggageSpace(e.target.value)} className={selectCls(false)}>
+                      {LUGGAGE_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Model" hint="optional">
+                  <input type="text" placeholder="e.g. Honda City" value={vehicleModel} onChange={e => setVehicleModel(e.target.value)} className={inputCls(false)} />
+                </Field>
+                <Field label="Color" hint="optional">
+                  <input type="text" placeholder="e.g. White" value={vehicleColor} onChange={e => setVehicleColor(e.target.value)} className={inputCls(false)} />
+                </Field>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl px-4 border border-gray-100 space-y-divider">
+                <Toggle checked={acAvailable} onChange={setAcAvailable} label="AC available in vehicle" />
+                <div className="border-t border-gray-100"></div>
+                <Toggle checked={saveVehicle} onChange={setSaveVehicle} label="Save this vehicle for future rides" hint="We will remember these details so you don't have to re-enter them" />
+              </div>
+
+              <div className="border-t border-gray-100 pt-5">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Contact &amp; Pickup</p>
+
+                <Field label="Contact number" required error={errors.phoneNumber}
+                  hint={user?.phone ? 'Auto-filled from your profile — edit if needed' : 'Passengers will call/WhatsApp this number'}>
+                  <input
+                    type="tel" placeholder="98765 43210"
+                    value={phoneNumber}
+                    onChange={e => { setPhoneNumber(e.target.value.replace(/\\D/g, '').slice(0, 10)); setErrors(p => ({ ...p, phoneNumber: '' })); }}
+                    maxLength={10}
+                    className={inputCls(errors.phoneNumber)}
+                  />
+                </Field>
+
+                <div className="mt-4">
+                  <Field label="Pickup address" required error={errors.address} hint="Street / landmark — enough for a passenger to find you">
+                    <textarea
+                      placeholder="e.g. Near HDFC Bank, GT Road, Phagwara Bus Stand"
+                      value={address}
+                      onChange={e => { setAddress(e.target.value); setErrors(p => ({ ...p, address: '' })); }}
+                      rows={2} maxLength={300}
+                      className={`${inputCls(errors.address)} resize-none`}
+                    />
+                    <p className="text-xs text-gray-400 mt-0.5 text-right">{address.length}/300</p>
+                  </Field>
+                </div>
+
+                <div className="mt-4">
+                  <Field label="Pickup instructions" hint="Optional — special directions or meeting point">
+                    <input
+                      type="text" placeholder="e.g. Call when 5 min away, I'll come out"
+                      value={pickupInstructions}
+                      onChange={e => setPickupInstructions(e.target.value)}
+                      maxLength={200}
+                      className={inputCls(false)}
+                    />
+                  </Field>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 3: Schedule + Seats + Pricing ───────────────────────── */}
+          {step === 3 && (
             <div className="space-y-5">
               <div>
                 <h2 className="text-xl font-bold text-gray-900 mb-1">When &amp; how much?</h2>
@@ -902,17 +1071,24 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
                 </Field>
               </div>
 
-              <Field label="Available seats" required error={errors.seats} hint="How many passengers can join? (1–8)">
+              <Field label="Available seats" required error={errors.seats} hint={vehicleType === 'Bike' ? 'Bikes can only have 1 passenger' : 'How many passengers can join? (1–8)'}>
                 <div className="flex items-center gap-4 mt-1">
                   <button type="button" onClick={() => setSeats(s => Math.max(1, parseInt(s) - 1))}
-                    className="w-10 h-10 rounded-full border-2 border-gray-300 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-100 transition-colors text-lg">−</button>
+                    className="w-10 h-10 rounded-full border-2 border-gray-300 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-100 transition-colors text-lg"
+                    disabled={vehicleType === 'Bike'}>−</button>
                   <input
-                    type="number" min={1} max={8} value={seats}
-                    onChange={e => setSeats(Math.min(8, Math.max(1, parseInt(e.target.value) || 1)))}
-                    className="w-16 text-center border-2 border-gray-300 rounded-xl py-2 text-xl font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                    type="number" min={1} max={vehicleType === 'Bike' ? 1 : 8} value={seats}
+                    onChange={e => {
+                      let val = parseInt(e.target.value) || 1;
+                      if (vehicleType === 'Bike') val = 1;
+                      setSeats(Math.min(vehicleType === 'Bike' ? 1 : 8, Math.max(1, val)));
+                    }}
+                    className="w-16 text-center border-2 border-gray-300 rounded-xl py-2 text-xl font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-400"
+                    disabled={vehicleType === 'Bike'}
                   />
-                  <button type="button" onClick={() => setSeats(s => Math.min(8, parseInt(s) + 1))}
-                    className="w-10 h-10 rounded-full border-2 border-gray-300 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-100 transition-colors text-lg">+</button>
+                  <button type="button" onClick={() => setSeats(s => Math.min(vehicleType === 'Bike' ? 1 : 8, parseInt(s) + 1))}
+                    className="w-10 h-10 rounded-full border-2 border-gray-300 flex items-center justify-center font-bold text-gray-600 hover:bg-gray-100 transition-colors text-lg"
+                    disabled={vehicleType === 'Bike'}>+</button>
                   <span className="text-sm text-gray-400">{seats === 1 ? '1 passenger' : `${seats} passengers`}</span>
                 </div>
               </Field>
@@ -972,102 +1148,6 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
               <div className="border border-gray-100 rounded-xl divide-y divide-gray-100">
                 <div className="px-4"><Toggle checked={tollIncluded} onChange={setTollIncluded} label="Toll charges included in fare" hint="Check this if tolls are already factored in" /></div>
                 <div className="px-4"><Toggle checked={negotiableFare} onChange={setNegotiable} label="Fare is negotiable" hint="Passengers may request a lower price" /></div>
-              </div>
-            </div>
-          )}
-
-          {/* ── STEP 3: Vehicle + Contact ─────────────────────────────────── */}
-          {step === 3 && (
-            <div className="space-y-5">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 mb-1">Vehicle &amp; contact</h2>
-                <p className="text-sm text-gray-500">Passengers need this to identify your vehicle and reach you.</p>
-              </div>
-
-              <Field label="Registration number" required error={errors.vehicleNumber} hint="e.g. PB10AB1234">
-                <input
-                  type="text" placeholder="PB10AB1234"
-                  value={vehicleNumber}
-                  onChange={e => { setVehicleNumber(e.target.value.toUpperCase().replace(/\s/g, '')); setErrors(p => ({ ...p, vehicleNumber: '' })); }}
-                  maxLength={13}
-                  className={`${inputCls(errors.vehicleNumber)} uppercase font-mono tracking-widest`}
-                />
-              </Field>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Vehicle type">
-                  <div className="relative">
-                    <select value={vehicleType} onChange={e => setVehicleType(e.target.value)} className={selectCls(false)}>
-                      {VEHICLE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </Field>
-                <Field label="Luggage space">
-                  <div className="relative">
-                    <select value={luggageSpace} onChange={e => setLuggageSpace(e.target.value)} className={selectCls(false)}>
-                      {LUGGAGE_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </Field>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Model" hint="optional">
-                  <input type="text" placeholder="e.g. Honda City" value={vehicleModel} onChange={e => setVehicleModel(e.target.value)} className={inputCls(false)} />
-                </Field>
-                <Field label="Color" hint="optional">
-                  <input type="text" placeholder="e.g. White" value={vehicleColor} onChange={e => setVehicleColor(e.target.value)} className={inputCls(false)} />
-                </Field>
-              </div>
-
-              <div className="bg-gray-50 rounded-xl px-4 border border-gray-100">
-                <Toggle checked={acAvailable} onChange={setAcAvailable} label="AC available in vehicle" />
-              </div>
-
-              <div className="border-t border-gray-100 pt-5">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Contact &amp; Pickup</p>
-
-                <Field label="Contact number" required error={errors.phoneNumber}
-                  hint={user?.phone ? 'Auto-filled from your profile — edit if needed' : 'Passengers will call/WhatsApp this number'}>
-                  <input
-                    type="tel" placeholder="98765 43210"
-                    value={phoneNumber}
-                    onChange={e => { setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10)); setErrors(p => ({ ...p, phoneNumber: '' })); }}
-                    maxLength={10}
-                    className={inputCls(errors.phoneNumber)}
-                  />
-                </Field>
-
-                <div className="mt-4">
-                  <Field label="Pickup address" required error={errors.address} hint="Street / landmark — enough for a passenger to find you">
-                    <textarea
-                      placeholder="e.g. Near HDFC Bank, GT Road, Phagwara Bus Stand"
-                      value={address}
-                      onChange={e => { setAddress(e.target.value); setErrors(p => ({ ...p, address: '' })); }}
-                      rows={2} maxLength={300}
-                      className={`${inputCls(errors.address)} resize-none`}
-                    />
-                    <p className="text-xs text-gray-400 mt-0.5 text-right">{address.length}/300</p>
-                  </Field>
-                </div>
-
-                <div className="mt-4">
-                  <Field label="Pickup instructions" hint="Optional — special directions or meeting point">
-                    <input
-                      type="text" placeholder="e.g. Call when 5 min away, I'll come out"
-                      value={pickupInstructions}
-                      onChange={e => setPickupInstructions(e.target.value)}
-                      maxLength={200}
-                      className={inputCls(false)}
-                    />
-                  </Field>
-                </div>
               </div>
             </div>
           )}

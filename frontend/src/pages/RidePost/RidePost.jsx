@@ -424,7 +424,7 @@ function VerificationGate({ verificationStatus }) {
   }, []);
 
   const formatNumber = (value) => new Intl.NumberFormat('en-IN').format(value || 0);
-  const formatRating = (value) => `${Number(value || 0).toFixed(1)}★`;
+  const formatRating = (value) => value > 0 ? `${Number(value).toFixed(1)}★` : 'N/A';
 
   const CONFIG = {
     not_started: {

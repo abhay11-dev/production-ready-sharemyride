@@ -11,7 +11,7 @@ import {
   submitForReview
 } from '../../services/driverVerificationService';
 import api from '../../config/api.js';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 const VerificationBadge = ({ status }) => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import emailjs from '@emailjs/browser';
 import {
   fetchRequests,
@@ -336,7 +336,7 @@ function OverviewTab({ analytics, enquiries, reports, verRequests }) {
         <StatCard label="Pending Verifications" value={pending.length} icon={Icon.clock} color="blue" />
         <StatCard label="Open Enquiries" value={enquiries.filter(e => !['resolved', 'closed'].includes(e.status)).length} icon={Icon.chat} color="amber" />
         <StatCard label="Urgent Reports" value={urgent.length} icon={Icon.alert} color="red" />
-        <StatCard label="Avg Rating" value={(analytics.averageRating || 4.8)} unit="" icon={Icon.star} color="amber" />
+        <StatCard label="Avg Rating" value={analytics.averageRating > 0 ? analytics.averageRating : 'N/A'} unit="" icon={Icon.star} color="amber" />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">

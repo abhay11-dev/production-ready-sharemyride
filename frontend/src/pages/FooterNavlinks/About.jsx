@@ -313,7 +313,11 @@ export default function About() {
                 </div>
                 <div>
                   <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 leading-none mb-1">
-                    <Counter target={stats.averageRating || 4.8} suffix="★" decimals={1} />
+                    {stats.averageRating > 0 ? (
+                      <Counter target={stats.averageRating} suffix="★" decimals={1} />
+                    ) : (
+                      'N/A'
+                    )}
                   </div>
                   <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">Avg. Rating</div>
                 </div>

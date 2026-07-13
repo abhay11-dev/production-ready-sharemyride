@@ -1,6 +1,6 @@
 // src/components/chat/NegotiationPanel.jsx
 import React, { useState } from 'react';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import {
   counterOffer, acceptNegotiation, rejectNegotiation,
   cancelNegotiation, finalizeNegotiation, NEGOTIATION_STATUS_LABELS,

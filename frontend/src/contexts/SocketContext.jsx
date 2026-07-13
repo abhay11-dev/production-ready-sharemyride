@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import toast from '../services/toastService';
 import { useAuth, getAccessToken } from '../hooks/useAuth';
 
 // api.js's VITE_API_URL includes a trailing /api — Socket.IO attaches to the

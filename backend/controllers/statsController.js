@@ -22,19 +22,20 @@ exports.getHomeStatistics = async (req, res) => {
       uniqueCities,
       averageRatingData
     ] = await Promise.all([
-      // Total registered users (not blocked)
-      User.countDocuments({ isBlocked: { $ne: true } }),
+      // Total registered users (must have email)
+      User.countDocuments({ email: { $exists: true, $ne: null, $ne: '' } }),
 
       // Verified drivers currently eligible to post rides
       User.countDocuments({ isBlocked: { $ne: true }, isDriverVerified: true }),
 
-      // Total rides (all statuses except cancelled)
+      // Total rides (completed only)
       Ride.countDocuments({ 
-        rideStatus: { $nin: ['cancelled'] }
+        rideStatus: 'completed'
       }),
 
-      // Count unique cities from rides (check both origin and destination)
+      // Count unique cities from completed rides (check both origin and destination)
       Ride.aggregate([
+        { $match: { rideStatus: 'completed' } },
         {
           $facet: {
             originCities: [

@@ -12,7 +12,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createBooking } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import PaymentCalculator from '../../utils/paymentCalculator';
 import NegotiationActions from '../../pages/rides/NegotiationActions';
 import Icon from '../ui/Icon';

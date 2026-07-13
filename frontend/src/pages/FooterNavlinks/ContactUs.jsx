@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import emailjs from '@emailjs/browser';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import RecentTicketsPanel from '../../components/common/RecentTicketsPanel';
 import { getStoredTickets, saveTicketToStorage } from '../../utils/ticketStorage';
 

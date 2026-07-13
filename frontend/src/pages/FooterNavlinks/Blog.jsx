@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../config/api.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 
 // Deterministic card images based on blog index
 const CARD_GRADIENTS = [

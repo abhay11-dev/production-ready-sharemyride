@@ -117,6 +117,16 @@ const userSchema = new mongoose.Schema({
   emergencyContact: { type: String, trim: true },
   emergencyContactName: { type: String, trim: true },
 
+  // ── Saved Vehicle ─────────────────────────────────────────────────────────
+  savedVehicle: {
+    type: { type: String, trim: true },
+    model: { type: String, trim: true },
+    color: { type: String, trim: true },
+    number: { type: String, trim: true },
+    acAvailable: { type: Boolean, default: false },
+    luggageSpace: { type: String, trim: true, default: 'Medium' }
+  },
+
   // ── Trusted Contacts (Ride Safety Platform — Phase 4) ─────────────────────
   // Superset of the legacy single emergencyContact/emergencyContactName pair
   // above — kept alongside rather than migrating, so nothing that already

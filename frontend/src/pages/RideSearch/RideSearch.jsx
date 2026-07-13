@@ -13,7 +13,7 @@ import LocationAutocomplete from '../../components/common/LocationAutocomplete';
 import { searchRides, getRideById } from '../../services/rideService';
 import { getMyBookings } from '../../services/bookingService';
 import { useAuth } from '../../hooks/useAuth';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import Icon from '../../components/ui/Icon';
 
 const clampDateInput = (value) => {
@@ -448,17 +448,15 @@ export default function RideSearch() {
     const startText = normalizeLocationInput(start);
     const endText = normalizeLocationInput(end);
     if (!startText.trim() || !endText.trim()) {
-      toast.error('Enter both origin and destination');
+      if (!silent) toast.error('Enter both origin and destination');
       return;
     }
     if (!isValidRideDate(date, today)) {
-      toast.error('Enter a valid ride date');
+      if (!silent) toast.error('Enter a valid ride date');
       return;
     }
     if (!user) {
-      toast.error('Sign in to search rides', {
-        style: { background: '#EF4444', color: '#fff', fontWeight: '600', borderRadius: '12px', padding: '16px' },
-      });
+      if (!silent) toast.error('Sign in to search rides');
       return;
     }
 
@@ -896,9 +894,9 @@ export default function RideSearch() {
           )}
 
           {/* Skeletons */}
-          {isLoading && (
+          {(isLoading || (globalLoading && globalRides.length === 0)) && (
             <div>
-              <SectionHeader eyebrow="Searching" title="Finding rides…" badgeColor="blue" />
+              <SectionHeader eyebrow="Searching" title={globalLoading ? "Loading all rides..." : "Finding rides…"} badgeColor="blue" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}
               </div>
@@ -906,12 +904,12 @@ export default function RideSearch() {
           )}
 
           {/* Empty */}
-          {!isLoading && hasSearched && allRides.length === 0 && !showGlobalRides && (
+          {!isLoading && !globalLoading && hasSearched && allRides.length === 0 && !showGlobalRides && (
             <EmptyResults start={start} end={end} onClear={handleClear} onBrowseAll={handleLoadGlobalRides} />
           )}
 
           {/* Pre-search */}
-          {!isLoading && !hasSearched && <SearchPrompt onBrowseAll={handleLoadGlobalRides} />}
+          {!isLoading && !globalLoading && !hasSearched && <SearchPrompt onBrowseAll={handleLoadGlobalRides} />}
 
           {/* ── TIER 1-3: Exact matches ── */}
           {!isLoading && !showGlobalRides && exactRides.length > 0 && (

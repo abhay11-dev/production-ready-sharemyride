@@ -6,7 +6,7 @@ import {
   updateBookingStatus,
   formatBookingStatus,
 } from '../services/bookingService.js';
-import toast from 'react-hot-toast';
+import toast from '../services/toastService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDate(dateStr) {

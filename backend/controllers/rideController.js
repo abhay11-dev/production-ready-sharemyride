@@ -683,6 +683,20 @@ exports.postRide = async (req, res) => {
     const ride = new Ride(rideData);
     await ride.save();
 
+    // ─── NEW: save vehicle to user profile if requested ────────────────────
+    if (vehicle?.saveVehicle) {
+      await mongoose.model('User').findByIdAndUpdate(req.user._id, {
+        savedVehicle: {
+          number: vehicleNumber.toUpperCase().trim(),
+          type: vehicle.type || 'Sedan',
+          model: vehicle.model || '',
+          color: vehicle.color || '',
+          acAvailable: vehicle.acAvailable !== false,
+          luggageSpace: vehicle.luggageSpace || 'Medium'
+        }
+      });
+    }
+
     // ─── NEW: create the linked, fully independent return leg ──────────────
     let returnRidePopulated = null;
 

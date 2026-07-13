@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 
 function EyeIcon({ open }) {
   return open ? (

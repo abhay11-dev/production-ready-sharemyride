@@ -1,7 +1,7 @@
 // services/receiptService.js
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import toast from 'react-hot-toast';
+import toast from './toastService';
 import api from '../config/api';
 import { registerNotoSansFonts } from './fonts/notoSansFonts';
 

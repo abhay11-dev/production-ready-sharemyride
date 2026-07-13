@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { verifyEmail } from '../../services/authService';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 
 function VerifyEmail() {
   const navigate = useNavigate();

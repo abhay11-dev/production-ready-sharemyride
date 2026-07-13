@@ -300,6 +300,7 @@ exports.getProfile = async (req, res) => {
         isVerified: user.isVerified,
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
+        savedVehicle: user.savedVehicle,
         ...stats
       }
     });
@@ -387,7 +388,8 @@ exports.updateProfile = async (req, res) => {
       address,
       dateOfBirth,
       gender,
-      emergencyContact
+      emergencyContact,
+      savedVehicle
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -465,6 +467,7 @@ exports.updateProfile = async (req, res) => {
     if (dateOfBirth) user.dateOfBirth = dateOfBirth;
     if (gender) user.gender = gender;
     if (emergencyContact) user.emergencyContact = emergencyContact;
+    if (savedVehicle) user.savedVehicle = savedVehicle;
 
     await user.save();
 
@@ -480,6 +483,7 @@ exports.updateProfile = async (req, res) => {
         dateOfBirth: user.dateOfBirth,
         gender: user.gender,
         role: user.role,
+        savedVehicle: user.savedVehicle,
         createdAt: user.createdAt
       }
     });

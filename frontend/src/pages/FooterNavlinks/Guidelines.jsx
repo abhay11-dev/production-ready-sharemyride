@@ -303,7 +303,7 @@ export default function Guidelines() {
                     const data = res.data.data;
                     setPlatformStats({
                         users: `${(data.totalUsers || 0).toLocaleString()}`,
-                        rating: `${(data.averageRating || 0).toFixed(1)}★`,
+                        rating: data.averageRating > 0 ? `${(data.averageRating).toFixed(1)}★` : 'N/A',
                         cities: `${(data.totalCities || 0).toLocaleString()}`,
                         rides: `${(data.totalRides || 0).toLocaleString()}`
                     });

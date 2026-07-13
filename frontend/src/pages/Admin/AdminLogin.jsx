@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import { loginAdmin } from '../../services/adminService';
 
 function AdminLogin() {

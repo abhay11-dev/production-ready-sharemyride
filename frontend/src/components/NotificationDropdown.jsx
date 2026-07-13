@@ -3,7 +3,7 @@ import { getDriverBookings } from '../services/bookingService';
 import { updateBookingStatus } from '../services/bookingService';
 import { useAuth } from '../hooks/useAuth';
 import { Link } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import toast from '../services/toastService';
 
 function NotificationDropdown() {
   const { user, isLoading: authLoading } = useAuth();

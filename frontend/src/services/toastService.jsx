@@ -145,16 +145,13 @@ function calculateDuration(variant, message, opts) {
   
   if (variant === 'loading') return Infinity;
   
-  let base = 3500; // default Info
-  if (variant === 'success') base = 3000;
-  if (variant === 'warning') base = 4500;
-  if (variant === 'error') base = 6000;
+  // Industry standard UI/UX durations
+  if (variant === 'success') return 3000;
+  if (variant === 'info') return 3000;
+  if (variant === 'warning') return 4000;
+  if (variant === 'error') return 5000;
   
-  const msgLength = typeof message === 'string' ? message.length : 0;
-  // Approx 50ms per character for reading time, up to a max of +3000ms
-  const lengthDuration = Math.min(msgLength * 50, 3000);
-  
-  return base + lengthDuration;
+  return 3000;
 }
 
 // ── Core toast builder ────────────────────────────────────────────────────────

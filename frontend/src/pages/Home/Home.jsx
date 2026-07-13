@@ -15,7 +15,7 @@ function formatNumber(num) {
   return num.toLocaleString('en-IN');
 }
 function formatRating(r) {
-  return r && r > 0 ? Number(r).toFixed(1) : '4.8';
+  return r && r > 0 ? Number(r).toFixed(1) : 'N/A';
 }
 function formatDate(dateStr, timeStr) {
   if (!dateStr) return '';

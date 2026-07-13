@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../config/api.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import emailjs from '@emailjs/browser';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 import RecentTicketsPanel from '../../components/common/RecentTicketsPanel';
 import { getStoredTickets, saveTicketToStorage } from '../../utils/ticketStorage';
 

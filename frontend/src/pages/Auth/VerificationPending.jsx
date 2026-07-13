@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { verifySignupOtp, resendSignupOtp } from '../../services/authService';
 import OtpInput from '../../components/common/OtpInput';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 
 const RESEND_COOLDOWN = 60;
 

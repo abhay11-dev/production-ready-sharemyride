@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { adminAxios as api } from '../../services/adminService.js';
-import toast from 'react-hot-toast';
+import toast from '../../services/toastService';
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
@@ -261,7 +261,7 @@ export default function UserDetailModal({ user, onClose, onRefresh }) {
               <InfoRow label="Last Login" value={fmtDate(user.lastLogin)} />
               <InfoRow label="Driver Verified" value={user.isDriverVerified ? '✓ Yes' : '✗ No'} />
               <InfoRow label="Total Rides" value={user.ratingSummary?.totalRides} />
-              <InfoRow label="Avg Rating" value={user.ratingSummary?.averageRating?.toFixed(1)} />
+              <InfoRow label="Avg Rating" value={user.ratingSummary?.averageRating > 0 ? user.ratingSummary.averageRating.toFixed(1) : 'N/A'} />
 
               {user.accountStatus === 'SUSPENDED' && user.suspensionReason && (
                 <div className="mt-4 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
