@@ -44,14 +44,15 @@ function calcPassengerFare(baseFare, seats = 1, waivePlatformCharges = false) {
 function calcSegmentFare(perKmRate, distanceKm, seats = 1, waivePlatformCharges = false) {
   const base = (parseFloat(perKmRate) || 0) * (parseFloat(distanceKm) || 0) * seats;
   const fee = base * PaymentCalculator.PLATFORM_FEE_PERCENTAGE;
-  const gst = (base + fee) * PaymentCalculator.GST_PERCENTAGE;
+  const chargedFee = waivePlatformCharges ? 0 : fee;
+  const gstBase = waivePlatformCharges ? base : base + fee;
+  const gst = gstBase * PaymentCalculator.GST_PERCENTAGE;
   return {
     base,
-    fee: waivePlatformCharges ? 0 : fee,
-    gst: waivePlatformCharges ? 0 : gst,
+    fee: chargedFee,
+    gst,
     waivedFee: fee,
-    waivedGst: gst,
-    total: waivePlatformCharges ? base : base + fee + gst,
+    total: base + chargedFee + gst,
   };
 }
 

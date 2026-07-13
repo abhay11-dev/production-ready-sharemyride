@@ -564,7 +564,9 @@ const UpcomingRides = () => {
                               <span className="font-medium text-gray-900">₹{paymentDetails.serviceFee.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-500">GST ({(GST_RATE * 100).toFixed(0)}% on fare + fee)</span>
+                              <span className="text-gray-500">
+                                GST ({(GST_RATE * 100).toFixed(0)}% on {booking.isFirstRideFree ? 'base fare' : 'fare + fee'})
+                              </span>
                               <span className="font-medium text-gray-900">₹{paymentDetails.gst.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between pt-2.5 border-t border-gray-100">

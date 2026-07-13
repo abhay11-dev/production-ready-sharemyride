@@ -4,6 +4,7 @@ import { getMyBookings, cancelBooking } from '../../services/bookingService';
 import { createPaymentOrder, verifyPayment } from '../../services/paymentService';
 import { useAuth } from '../../hooks/useAuth';
 import toastService from '../../services/toastService';
+import PaymentCalculator from '../../utils/paymentCalculator';
 
 const formatRazorpayFailure = (response) => {
   const error = response?.error;
@@ -25,8 +26,10 @@ const getBookingPaymentTotal = (booking) => {
   if (finalAmount > 0) return finalAmount;
 
   const baseFare = Number(booking?.baseFare ?? 0);
-  const serviceFee = Number(booking?.passengerServiceFee ?? booking?.platformFee ?? (baseFare * 0.03));
-  const gst = Number(booking?.passengerServiceFeeGST ?? booking?.gst ?? ((baseFare + serviceFee) * 0.05));
+  const serviceFee = Number(booking?.passengerServiceFee ?? booking?.platformFee ?? (baseFare * PaymentCalculator.PLATFORM_FEE_RATE));
+  const gst = Number(booking?.passengerServiceFeeGST ?? booking?.gst ?? (
+    (booking?.isFirstRideFree ? baseFare : baseFare + serviceFee) * PaymentCalculator.GST_RATE
+  ));
   return Number((baseFare + serviceFee + gst).toFixed(2));
 };
 
@@ -464,8 +467,11 @@ const MyBookings = () => {
               const totalPassengerPays = getBookingPaymentTotal(booking);
               const isPaymentValid = totalPassengerPays > 0;
               const baseFare = Number(booking?.baseFare ?? 0);
-              const platformDeduction = Number(booking?.passengerServiceFee ?? booking?.platformFee ?? (baseFare * 0.03));
-              const gstOnPlatformFee = Number(booking?.passengerServiceFeeGST ?? booking?.gst ?? ((baseFare + platformDeduction) * 0.05));
+              const platformDeduction = Number(booking?.passengerServiceFee ?? booking?.platformFee ?? (baseFare * PaymentCalculator.PLATFORM_FEE_RATE));
+              const gstOnPlatformFee = Number(booking?.passengerServiceFeeGST ?? booking?.gst ?? (
+                (booking?.isFirstRideFree ? baseFare : baseFare + platformDeduction) * PaymentCalculator.GST_RATE
+              ));
+              const isFirstRide = booking?.isFirstRideFree === true;
 
               return (
                 <div key={booking._id} className="bg-white rounded-2xl border border-gray-100 hover:shadow-lg hover:shadow-blue-50/60 transition-all duration-200 overflow-hidden">
@@ -574,8 +580,8 @@ const MyBookings = () => {
                             )}
                             <div className="bg-white rounded-lg p-3.5 space-y-1.5 text-xs">
                               <div className="flex justify-between"><span className="text-gray-500">Base fare</span><span className="font-semibold text-gray-900">₹{baseFare.toFixed(2)}</span></div>
-                              <div className="flex justify-between text-gray-400"><span className="pl-3">+ Platform fee (3%)</span><span>₹{platformDeduction.toFixed(2)}</span></div>
-                              <div className="flex justify-between text-gray-400"><span className="pl-3">+ GST (5% on fare + fee)</span><span>₹{gstOnPlatformFee.toFixed(2)}</span></div>
+                              <div className="flex justify-between text-gray-400"><span className="pl-3">{isFirstRide ? '+ Platform fee (3%)' : '+ Platform fee (3%)'} {isFirstRide && <span className="ml-1 text-green-600 font-semibold">(waived)</span>}</span><span>{isFirstRide ? <span className="line-through">₹{platformDeduction.toFixed(2)}</span> : `₹${platformDeduction.toFixed(2)}`}</span></div>
+                              <div className="flex justify-between text-gray-400"><span className="pl-3">+ GST (5% on {isFirstRide ? 'base fare' : 'fare + fee'})</span><span>₹{gstOnPlatformFee.toFixed(2)}</span></div>
                               <div className="flex justify-between pt-2 border-t border-gray-100">
                                 <span className="font-bold text-gray-900">You paid</span>
                                 <span className="font-bold text-blue-600">₹{totalPassengerPays.toFixed(2)}</span>

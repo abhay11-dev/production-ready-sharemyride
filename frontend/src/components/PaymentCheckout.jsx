@@ -58,16 +58,15 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
     let baseFare = booking.baseFare;
     if (baseFare == null) {
       // Fallback: reverse-engineer baseFare from totalFare when the booking
-      // record doesn't carry it directly. Must branch on isFirstRideFree —
-      // a waived booking's total was computed as base*(1+GST_RATE), while a
-      // standard booking's total was base*(1+FEE_RATE)*(1+GST_RATE)-ish
-      // (see PaymentCalculator.calculatePassengerTotal) — using the wrong
-      // divisor here would silently deflate/inflate the recovered baseFare.
-      const feeRate = PaymentCalculator.PLATFORM_FEE_PERCENTAGE;
-      const gstRate = PaymentCalculator.GST_PERCENTAGE;
+      // record doesn't carry it directly. Branch on isFirstRideFree:
+      //   • First ride: total = base*(1 + GST_RATE)  → divisor = 1.05
+      //   • Normal:     total = base*(1 + FEE_RATE)*(1 + GST_RATE)
+      //                       = base * 1.0815        → divisor ≈ 1.0815
+      const feeRate = PaymentCalculator.PLATFORM_FEE_RATE;
+      const gstRate = PaymentCalculator.GST_RATE;
       const divisor = isFirstRideFree
-        ? (1 + gstRate)
-        : (1 + feeRate + (1 + feeRate) * gstRate);
+        ? (1 + gstRate)                              // 1.05
+        : (1 + feeRate) * (1 + gstRate);             // 1.0815
       baseFare = (booking.totalFare || 0) / divisor;
     }
 
@@ -288,7 +287,7 @@ function PaymentCheckout({ booking, onSuccess, onCancel }) {
             <div>
               <h4 className="font-bold text-green-800">First Booking Celebration!</h4>
               <p className="text-xs text-green-700 mt-1 leading-relaxed">
-                As a new user, your platform fee is 100% waived. You only pay the base fare and GST. Enjoy your ride!
+                As a new user, your platform fee is 100% waived. GST still applies on the base fare. Enjoy your ride!
               </p>
             </div>
           </div>

@@ -1,225 +1,171 @@
-// utils/paymentCalculator.js
-
 /**
- * Payment Calculator for Rideshare Platform
- * 
- * REVENUE MODEL:
- * ===============
- * Driver Side:
- *   - Driver ask is the amount shown as their fare.
- *   - Platform fee: 3% of the driver-set fare.
- *   - GST: 5% of (driver-set fare + platform fee).
- * 
- * Passenger Side:
- *   - Base Fare (what driver set)
- *   - Platform Fee: 3% of base fare
- *   - GST: 5% of (base fare + platform fee)
+ * paymentCalculator.js — ShareMyRide payment model (definitive)
+ *
+ * DRIVER:
+ *   - Receives exactly the base fare they set. Zero deductions.
+ *
+ * PASSENGER — normal booking:
+ *   - Base fare          : B
+ *   - Platform fee (3%)  : 0.03 × B
+ *   - GST (5%)           : 0.05 × (B + 0.03 × B) = 0.0515 × B
+ *   - TOTAL              : B × 1.0815
+ *
+ * PASSENGER — first booking ("First Ride Free" on platform fee):
+ *   - Base fare          : B
+ *   - Platform fee       : WAIVED — shown as crossed-out in UI, not added to total
+ *   - GST (5%)           : 0.05 × B  (GST still applies, but only on base since fee is 0)
+ *   - TOTAL              : B × 1.05
  */
 
 class PaymentCalculator {
-  // Constants
-  static PLATFORM_FEE_PERCENTAGE = 0.03; // 3%
-  static GST_PERCENTAGE = 0.05; // 5%
-  static PASSENGER_SERVICE_FEE = 0;
+  static PLATFORM_FEE_RATE = 0.03;   // 3%
+  static GST_RATE          = 0.05;   // 5%
+
+  // Legacy aliases kept so old code that reads these doesn't break
+  static PLATFORM_FEE_PERCENTAGE = 0.03;
+  static GST_PERCENTAGE          = 0.05;
+  static PASSENGER_SERVICE_FEE     = 0;
   static PASSENGER_SERVICE_FEE_GST = 0;
 
   /**
-   * Calculate driver earnings (what driver receives after deductions)
-   * @param {number} baseFare - The fare driver set per seat
-   * @param {number} seatsBooked - Number of seats booked (default 1)
-   * @returns {object} Driver earnings breakdown
+   * Core passenger calculation.
+   *
+   * @param {number} baseFarePerSeat   - Driver-set price per seat
+   * @param {number} seatsBooked       - Number of seats
+   * @param {object} [options]
+   * @param {boolean} [options.waivePlatformCharges=false] - First-ride waiver
+   * @returns {object}
    */
-  static calculateDriverEarnings(baseFare, seatsBooked = 1) {
-    const fare = parseFloat(baseFare) || 0;
-    const seats = parseInt(seatsBooked) || 1;
+  static calculatePassengerTotal(baseFarePerSeat, seatsBooked = 1, options = {}) {
+    const fare  = parseFloat(baseFarePerSeat) || 0;
+    const seats = Math.max(1, parseInt(seatsBooked) || 1);
+    const waive = options?.waivePlatformCharges === true;
 
-    const platformFee = fare * this.PLATFORM_FEE_PERCENTAGE;
-    const gstOnPlatformFee = (fare + platformFee) * this.GST_PERCENTAGE;
-    const totalDeductions = platformFee + gstOnPlatformFee;
+    // Platform fee per seat (always computed for display; only added to total when not waived)
+    const platformFeePerSeat = fare * this.PLATFORM_FEE_RATE;
 
-    // Driver receives exactly the amount they asked for; platform charges are added on the passenger side.
-    const driverNetAmountPerSeat = fare;
-    
-    // Total for all seats
-    const totalDriverEarnings = driverNetAmountPerSeat * seats;
+    // GST base:
+    //   • Normal  : base + platform fee
+    //   • 1st ride: base only (fee is waived, so GST applies on base only)
+    const gstBasePerSeat = waive ? fare : fare + platformFeePerSeat;
+    const gstPerSeat     = gstBasePerSeat * this.GST_RATE;
+
+    // What passenger actually pays per seat
+    const chargedFeePerSeat = waive ? 0 : platformFeePerSeat;
+    const totalPerSeat      = fare + chargedFeePerSeat + gstPerSeat;
+
+    // Totals for all seats
+    const baseFareTotal     = fare              * seats;
+    const platformFeeTotal  = chargedFeePerSeat * seats;
+    const gstTotal          = gstPerSeat        * seats;
+    const totalForAllSeats  = totalPerSeat      * seats;
+
+    // Amounts that would have been charged (for struck-through display)
+    const standardPlatformFeePerSeat = platformFeePerSeat;           // 3% of base
+    const standardGstPerSeat         = (fare + platformFeePerSeat) * this.GST_RATE; // 5% of (base+fee)
+    const waivedPlatformFeePerSeat   = waive ? platformFeePerSeat : 0;
 
     return {
-      baseFare: fare,
-      platformFee: platformFee,
-      platformFeePercentage: this.PLATFORM_FEE_PERCENTAGE * 100,
-      gstOnPlatformFee: gstOnPlatformFee,
-      gstPercentage: this.GST_PERCENTAGE * 100,
-      totalDeductions: totalDeductions,
-      driverNetAmount: driverNetAmountPerSeat, // Per seat
-      driverNetAmountPerSeat: driverNetAmountPerSeat,
-      seatsBooked: seats,
-      totalDriverEarnings: totalDriverEarnings,
-      
-      // Breakdown percentages
-      platformFeeRate: fare > 0 ? (platformFee / fare * 100).toFixed(2) + '%' : '0.00%',
-      gstRate: fare > 0 ? (gstOnPlatformFee / fare * 100).toFixed(2) + '%' : '0.00%',
-      netEarningRate: fare > 0 ? (driverNetAmountPerSeat / fare * 100).toFixed(2) + '%' : '0.00%'
-    };
-  }
+      // Per-seat
+      baseFare:               fare,
+      platformFeePerSeat:     chargedFeePerSeat,
+      gstPerSeat,
+      totalPerSeat,
 
-  /**
-   * Calculate total amount passenger needs to pay
-   * @param {number} baseFare - The fare driver set per seat
-   * @param {number} seatsBooked - Number of seats passenger is booking
-   * @returns {object} Passenger payment breakdown
-   */
-  static calculatePassengerTotal(baseFare, seatsBooked = 1, options = {}) {
-    const fare = parseFloat(baseFare) || 0;
-    const seats = parseInt(seatsBooked) || 1;
-    const waivePlatformCharges = options?.waivePlatformCharges === true;
+      // For-all-seats
+      baseFareTotal,
+      serviceFeeTotal:         platformFeeTotal,   // legacy alias
+      passengerServiceFeeTotal: platformFeeTotal,  // legacy alias
+      gstOnServiceFeeTotal:    gstTotal,           // legacy alias
+      passengerServiceFeeGSTTotal: gstTotal,       // legacy alias
+      totalForAllSeats,
 
-    const serviceFeePerSeat = fare * this.PLATFORM_FEE_PERCENTAGE;
-    const gstOnServiceFeePerSeat = waivePlatformCharges
-      ? fare * this.GST_PERCENTAGE
-      : (fare + serviceFeePerSeat) * this.GST_PERCENTAGE;
+      // Waiver metadata (for UI display of crossed-out amounts)
+      waivePlatformCharges:      waive,
+      standardPlatformFeePerSeat,
+      standardGstPerSeat,
+      waivedPlatformFee:         waivedPlatformFeePerSeat,
+      waivedPlatformFeeTotal:    waivedPlatformFeePerSeat * seats,
 
-    const platformFeeCharged = waivePlatformCharges ? 0 : serviceFeePerSeat;
-    const totalServiceChargesPerSeat = waivePlatformCharges ? gstOnServiceFeePerSeat : serviceFeePerSeat + gstOnServiceFeePerSeat;
-    const totalPerSeat = fare + totalServiceChargesPerSeat;
-    
-    // Total for all seats
-    const totalForAllSeats = totalPerSeat * seats;
-
-    return {
-      baseFare: fare,
-      baseFareTotal: fare * seats,
-      
-      serviceFee: platformFeeCharged,
-      passengerServiceFee: platformFeeCharged,
-      serviceFeeTotal: platformFeeCharged * seats,
-      passengerServiceFeeTotal: platformFeeCharged * seats,
-      
-      gstOnServiceFee: gstOnServiceFeePerSeat,
-      passengerServiceFeeGST: gstOnServiceFeePerSeat,
-      gstOnServiceFeeTotal: gstOnServiceFeePerSeat * seats,
-      passengerServiceFeeGSTTotal: gstOnServiceFeePerSeat * seats,
-      
-      totalServiceCharges: totalServiceChargesPerSeat,
-      totalServiceChargesForAllSeats: totalServiceChargesPerSeat * seats,
-      waivedPlatformCharges: waivePlatformCharges,
-      waivedPlatformFee: waivePlatformCharges ? serviceFeePerSeat : 0,
-      waivedGST: 0,
-      waivedTotal: waivePlatformCharges ? serviceFeePerSeat : 0,
-      
-      totalPassengerPays: totalPerSeat, // Per seat
+      // Legacy aliases
+      serviceFee:               chargedFeePerSeat,
+      passengerServiceFee:      chargedFeePerSeat,
+      gstOnServiceFee:          gstPerSeat,
+      passengerServiceFeeGST:   gstPerSeat,
+      totalPassengerPays:       totalPerSeat,
       totalPassengerPaysPerSeat: totalPerSeat,
-      seatsBooked: seats,
-      totalForAllSeats: totalForAllSeats,
-      
-      // Breakdown
-      serviceFeeBreakdown: waivePlatformCharges
-        ? `₹0.00 platform fee (waived) + ₹${gstOnServiceFeePerSeat.toFixed(2)} GST`
-        : `₹${serviceFeePerSeat.toFixed(2)} platform fee + ₹${gstOnServiceFeePerSeat.toFixed(2)} GST`,
-      totalBreakdown: `₹${fare.toFixed(2)} (fare) + ₹${totalServiceChargesPerSeat.toFixed(2)} (service) = ₹${totalPerSeat.toFixed(2)}`
+      seatsBooked:              seats,
     };
   }
 
   /**
-   * Calculate platform revenue from a booking
-   * @param {number} baseFare - The fare driver set per seat
-   * @param {number} seatsBooked - Number of seats booked
-   * @returns {object} Platform revenue breakdown
+   * Driver side: receives exactly the base fare, no deductions.
    */
-  static calculatePlatformRevenue(baseFare, seatsBooked = 1) {
-    const driverCalc = this.calculateDriverEarnings(baseFare, seatsBooked);
-    const passengerCalc = this.calculatePassengerTotal(baseFare, seatsBooked);
-
-    const fromDriver = 0;
-    const fromPassenger = passengerCalc.totalServiceChargesForAllSeats;
-    const totalPlatformRevenue = fromPassenger;
-
+  static calculateDriverEarnings(baseFarePerSeat, seatsBooked = 1) {
+    const fare  = parseFloat(baseFarePerSeat) || 0;
+    const seats = Math.max(1, parseInt(seatsBooked) || 1);
     return {
-      fromDriver: fromDriver,
-      fromDriverBreakdown: 'No direct deduction from driver ask',
-      
-      fromPassenger: fromPassenger,
-      fromPassengerBreakdown: `3% platform fee + 5% GST on fare plus platform fee`,
-      
-      totalRevenue: totalPlatformRevenue,
-      
-      driverContribution: fromDriver,
-      passengerContribution: fromPassenger,
-      
-      revenuePerSeat: totalPlatformRevenue / seatsBooked
+      baseFare:            fare,
+      driverNetAmount:     fare,
+      driverNetAmountPerSeat: fare,
+      totalDriverEarnings: fare * seats,
+      seatsBooked:         seats,
+      platformFeeRate:     '0.00%',
+      gstRate:             '0.00%',
+      netEarningRate:      '100.00%',
     };
   }
 
   /**
-   * Complete transaction breakdown
-   * @param {number} baseFare - The fare driver set per seat
-   * @param {number} seatsBooked - Number of seats booked
-   * @returns {object} Complete breakdown
+   * Platform revenue = what passenger pays minus what driver receives.
    */
-  static getCompleteBreakdown(baseFare, seatsBooked = 1) {
-    const driverCalc = this.calculateDriverEarnings(baseFare, seatsBooked);
-    const passengerCalc = this.calculatePassengerTotal(baseFare, seatsBooked);
-    const platformCalc = this.calculatePlatformRevenue(baseFare, seatsBooked);
-
+  static calculatePlatformRevenue(baseFarePerSeat, seatsBooked = 1) {
+    const passengerCalc = this.calculatePassengerTotal(baseFarePerSeat, seatsBooked);
+    const driverCalc    = this.calculateDriverEarnings(baseFarePerSeat, seatsBooked);
+    const revenue       = passengerCalc.totalForAllSeats - driverCalc.totalDriverEarnings;
     return {
-      driver: driverCalc,
-      passenger: passengerCalc,
-      platform: platformCalc,
-      
-      // Summary
+      fromDriver:    0,
+      fromPassenger: revenue,
+      totalRevenue:  revenue,
+      revenuePerSeat: revenue / seatsBooked,
+    };
+  }
+
+  /** Complete breakdown for display */
+  static getCompleteBreakdown(baseFarePerSeat, seatsBooked = 1) {
+    const driver    = this.calculateDriverEarnings(baseFarePerSeat, seatsBooked);
+    const passenger = this.calculatePassengerTotal(baseFarePerSeat, seatsBooked);
+    const platform  = this.calculatePlatformRevenue(baseFarePerSeat, seatsBooked);
+    return {
+      driver, passenger, platform,
       summary: {
-        baseFarePerSeat: baseFare,
-        seatsBooked: seatsBooked,
-        
-        driverReceives: driverCalc.totalDriverEarnings,
-        passengerPays: passengerCalc.totalForAllSeats,
-        platformEarns: platformCalc.totalRevenue,
-        
-        // Verification
-        isBalanced: Math.abs(
-          passengerCalc.totalForAllSeats - 
-          driverCalc.totalDriverEarnings - 
-          platformCalc.totalRevenue
-        ) < 0.01 // Allow for floating point rounding
-      }
+        baseFarePerSeat,
+        seatsBooked,
+        driverReceives:  driver.totalDriverEarnings,
+        passengerPays:   passenger.totalForAllSeats,
+        platformEarns:   platform.totalRevenue,
+        isBalanced: Math.abs(passenger.totalForAllSeats - driver.totalDriverEarnings - platform.totalRevenue) < 0.01,
+      },
     };
   }
 
-  /**
-   * Format currency in Indian Rupees
-   * @param {number} amount 
-   * @returns {string}
-   */
   static formatCurrency(amount) {
-    return `₹${parseFloat(amount).toFixed(2)}`;
+    return `₹${parseFloat(amount || 0).toFixed(2)}`;
   }
 
-  /**
-   * Get passenger service charges (for displaying to users)
-   * @returns {object}
-   */
   static getPassengerServiceCharges() {
-    return {
-      serviceFee: this.PASSENGER_SERVICE_FEE,
-      gst: this.PASSENGER_SERVICE_FEE_GST,
-      total: this.PASSENGER_SERVICE_FEE + this.PASSENGER_SERVICE_FEE_GST,
-      formatted: this.formatCurrency(this.PASSENGER_SERVICE_FEE + this.PASSENGER_SERVICE_FEE_GST)
-    };
+    return { serviceFee: 0, gst: 0, total: 0, formatted: '₹0.00' };
   }
 
-  /**
-   * Get platform fee info (for displaying to drivers)
-   * @returns {object}
-   */
   static getPlatformFeeInfo() {
     return {
-      percentage: this.PLATFORM_FEE_PERCENTAGE * 100,
-      gstPercentage: this.GST_PERCENTAGE * 100,
-      description: `${this.PLATFORM_FEE_PERCENTAGE * 100}% platform fee + ${this.GST_PERCENTAGE * 100}% GST on fare plus platform fee`
+      percentage:    this.PLATFORM_FEE_RATE * 100,
+      gstPercentage: this.GST_RATE * 100,
+      description:   `${this.PLATFORM_FEE_RATE * 100}% platform fee + ${this.GST_RATE * 100}% GST`,
     };
   }
 }
 
-// Export for use in both frontend and backend
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = PaymentCalculator;
 } else {

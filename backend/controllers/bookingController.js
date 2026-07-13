@@ -5,20 +5,26 @@ const User = require('../models/User');
 const PLATFORM_FEE_RATE = 0.03;
 const GST_RATE = 0.05;
 
-const calculatePassengerFare = (baseFare, waivePlatformCharges = false) => {
-  const platformFee = baseFare * PLATFORM_FEE_RATE;
-  const gst = waivePlatformCharges
-    ? baseFare * GST_RATE
-    : (baseFare + platformFee) * GST_RATE;
-  const chargeTotal = waivePlatformCharges ? gst : platformFee + gst;
+/**
+ * Definitive passenger fare calculator.
+ *
+ * Normal:     total = base + (3% of base) + 5% of (base + 3% of base)
+ * First ride: total = base + 5% of base  (platform fee waived, GST on base only)
+ */
+const calculatePassengerFare = (baseFare, waivePlatformFee = false) => {
+  const platformFee    = baseFare * PLATFORM_FEE_RATE;                   // always computed for display
+  const chargedFee     = waivePlatformFee ? 0 : platformFee;
+  const gstBase        = waivePlatformFee ? baseFare : baseFare + platformFee;
+  const gst            = gstBase * GST_RATE;
+  const totalFare      = baseFare + chargedFee + gst;
 
   return {
-    serviceFee: waivePlatformCharges ? 0 : platformFee,
-    gst: gst,
-    totalFare: baseFare + chargeTotal,
-    originalServiceFee: platformFee,
-    originalGst: (baseFare + platformFee) * GST_RATE,
-    waivedAmount: waivePlatformCharges ? platformFee : 0,
+    serviceFee:        chargedFee,
+    gst,
+    totalFare,
+    originalServiceFee: platformFee,                       // for crossed-out display
+    originalGst:       (baseFare + platformFee) * GST_RATE, // what GST would be without waiver
+    waivedAmount:      waivePlatformFee ? platformFee : 0,
   };
 };
 
