@@ -485,6 +485,7 @@ export default function RideSearch() {
           destLng: endCoords?.lng,
           originState: startPlace?.state,
           destState: endPlace?.state,
+          ...(user ? { excludeDriverId: user._id } : {})
         }
       );
 
@@ -585,6 +586,7 @@ export default function RideSearch() {
           destState: endPlace?.state,
           includeCatchAll: 'true',
           catchAllPage: targetPage,
+          ...(user ? { excludeDriverId: user._id } : {})
         }
       );
 
@@ -622,6 +624,7 @@ export default function RideSearch() {
         globalAllRides: 'true',
         page: targetPage,
         limit: 20,
+        ...(user ? { excludeDriverId: user._id } : {})
       });
 
       const { rides: data, meta } = response;

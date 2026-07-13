@@ -1601,7 +1601,10 @@ function Home() {
     const fetchRides = async () => {
       setRidesLoading(true);
       try {
-        let res = await api.get('/rides/search', { params: { globalAllRides: 'true', limit: 8 } });
+        const params = { globalAllRides: 'true', limit: 8 };
+        if (user?._id) params.excludeDriverId = user._id;
+
+        let res = await api.get('/rides/search', { params });
         let data = res.data?.data || res.data || [];
         if (!Array.isArray(data)) data = res.data?.rides || [];
 
@@ -1618,7 +1621,7 @@ function Home() {
       }
     };
     fetchRides();
-  }, [authLoading]);
+  }, [authLoading, user?._id]);
 
   if (authLoading) {
     return (

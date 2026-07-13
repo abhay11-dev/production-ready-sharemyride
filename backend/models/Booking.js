@@ -107,9 +107,8 @@ const bookingSchema = new mongoose.Schema({
   matchQuality: {
     type: Number,
     min: 0,
-    max: 100,
     default: null,
-    comment: 'Route match percentage'
+    comment: 'Route match search score'
   },
 
   // ===========================

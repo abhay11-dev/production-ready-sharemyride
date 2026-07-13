@@ -312,7 +312,7 @@ exports.createBooking = async (req, res) => {
       userSearchDistance: userSearchDistance || null,
       perKmRate: ride.perKmRate || null,
       segmentFare: calculatedSegmentFare || segmentFare || null,
-      matchQuality: matchQuality || null,
+      matchQuality: matchQuality != null ? parseFloat(matchQuality) : null,
 
       // Fare breakdown - THIS IS THE KEY!
       // For segment bookings, baseFare should be for the SEGMENT only
@@ -424,7 +424,7 @@ exports.createBooking = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to create booking',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
+      error: error.message
     });
   }
 };

@@ -965,11 +965,26 @@ exports.searchRides = async (req, res) => {
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const excludeDriverId = req.query.excludeDriverId;
 
     const query = {
       isActive: true,
       rideStatus: { $nin: ['cancelled', 'completed', 'expired'] },
     };
+    
+    if (excludeDriverId) {
+      const mongoose = require('mongoose');
+      const oid = mongoose.Types.ObjectId.isValid(excludeDriverId)
+        ? new mongoose.Types.ObjectId(excludeDriverId)
+        : null;
+      if (oid) {
+        query.$nor = [
+          { driverId: oid },
+          { postedBy: oid },
+          { driver: oid },
+        ];
+      }
+    }
 
     if (date) {
       const searchDate = new Date(date);
