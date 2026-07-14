@@ -27,6 +27,7 @@
     "express": "^5.1.0",
     "express-validator": "^7.3.0",
     "fuse.js": "^7.1.0",
+    "google-auth-library": "^10.9.0",
     "haversine-distance": "^1.2.4",
     "helmet": "^8.1.0",
     "ical-generator": "^10.2.0",

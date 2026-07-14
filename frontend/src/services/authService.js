@@ -136,6 +136,16 @@ export async function loginUser({ email, password }) {
 }
 
 // ─────────────────────────────────────────────────────────
+// Google Login
+// ─────────────────────────────────────────────────────────
+export async function googleLogin(token) {
+  return request('/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+// ─────────────────────────────────────────────────────────
 // Forgot password — OTP request, OTP verify, then password reset
 // ─────────────────────────────────────────────────────────
 

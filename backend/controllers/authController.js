@@ -1,6 +1,9 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { isTestUser } = require('../utils/testBypass');
+const { OAuth2Client } = require('google-auth-library');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_FAILED_ATTEMPTS = 5;
@@ -888,6 +891,72 @@ const verifyEmail = async (req, res) => {
 // ─── Resend Verification Email ────────────────────────────────────────────────
 const resendVerificationEmail = resendSignupOtp;
 
+// ─── Google Auth ──────────────────────────────────────────────────────────────
+const googleAuth = async (req, res) => {
+  try {
+    const { token } = req.body; // this is the access_token
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'No Google token provided' });
+    }
+
+    // Verify access_token and fetch user info
+    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!userInfoResponse.ok) {
+      return res.status(401).json({ success: false, message: 'Invalid Google token' });
+    }
+
+    const payload = await userInfoResponse.json();
+    const { sub: googleId, email, name, picture } = payload;
+
+    let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (user) {
+      // User exists. Update googleId if not present
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = 'google';
+        user.avatar = user.avatar || picture;
+        await user.save();
+      }
+    } else {
+      // Create new user
+      user = await User.create({
+        name,
+        email: email.toLowerCase(),
+        googleId,
+        authProvider: 'google',
+        avatar: picture,
+        emailVerified: true,
+        accountStatus: 'ACTIVE'
+      });
+    }
+
+    user.lastLogin = new Date();
+    user.failedLoginAttempts = 0;
+    user.lockoutUntil = null;
+    await user.save();
+
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    setRefreshTokenCookie(res, refreshToken);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Google Login successful',
+      token: accessToken,
+      user: sanitizeUser(user)
+    });
+
+  } catch (error) {
+    console.error('Google auth error:', error.message);
+    return res.status(500).json({ success: false, message: 'Server error during Google auth' });
+  }
+};
+
 // ─── Exports ──────────────────────────────────────────────────────────────────
 module.exports = {
   signup,
@@ -904,5 +973,6 @@ module.exports = {
   verifyEmail,
   resendVerificationEmail,
   resendSignupOtp,
-  verifySignupOtp
+  verifySignupOtp,
+  googleAuth
 };

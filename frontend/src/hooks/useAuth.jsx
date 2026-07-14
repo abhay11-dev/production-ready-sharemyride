@@ -122,6 +122,28 @@ export function AuthProvider({ children }) {
     }
   }, [scheduleRefresh]);
 
+  const loginWithGoogle = useCallback(async (googleToken) => {
+    try {
+      const response = await api.post('/auth/google', { token: googleToken });
+      const { token, user: userData } = response.data;
+
+      setAccessToken(token);
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+      scheduleRefresh();
+
+      return { success: true, user: userData };
+
+    } catch (err) {
+      return {
+        success: false,
+        status: err.response?.status,
+        error:  err.response?.data?.message || err.message || 'Google Login failed.',
+        data:   err.response?.data || {}
+      };
+    }
+  }, [scheduleRefresh]);
+
   // ── Signup ─────────────────────────────────────────────────────────────────
   const signup = useCallback(async (details) => {
     try {
@@ -162,6 +184,7 @@ export function AuthProvider({ children }) {
     isLoading,
     isAuthenticated: !!user && !!getAccessToken(),
     login,
+    loginWithGoogle,
     signup,
     logout: handleLogout,
     silentRefresh,

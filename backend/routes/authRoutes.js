@@ -17,6 +17,7 @@ const {
   resendSignupOtp,
   verifySignupOtp,
   verifyResetOtp,
+  googleAuth,
 } = require('../controllers/authController');
 
 const { protect } = require('../middleware/auth');
@@ -34,6 +35,7 @@ router.post('/verify-email',              verifyEmail);
 router.post('/verify-otp',                verifySignupOtp);
 router.post('/resend-otp',                resendSignupOtp);
 router.post('/resend-verification-email', resendVerificationEmail);
+router.post('/google',                    googleAuth);
 
 // ── Protected routes (valid access token required) ────────────────────────────
 router.get ('/profile',  protect, getProfile);
