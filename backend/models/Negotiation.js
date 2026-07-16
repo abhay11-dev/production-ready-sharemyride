@@ -136,6 +136,34 @@ const negotiationSchema = new mongoose.Schema({
     default: null,
   },
 
+  // ── Reopen / lifecycle audit ─────────────────────────────────────────
+  // A rejected/cancelled/expired negotiation can be reopened by either
+  // party sending a fresh counter-offer (see canReopen() below). This
+  // tracks how many times that's happened, and statusHistory logs every
+  // transition (including reopens) so the negotiation's full lifecycle
+  // stays auditable in one document rather than fragmenting across
+  // multiple linked negotiations.
+  reopenCount: { type: Number, default: 0 },
+
+  statusHistory: {
+    type: [{
+      status: { type: String, required: true },
+      changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      changedAt: { type: Date, default: Date.now },
+      note: { type: String, trim: true, maxlength: 300 },
+    }],
+    default: [],
+  },
+
+  // ── Disputes ──────────────────────────────────────────────────────────
+  disputed: { type: Boolean, default: false },
+  disputeReason: { type: String, trim: true, maxlength: 500 },
+  disputeRaisedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  disputeRaisedAt: { type: Date, default: null },
+  disputeResolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  disputeResolution: { type: String, trim: true, maxlength: 500 },
+  disputeResolvedAt: { type: Date, default: null },
+
   // Soft delete pattern (matches existing app convention e.g. Ride.isActive)
   isActive: { type: Boolean, default: true },
 }, { timestamps: true });
@@ -144,6 +172,7 @@ negotiationSchema.index({ ride: 1, passenger: 1, status: 1 });
 negotiationSchema.index({ driver: 1, status: 1 });
 negotiationSchema.index({ passenger: 1, status: 1 });
 negotiationSchema.index({ status: 1, expiresAt: 1 });
+negotiationSchema.index({ disputed: 1, updatedAt: -1 });
 
 // Lazy expiry: checked on read paths (getById / list) rather than a cron job.
 negotiationSchema.methods.checkExpiry = function () {
@@ -151,6 +180,21 @@ negotiationSchema.methods.checkExpiry = function () {
     this.status = 'expired';
   }
   return this;
+};
+
+// Logs every status change to statusHistory and applies it — replaces bare
+// `negotiation.status = 'x'` assignments throughout the controller so the
+// full lifecycle (including reopens) is always auditable.
+negotiationSchema.methods.transitionTo = function (newStatus, actorId, note) {
+  this.statusHistory.push({ status: newStatus, changedBy: actorId, changedAt: new Date(), note });
+  this.status = newStatus;
+  return this;
+};
+
+// A negotiation can be reopened if it died non-terminally (rejected,
+// cancelled, expired) but never if a Booking already exists off it.
+negotiationSchema.methods.canReopen = function () {
+  return ['rejected', 'cancelled', 'expired'].includes(this.status) && !this.finalizedBookingId;
 };
 
 module.exports = mongoose.model('Negotiation', negotiationSchema);

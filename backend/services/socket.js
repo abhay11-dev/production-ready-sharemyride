@@ -153,24 +153,42 @@ function initSocket(httpServer) {
         const isParticipant = [conversation.passenger.toString(), conversation.driver.toString()].includes(userId);
         if (!isParticipant) return ack?.({ success: false, message: 'Not a participant in this conversation' });
 
-        // Quick-scan/mask BEFORE saving (see chatController for the
-        // identical pattern used on the REST send path — both writers
-        // go through the same moderationService functions, not duplicated logic)
-        const { maskedText, quickScanMatches, originalText } = scanAndMask(text.trim());
+        const { checkRateLimit, evaluateText, createFlagForMessage } = require('./moderationFilter');
+
+        if (!checkRateLimit(userId, conversationId)) {
+          return ack?.({ success: false, message: 'You are sending messages too quickly. Please slow down.' });
+        }
+
+        const evaluation = evaluateText(text.trim());
 
         const message = await Message.create({
           conversation: conversationId,
           sender: userId,
           type: 'text',
-          text: maskedText,
+          text: evaluation.text,
         });
 
-        // Schedule background AI analysis now that the message has a real _id
-        scheduleAnalysis({ message, conversation, senderId: userId, originalText, quickScanMatches });
+        // Formal flag row — only written once the Message._id exists, since
+        // ModerationFlag.message is a required ref.
+        createFlagForMessage({
+          messageId: message._id,
+          conversationId,
+          senderId: userId,
+          evaluation,
+        }).catch(() => { /* already logged inside createFlagForMessage */ });
+
+        // Background AI analysis, unchanged — still fed the true original
+        // text so it isn't analyzing an already-masked string.
+        scheduleAnalysis({
+          message,
+          conversation,
+          senderId: userId,
+          originalText: evaluation.originalText,
+          quickScanMatches: evaluation.quickScanMatches,
+        });
 
         const isPassenger = conversation.passenger.toString() === userId;
-        conversation.lastMessage = { text: maskedText, sender: userId, sentAt: message.createdAt };
-        // Increment the OTHER participant's unread count
+        conversation.lastMessage = { text: evaluation.text, sender: userId, sentAt: message.createdAt };
         if (isPassenger) conversation.unreadCount.driver += 1;
         else conversation.unreadCount.passenger += 1;
         await conversation.save();

@@ -25,6 +25,8 @@ const auditLogSchema = new mongoose.Schema(
                 // Negotiation actions (Milestone 3)
                 'negotiation.initiate', 'negotiation.counter', 'negotiation.accept',
                 'negotiation.reject', 'negotiation.cancel', 'negotiation.finalize',
+                // Negotiation dispute actions (Milestone 9)
+                'negotiation.dispute_raised', 'negotiation.dispute_resolved',
                 // Moderation actions (Milestone 5)
                 'moderation.flag',
                 // Ride Safety Platform — Phase 5 (Privacy, Consent & Retention)

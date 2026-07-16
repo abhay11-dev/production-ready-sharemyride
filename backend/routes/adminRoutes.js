@@ -24,6 +24,11 @@ const {
   runReminderCheck,
 } = require('../controllers/adminController');
 
+// Negotiation dispute resolution lives in negotiationController (it already
+// owns the Negotiation model + its transitionTo/audit logic) rather than
+// duplicating that logic inside adminController.
+const { resolveDispute, getDisputedNegotiations } = require('../controllers/negotiationController');
+
 // ── Auth ────────────────────────────────────────────────────────────────────
 router.post('/login', adminLogin);
 
@@ -61,6 +66,10 @@ router.put('/reports/:id', protectAdmin, updateReport);
 // ── Blogs ─────────────────────────────────────────────────────────────────────
 router.get('/blogs', protectAdmin, getBlogsList);
 router.put('/blogs/:id', protectAdmin, updateBlog);
+
+// ── Negotiation Disputes ──────────────────────────────────────────────────────
+router.get('/negotiations/disputed', protectAdmin, getDisputedNegotiations);
+router.post('/negotiations/:id/resolve-dispute', protectAdmin, resolveDispute);
 
 // ── Upcoming Rides & Reminder Scheduler ──────────────────────────────────────
 router.get('/upcoming-rides', protectAdmin, getUpcomingRides);

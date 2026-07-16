@@ -13,7 +13,7 @@ import {
   finalizeNegotiation,
   counterOffer,
   initiateNegotiation,
-  cancelNegotiation,
+  raiseDispute
 } from '../../services/negotiationService';
 import {
   getConversationById,
@@ -92,11 +92,10 @@ function MessageBubble({ message, isOwn }) {
   return (
     <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow-sm ${
-          isOwn
-            ? 'bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-br-sm'
-            : 'bg-white border border-gray-100 text-gray-900 rounded-bl-sm'
-        }`}
+        className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow-sm ${isOwn
+          ? 'bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-br-sm'
+          : 'bg-white border border-gray-100 text-gray-900 rounded-bl-sm'
+          }`}
       >
         <p className="whitespace-pre-wrap break-words">{message.text}</p>
 
@@ -344,9 +343,12 @@ function CounterOfferModal({ currentFare, onSubmit, onClose, busy }) {
   );
 }
 
+// ─── Compact pinned negotiation banner ─────────────────────────────────
 function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage }) {
   const [busy, setBusy] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
+  const [disputeOpen, setDisputeOpen] = useState(false);
+
   if (!negotiation) return null;
 
   const isDriver = idOf(negotiation.driver) === userId;
@@ -357,6 +359,11 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
   const lastProposal = negotiation.proposals?.[negotiation.proposals.length - 1];
   const myRole = isDriver ? 'driver' : 'passenger';
   const isMyTurn = !lastProposal || lastProposal.proposedBy !== myRole;
+
+  // A rejected/cancelled/expired negotiation without a finalized booking can
+  // be reopened by either side sending a fresh counter-offer.
+  const canReopen = ['rejected', 'cancelled', 'expired'].includes(negotiation.status)
+    && !negotiation.finalizedBookingId;
 
   const runAction = async (actionFn, successMsg, cannedKind) => {
     setBusy(true);
@@ -380,13 +387,24 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
     try {
       await counterOffer(negotiation._id, { fare: counterFare });
       setCounterOpen(false);
-      toastService.success('Counter offer sent');
+      toastService.success(canReopen ? 'Negotiation reopened with a new offer' : 'Counter offer sent');
       await onRefresh();
-      if (onSendCannedMessage) {
-        onSendCannedMessage(buildNegotiationResponseMessage(negotiation.source, 'counter', terms, counterFare), { prefillOnly: true });
-      }
     } catch (err) {
-      toastService.error(err.response?.data?.message || 'Could not send counter offer.');
+      toastService.error(err.response?.data?.message || 'Could not send that counter-offer.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisputeSubmit = async (reason) => {
+    setBusy(true);
+    try {
+      await raiseDispute(negotiation._id, reason);
+      toastService.success('Dispute raised — our team will review this conversation.');
+      setDisputeOpen(false);
+      await onRefresh();
+    } catch (err) {
+      toastService.error(err.response?.data?.message || 'Could not raise a dispute right now.');
     } finally {
       setBusy(false);
     }
@@ -402,21 +420,45 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
           </span>
           {terms.fare != null && (
             <span className="text-xs font-semibold text-gray-700 mt-0.5">
-              Proposed Fare: <span className="text-indigo-700">₹{terms.fare}</span> 
+              Proposed Fare: <span className="text-indigo-700">₹{terms.fare}</span>
               {terms.seats && <span className="text-gray-500 font-normal ml-1">({terms.seats} seats)</span>}
             </span>
           )}
         </div>
-        {['pending', 'countered'].includes(negotiation.status) && (
-          <button
-            type="button"
-            onClick={() => runAction(cancelNegotiation, 'Negotiation ended')}
-            className="text-[10px] text-gray-500 hover:text-red-600 transition-colors font-semibold flex items-center gap-1"
-          >
-            <Icon name="XCircle" size="xs" /> End
-          </button>
-        )}
+
+        <div className="flex items-center gap-2">
+          {negotiation.disputed && (
+            <span className="text-[10px] font-bold text-red-600 flex items-center gap-1">
+              <Icon name="AlertTriangle" size="xs" /> Disputed
+            </span>
+          )}
+          {['pending', 'countered'].includes(negotiation.status) && (
+            <button
+              type="button"
+              onClick={() => runAction(cancelNegotiation, 'Negotiation ended')}
+              className="text-[10px] text-gray-500 hover:text-red-600 transition-colors font-semibold flex items-center gap-1"
+            >
+              <Icon name="XCircle" size="xs" /> End
+            </button>
+          )}
+          {!negotiation.disputed && ['pending', 'countered', 'accepted', 'finalized'].includes(negotiation.status) && (
+            <button
+              type="button"
+              onClick={() => setDisputeOpen(true)}
+              className="text-[10px] text-gray-400 hover:text-amber-600 transition-colors font-semibold flex items-center gap-1"
+            >
+              <Icon name="Flag" size="xs" /> Dispute
+            </button>
+          )}
+        </div>
       </div>
+
+      {terms.seats && (
+        <div className="pt-1 border-t border-indigo-100 flex items-center gap-1.5 text-xs text-gray-500">
+          <Icon name="Users" size="xs" />
+          {terms.seats} seat{terms.seats > 1 ? 's' : ''}
+        </div>
+      )}
 
       {['pending', 'countered'].includes(negotiation.status) && (
         isMyTurn ? (
@@ -476,6 +518,17 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
         </div>
       )}
 
+      {canReopen && (
+        <button
+          disabled={busy}
+          onClick={() => setCounterOpen(true)}
+          className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+        >
+          <Icon name="RotateCcw" size="xs" />
+          Reopen with a new offer
+        </button>
+      )}
+
       {counterOpen && (
         <CounterOfferModal
           currentFare={terms.fare}
@@ -484,7 +537,142 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
           onSubmit={handleCounterSubmit}
         />
       )}
+
+      {disputeOpen && (
+        <DisputeModal
+          busy={busy}
+          onClose={() => setDisputeOpen(false)}
+          onSubmit={handleDisputeSubmit}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Dispute modal ───────────────────────────────────────────────────────
+function DisputeModal({ onSubmit, onClose, busy }) {
+  const [reason, setReason] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!reason.trim()) {
+      toastService.error('Please describe the issue before submitting.');
+      return;
+    }
+    onSubmit(reason.trim());
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-400 px-5 py-3.5 rounded-t-2xl flex items-center justify-between">
+          <h3 className="text-white font-bold text-sm flex items-center gap-2">
+            <Icon name="Flag" size="sm" className="text-white" />
+            Raise a Dispute
+          </h3>
+          <button type="button" onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/15 hover:bg-white/25 text-white">
+            <Icon name="X" size="xs" className="text-white" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-3">
+          <label className="block text-xs font-semibold text-gray-700">What went wrong?</label>
+          <textarea
+            value={reason} autoFocus disabled={busy} rows={4} maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-amber-500 outline-none resize-none"
+            placeholder="Describe the issue — our support team will review this negotiation's full history."
+          />
+          <p className="text-[11px] text-gray-400">This negotiation will be flagged for admin review. It stays usable while under review.</p>
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} disabled={busy} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm font-semibold hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={busy} className="flex-1 bg-amber-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-amber-700 disabled:opacity-50">
+              {busy ? 'Submitting…' : 'Submit dispute'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+{
+  ['pending', 'countered'].includes(negotiation.status) && (
+    isMyTurn ? (
+      <div className="flex gap-2">
+        <button
+          disabled={busy}
+          onClick={() => runAction(acceptNegotiation, 'Terms accepted', 'accept')}
+          className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
+        >
+          <Icon name="Check" size="xs" /> Yes
+        </button>
+        <button
+          disabled={busy}
+          onClick={() => runAction(rejectNegotiation, 'Negotiation declined', 'decline')}
+          className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 transition-colors"
+        >
+          <Icon name="X" size="xs" /> No
+        </button>
+        {negotiation.source === 'negotiate_fare' && (
+          <button
+            disabled={busy}
+            onClick={() => setCounterOpen(true)}
+            className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <Icon name="RefreshCw" size="xs" /> Counter
+          </button>
+        )}
+      </div>
+    ) : (
+      <div className="bg-white/60 border border-amber-100 rounded-lg px-3 py-1.5 flex items-center justify-center gap-1.5">
+        <Icon name="Clock" size="xs" className="text-amber-600 flex-shrink-0" />
+        <p className="text-[10px] font-medium text-amber-800">Waiting for a reply...</p>
+      </div>
+    )
+  )
+}
+
+{
+  negotiation.status === 'accepted' && isDriver && (
+    <button
+      disabled={busy}
+      onClick={() => runAction(finalizeNegotiation, 'Booking created')}
+      className="w-full flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+    >
+      <Icon name="Ticket" size="xs" />
+      Negotiation Done - Book Ride
+    </button>
+  )
+}
+{
+  negotiation.status === 'accepted' && !isDriver && (
+    <div className="bg-amber-50 rounded-lg p-2 flex items-center justify-center gap-1.5">
+      <Icon name="Clock" size="xs" className="text-amber-600 flex-shrink-0" />
+      <p className="text-[10px] font-medium text-amber-800">Waiting for driver to finalize.</p>
+    </div>
+  )
+}
+{
+  negotiation.status === 'finalized' && (
+    <div className="bg-blue-50/80 rounded-lg p-2 flex items-center justify-center gap-1.5">
+      <Icon name="CheckCircle" size="xs" className="text-blue-600 flex-shrink-0" />
+      <p className="text-[10px] font-bold text-blue-800">Booking confirmed 🎉</p>
+    </div>
+  )
+}
+      </div >
+
+  { counterOpen && (
+    <CounterOfferModal
+      currentFare={terms.fare}
+      busy={busy}
+      onClose={() => setCounterOpen(false)}
+      onSubmit={handleCounterSubmit}
+    />
+  )}
+    </div >
   );
 }
 
@@ -674,7 +862,7 @@ function LiveNegotiationStatusPanel({ rideId, refreshToken }) {
     setLoading(true);
     getMyNegotiations({ rideId })
       .then((data) => { if (!cancelled) setThreads(data); })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [rideId, refreshToken]);
@@ -829,7 +1017,7 @@ export default function ChatThread() {
   useEffect(() => {
     const negId = location.state?.negotiationId;
     if (negId) {
-      getNegotiationById(negId).then(setNegotiation).catch(() => {});
+      getNegotiationById(negId).then(setNegotiation).catch(() => { });
     } else {
       setNegotiation(null);
     }
@@ -1082,127 +1270,125 @@ export default function ChatThread() {
                     key={m._id}
                     message={m}
                     isOwn={idOf(m.sender) === user?._id}
-              />
-            ))
-          )}
-          {typingLabel && (
-            <p className="text-xs text-gray-400 italic px-2 flex items-center gap-1.5">
-              <span className="flex gap-0.5">
-                <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
-                <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
-                <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" />
-              </span>
-              {typingLabel}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Composer — pinned to the bottom, never moves when the message
-          list scrolls or the mobile keyboard opens. */}
-      <div className="flex-shrink-0 bg-white">
-        {/* Compact pinned negotiation banner directly above composer */}
-        <NegotiationPanel
-          negotiation={negotiation}
-          userId={user?._id}
-          onRefresh={refreshNegotiation}
-          onSendCannedMessage={handleSendCannedMessage}
-        />
-        {/* Preference status cards, slide-up panel, passenger only. */}
-        {quickRepliesOpen && !isDriver && (
-          <div className="max-w-3xl mx-auto px-4 sm:px-5 pt-3">
-            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">
-                Ask the driver about…
-              </p>
-              {preferenceCards.length === 0 ? (
-                <p className="text-xs text-gray-400 px-1 pb-1">Preferences aren't available for this ride yet.</p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {preferenceCards.map((card) => (
-                    <button
-                      key={card.key}
-                      type="button"
-                      onClick={() => handleQuickReplyClick(card)}
-                      className="flex flex-col items-start gap-1 text-left p-2.5 rounded-xl bg-white border border-gray-200 hover:border-indigo-300 hover:shadow-sm transition-all"
-                    >
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
-                        <Icon name={card.icon} size="xs" className="text-indigo-500" />
-                        {card.label}
-                      </span>
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                        card.allowed ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        Status: {card.allowed ? 'Allowed' : 'Not allowed'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                  />
+                ))
+              )}
+              {typingLabel && (
+                <p className="text-xs text-gray-400 italic px-2 flex items-center gap-1.5">
+                  <span className="flex gap-0.5">
+                    <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" />
+                  </span>
+                  {typingLabel}
+                </p>
               )}
             </div>
           </div>
-        )}
 
-        {/* Pending-card-action indicator — shows once a preference or
+          {/* Composer — pinned to the bottom, never moves when the message
+          list scrolls or the mobile keyboard opens. */}
+          <div className="flex-shrink-0 bg-white">
+            {/* Compact pinned negotiation banner directly above composer */}
+            <NegotiationPanel
+              negotiation={negotiation}
+              userId={user?._id}
+              onRefresh={refreshNegotiation}
+              onSendCannedMessage={handleSendCannedMessage}
+            />
+            {/* Preference status cards, slide-up panel, passenger only. */}
+            {quickRepliesOpen && !isDriver && (
+              <div className="max-w-3xl mx-auto px-4 sm:px-5 pt-3">
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3">
+                  <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">
+                    Ask the driver about…
+                  </p>
+                  {preferenceCards.length === 0 ? (
+                    <p className="text-xs text-gray-400 px-1 pb-1">Preferences aren't available for this ride yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {preferenceCards.map((card) => (
+                        <button
+                          key={card.key}
+                          type="button"
+                          onClick={() => handleQuickReplyClick(card)}
+                          className="flex flex-col items-start gap-1 text-left p-2.5 rounded-xl bg-white border border-gray-200 hover:border-indigo-300 hover:shadow-sm transition-all"
+                        >
+                          <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
+                            <Icon name={card.icon} size="xs" className="text-indigo-500" />
+                            {card.label}
+                          </span>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${card.allowed ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                            Status: {card.allowed ? 'Allowed' : 'Not allowed'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Pending-card-action indicator — shows once a preference or
             negotiation card is picked, so it's clear the next message sent
             will open a structured negotiation thread, with an easy way to
             back out of it. */}
-        {pendingCardAction && (
-          <div className="max-w-3xl mx-auto px-4 sm:px-5 pt-2.5">
-            <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-full pl-3 pr-1.5 py-1">
-              <Icon name="Sliders" size="xs" className="text-indigo-500" />
-              <span className="text-xs font-semibold text-indigo-700">
-                Replying about: {pendingCardAction.label || threadLabel(pendingCardAction)}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPendingCardAction(null)}
-                className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-indigo-100 text-indigo-500 transition-colors"
-              >
-                <Icon name="X" size="xs" />
-              </button>
+            {pendingCardAction && (
+              <div className="max-w-3xl mx-auto px-4 sm:px-5 pt-2.5">
+                <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-full pl-3 pr-1.5 py-1">
+                  <Icon name="Sliders" size="xs" className="text-indigo-500" />
+                  <span className="text-xs font-semibold text-indigo-700">
+                    Replying about: {pendingCardAction.label || threadLabel(pendingCardAction)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingCardAction(null)}
+                    className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-indigo-100 text-indigo-500 transition-colors"
+                  >
+                    <Icon name="X" size="xs" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="px-4 sm:px-5 py-3 sm:py-4">
+              <form onSubmit={handleSend} className="flex items-center gap-2">
+                {!isDriver && (
+                  <button
+                    type="button"
+                    onClick={() => setQuickRepliesOpen((v) => !v)}
+                    className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full border transition-colors ${quickRepliesOpen
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
+                      : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}
+                    title="Ask about a preference"
+                  >
+                    <Icon name="Sliders" size="button" />
+                  </button>
+                )}
+                <input
+                  value={text}
+                  onChange={handleInputChange}
+                  placeholder="Type a message…"
+                  maxLength={1000}
+                  disabled={sending}
+                  className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:opacity-60 transition-shadow"
+                />
+                <button
+                  type="submit"
+                  disabled={!text.trim() || sending}
+                  className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white disabled:opacity-40 transition-all shadow-sm"
+                >
+                  {sending ? (
+                    <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Icon name="ArrowRight" size="button" className="text-white" />
+                  )}
+                </button>
+              </form>
             </div>
           </div>
-        )}
-
-        <div className="px-4 sm:px-5 py-3 sm:py-4">
-          <form onSubmit={handleSend} className="flex items-center gap-2">
-            {!isDriver && (
-              <button
-                type="button"
-                onClick={() => setQuickRepliesOpen((v) => !v)}
-                className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full border transition-colors ${
-                  quickRepliesOpen
-                    ? 'bg-indigo-50 border-indigo-200 text-indigo-600'
-                    : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-                title="Ask about a preference"
-              >
-                <Icon name="Sliders" size="button" />
-              </button>
-            )}
-            <input
-              value={text}
-              onChange={handleInputChange}
-              placeholder="Type a message…"
-              maxLength={1000}
-              disabled={sending}
-              className="flex-1 bg-gray-50 border border-gray-200 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none disabled:opacity-60 transition-shadow"
-            />
-            <button
-              type="submit"
-              disabled={!text.trim() || sending}
-              className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white disabled:opacity-40 transition-all shadow-sm"
-            >
-              {sending ? (
-                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              ) : (
-                <Icon name="ArrowRight" size="button" className="text-white" />
-              )}
-            </button>
-          </form>
-        </div>
-      </div>
         </div>
 
         {/* Right panel — ride summary, AI conversation summary, ride
@@ -1244,9 +1430,8 @@ export default function ChatThread() {
                           <Icon name={card.icon} size="xs" className="text-indigo-500" />
                           {card.label}
                         </span>
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                          card.allowed ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
-                        }`}>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${card.allowed ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'
+                          }`}>
                           {card.allowed ? 'Allowed' : 'Not allowed'}
                         </span>
                       </button>

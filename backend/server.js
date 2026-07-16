@@ -4,8 +4,8 @@ const mongoose = require('mongoose');
 const cors = require("cors");
 const cookieParser = require('cookie-parser');
 const path = require('path');
-const http = require('http'); // ✅ Milestone 4 — needed to attach Socket.IO
-const { initSocket } = require('./services/socket'); // ✅ Milestone 4 — chat websocket
+const http = require('http');
+const { initSocket } = require('./services/socket');
 
 const app = express();
 
@@ -96,6 +96,7 @@ const rideLifecycleRoutes = require('./routes/rideLifecycleRoutes'); // Ride Saf
 const emergencyRoutes = require('./routes/emergencyRoutes'); // Ride Safety Platform — Phase 4
 const trustedContactsRoutes = require('./routes/trustedContactsRoutes'); // Ride Safety Platform — Phase 5
 const { startRideDataRetentionScheduler } = require('./services/jobs/rideDataRetentionScheduler'); // Ride Safety Platform — Phase 5
+const { startNegotiationExpiryScheduler } = require('./services/jobs/negotiationExpiryScheduler'); // Negotiation dispute/reopen/expiry build
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -206,6 +207,11 @@ initSocket(server);
 
 // Ride Safety Platform — Phase 5: periodic auto-archive + data minimization sweep.
 startRideDataRetentionScheduler();
+
+// Negotiation dispute/reopen/expiry build: proactively expires stale
+// pending/countered negotiations every 5 minutes instead of relying only
+// on the lazy checkExpiry() check on read paths.
+startNegotiationExpiryScheduler();
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {

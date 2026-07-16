@@ -8,6 +8,7 @@ const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const Booking = require('../models/Booking');
 const AuditLog = require('../models/AuditLogs');
+const { evaluateText, checkRateLimit } = require('../services/moderationFilter');
 
 // Small helper — write an audit log entry without ever throwing (a failed
 // audit write should never block the actual negotiation action)
@@ -40,14 +41,14 @@ function roleOf(negotiation, userId) {
 const VALID_SOURCES = ['chat', 'negotiate_fare', 'request_partial', 'discuss_pickup', 'discuss_drop', 'preference'];
 
 const PREFERENCE_LABELS = {
-  smoking: 'smoking',
-  music: 'playing music',
-  pets: 'travelling with a pet',
-  luggage: 'extra luggage',
-  womenOnly: 'women-only seating',
-  talkative: 'conversation preference',
-  childSeat: 'a child seat',
-  flexiblePickup: 'a flexible pickup point',
+    smoking: 'smoking',
+    music: 'playing music',
+    pets: 'travelling with a pet',
+    luggage: 'extra luggage',
+    womenOnly: 'women-only seating',
+    talkative: 'conversation preference',
+    childSeat: 'a child seat',
+    flexiblePickup: 'a flexible pickup point',
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -141,6 +142,14 @@ exports.initiateNegotiation = async (req, res) => {
             });
         }
 
+        // Moderation pass — mask-only here (no Message document exists yet
+        // for this proposal text, and negotiation proposals never become one,
+        // so there is no ModerationFlag row to attach to for this path).
+        let safeMessage = message || '';
+        if (safeMessage) {
+            safeMessage = evaluateText(safeMessage).text;
+        }
+
         const seatsRequested = Math.min(8, Math.max(1, parseInt(seats) || 1));
         const availableSeats = ride.availableSeats ?? ride.seats ?? 0;
 
@@ -177,8 +186,9 @@ exports.initiateNegotiation = async (req, res) => {
                 proposedBy: 'passenger',
                 proposedByUser: req.user._id,
                 terms,
-                message: message || '',
+                message: safeMessage,
             }],
+            statusHistory: [{ status: 'pending', changedBy: req.user._id, note: `Negotiation initiated (${source})` }],
         });
 
         await negotiation.save();
@@ -344,6 +354,11 @@ exports.getNegotiationById = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/negotiations/:id/counter — either party proposes new terms
 // body: { pickupLocation?, dropLocation?, fare?, time?, date?, seats?, message? }
+//
+// Also doubles as the REOPEN path: if the negotiation is rejected/cancelled/
+// expired (and has no finalizedBookingId), a fresh counter-offer here
+// reopens it — re-checking ride activity and seat capacity first, since
+// time may have passed since it died.
 // ─────────────────────────────────────────────────────────────────────────
 exports.counterOffer = async (req, res) => {
     try {
@@ -354,16 +369,22 @@ exports.counterOffer = async (req, res) => {
         if (!role) return res.status(403).json({ success: false, message: 'Not authorized' });
 
         negotiation.checkExpiry();
-        if (!['pending', 'countered'].includes(negotiation.status)) {
+
+        const isLive = ['pending', 'countered'].includes(negotiation.status);
+        const isReopen = !isLive && negotiation.canReopen();
+
+        if (!isLive && !isReopen) {
             if (negotiation.isModified()) await negotiation.save();
             return res.status(400).json({
                 success: false,
-                message: `Cannot counter a negotiation with status "${negotiation.status}"`,
+                message: negotiation.finalizedBookingId
+                    ? 'Cannot counter a finalized negotiation — it already has a booking.'
+                    : `Cannot counter a negotiation with status "${negotiation.status}"`,
             });
         }
 
-        if (negotiation.roundCount >= negotiation.maxRounds) {
-            negotiation.status = 'expired';
+        if (isLive && negotiation.roundCount >= negotiation.maxRounds) {
+            negotiation.transitionTo('expired', req.user._id, `Max rounds (${negotiation.maxRounds}) reached`);
             await negotiation.save();
             return res.status(409).json({
                 success: false,
@@ -378,6 +399,33 @@ exports.counterOffer = async (req, res) => {
         }
         if (message && typeof message === 'string' && message.length > 500) {
             return res.status(400).json({ success: false, message: 'Message must be 500 characters or fewer' });
+        }
+
+        // Reopen-specific re-validation: ride must still be active, and the
+        // requested (or carried-forward) seat count must still fit.
+        let ride = null;
+        if (isReopen) {
+            ride = await Ride.findById(negotiation.ride);
+            if (!ride || !ride.isActive) {
+                return res.status(404).json({ success: false, message: 'Ride is no longer active — cannot reopen' });
+            }
+            const availableSeats = ride.availableSeats ?? ride.seats ?? 0;
+            const requestedSeats = seats != null ? parseInt(seats) : negotiation.currentTerms.seats;
+            if (requestedSeats > availableSeats) {
+                return res.status(409).json({
+                    success: false,
+                    message: `Only ${availableSeats} seat(s) available now — adjust seats to reopen.`,
+                });
+            }
+        }
+
+        // Rate limit + moderation pass on the message field
+        let safeMessage = message || '';
+        if (safeMessage) {
+            if (!checkRateLimit(req.user._id, `negotiation:${negotiation._id}`)) {
+                return res.status(429).json({ success: false, message: 'You are sending offers too quickly. Please slow down.' });
+            }
+            safeMessage = evaluateText(safeMessage).text;
         }
 
         const newTerms = {
@@ -412,28 +460,42 @@ exports.counterOffer = async (req, res) => {
             proposedBy: role,
             proposedByUser: req.user._id,
             terms: newTerms,
-            message: message || '',
+            message: safeMessage,
         });
         negotiation.roundCount += 1;
-        negotiation.status = 'countered';
-        // Reset the expiry window on each counter-offer (Q4 default)
+
+        if (isReopen) {
+            negotiation.reopenCount += 1;
+            negotiation.transitionTo('countered', req.user._id, `Reopened after ${negotiation.status} (round ${negotiation.roundCount})`);
+        } else {
+            negotiation.transitionTo('countered', req.user._id, `Round ${negotiation.roundCount} counter-offer by ${role}`);
+        }
+
+        // Reset the expiry window on each counter-offer / reopen (Q4 default)
         negotiation.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
         await negotiation.save();
         await logAudit({
             actor: req.user, action: 'negotiation.counter', resourceId: negotiation._id,
-            note: `Round ${negotiation.roundCount} counter-offer by ${role}`,
+            note: isReopen
+                ? `Negotiation reopened, round ${negotiation.roundCount} by ${role}`
+                : `Round ${negotiation.roundCount} counter-offer by ${role}`,
         });
 
         // Post a system message into the linked conversation so the counter
-        // is visible inline, same pattern as initiate/finalize.
+        // (or reopen) is visible inline, same pattern as initiate/finalize.
         try {
             const conversation = await Conversation.findOne({ negotiationId: negotiation._id });
             if (conversation) {
                 const actorName = req.user.name || (role === 'passenger' ? 'Passenger' : 'Driver');
-                const counterText = negotiation.source === 'preference'
-                    ? `${actorName} countered on ${PREFERENCE_LABELS[negotiation.preferenceKey] || 'the preference request'}${preferenceNote ? `: "${preferenceNote}"` : '.'}`
-                    : `${actorName} countered: ₹${newTerms.fare} for ${newTerms.seats} seat(s).`;
+                let counterText;
+                if (negotiation.source === 'preference') {
+                    counterText = `${actorName} countered on ${PREFERENCE_LABELS[negotiation.preferenceKey] || 'the preference request'}${preferenceNote ? `: "${preferenceNote}"` : '.'}`;
+                } else if (isReopen) {
+                    counterText = `${actorName} reopened this negotiation with a new offer: ₹${newTerms.fare} for ${newTerms.seats} seat(s).`;
+                } else {
+                    counterText = `${actorName} countered: ₹${newTerms.fare} for ${newTerms.seats} seat(s).`;
+                }
                 const sysMsg = await Message.create({
                     conversation: conversation._id,
                     type: 'system',
@@ -447,7 +509,7 @@ exports.counterOffer = async (req, res) => {
                     const { getIO, emitToUser } = require('../services/socket');
                     getIO().to(`conversation:${conversation._id}`).emit('message:new', sysMsg);
                     const otherUserId = otherRole === 'passenger' ? negotiation.passenger : negotiation.driver;
-                    emitToUser(otherUserId, 'negotiation:countered', {
+                    emitToUser(otherUserId, isReopen ? 'negotiation:reopened' : 'negotiation:countered', {
                         negotiationId: negotiation._id, conversationId: conversation._id, message: sysMsg.text,
                     });
                 } catch { /* non-fatal */ }
@@ -484,7 +546,7 @@ exports.acceptNegotiation = async (req, res) => {
             });
         }
 
-        negotiation.status = 'accepted';
+        negotiation.transitionTo('accepted', req.user._id, `Accepted by ${role}`);
         if (negotiation.source === 'preference' && negotiation.preferenceKey) {
             const key = negotiation.preferenceKey;
             if (negotiation.currentTerms.preferences?.[key]) {
@@ -548,7 +610,7 @@ exports.rejectNegotiation = async (req, res) => {
             });
         }
 
-        negotiation.status = 'rejected';
+        negotiation.transitionTo('rejected', req.user._id, `Rejected by ${role}`);
         if (negotiation.source === 'preference' && negotiation.preferenceKey) {
             const key = negotiation.preferenceKey;
             if (negotiation.currentTerms.preferences?.[key]) {
@@ -609,7 +671,7 @@ exports.cancelNegotiation = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Cannot cancel a finalized negotiation' });
         }
 
-        negotiation.status = 'cancelled';
+        negotiation.transitionTo('cancelled', req.user._id, `Cancelled by ${role}`);
         await negotiation.save();
         await logAudit({
             actor: req.user, action: 'negotiation.cancel', resourceId: negotiation._id,
@@ -714,7 +776,7 @@ exports.finalizeNegotiation = async (req, res) => {
         ride.availableSeats = Math.max(0, availableSeats - seatsBooked);
         await ride.save();
 
-        negotiation.status = 'finalized';
+        negotiation.transitionTo('finalized', req.user._id, `Finalized into booking ${booking._id}`);
         negotiation.finalizedBookingId = booking._id;
         await negotiation.save();
 
@@ -752,6 +814,88 @@ exports.finalizeNegotiation = async (req, res) => {
         res.status(201).json({ success: true, data: { negotiation, booking } });
     } catch (error) {
         console.error('❌ finalizeNegotiation error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/negotiations/:id/dispute — either party flags a negotiation
+// for admin review. Non-terminal — the negotiation continues to function
+// normally while disputed=true; this is a visibility flag, not a lock.
+// ─────────────────────────────────────────────────────────────────────────
+exports.raiseDispute = async (req, res) => {
+    try {
+        const { reason } = req.body;
+        if (!reason?.trim()) return res.status(400).json({ success: false, message: 'A dispute reason is required' });
+
+        const negotiation = await Negotiation.findById(req.params.id);
+        if (!negotiation) return res.status(404).json({ success: false, message: 'Negotiation not found' });
+        if (!roleOf(negotiation, req.user._id)) return res.status(403).json({ success: false, message: 'Not authorized' });
+        if (negotiation.disputed) return res.status(400).json({ success: false, message: 'Already under dispute' });
+
+        negotiation.disputed = true;
+        negotiation.disputeReason = reason.trim();
+        negotiation.disputeRaisedBy = req.user._id;
+        negotiation.disputeRaisedAt = new Date();
+        negotiation.statusHistory.push({ status: negotiation.status, changedBy: req.user._id, note: `Dispute raised: ${reason.trim()}` });
+        await negotiation.save();
+
+        await logAudit({ actor: req.user, action: 'negotiation.dispute_raised', resourceId: negotiation._id, note: reason.trim() });
+        res.json({ success: true, data: negotiation });
+    } catch (error) {
+        console.error('❌ raiseDispute error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/admin/negotiations/:id/resolve-dispute — admin only
+// body: { resolution, forceStatus? } — forceStatus optional: 'rejected' | 'cancelled'
+// ─────────────────────────────────────────────────────────────────────────
+exports.resolveDispute = async (req, res) => {
+    try {
+        const { resolution, forceStatus } = req.body;
+        const negotiation = await Negotiation.findById(req.params.id);
+        if (!negotiation) return res.status(404).json({ success: false, message: 'Negotiation not found' });
+        if (!negotiation.disputed) return res.status(400).json({ success: false, message: 'This negotiation is not under dispute' });
+
+        negotiation.disputed = false;
+        negotiation.disputeResolvedBy = req.user._id;
+        negotiation.disputeResolution = resolution?.trim() || '';
+        negotiation.disputeResolvedAt = new Date();
+
+        if (forceStatus && ['rejected', 'cancelled'].includes(forceStatus)) {
+            negotiation.transitionTo(forceStatus, req.user._id, `Admin resolved dispute: ${resolution?.trim()}`);
+        } else {
+            negotiation.statusHistory.push({ status: negotiation.status, changedBy: req.user._id, note: `Dispute resolved (no status change): ${resolution?.trim()}` });
+        }
+
+        await negotiation.save();
+        await logAudit({ actor: req.user, action: 'negotiation.dispute_resolved', resourceId: negotiation._id, note: resolution?.trim() });
+        res.json({ success: true, data: negotiation });
+    } catch (error) {
+        console.error('❌ resolveDispute error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/admin/negotiations/disputed — admin queue of flagged negotiations
+// ─────────────────────────────────────────────────────────────────────────
+exports.getDisputedNegotiations = async (req, res) => {
+    try {
+        const negotiations = await Negotiation.find({ disputed: true })
+            .populate('ride', 'start end date time fare')
+            .populate('passenger', 'name email phone')
+            .populate('driver', 'name email phone')
+            .populate('disputeRaisedBy', 'name email')
+            .sort({ disputeRaisedAt: -1 })
+            .limit(100)
+            .lean();
+
+        res.json({ success: true, count: negotiations.length, data: negotiations });
+    } catch (error) {
+        console.error('❌ getDisputedNegotiations error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };

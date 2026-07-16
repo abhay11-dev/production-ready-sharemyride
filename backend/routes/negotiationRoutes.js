@@ -10,7 +10,10 @@
 // for a brand-new route file. Flagged in PROJECT_STATE.md as a decision,
 // not silently made.
 //
-// Verified this session — no changes needed.
+// MILESTONE 9 — added POST /:id/dispute (either party flags a negotiation
+// for admin review). Resolution of a dispute is an ADMIN action and lives
+// in adminRoutes.js (protectAdmin), not here — this route only lets a
+// passenger/driver raise one.
 
 const express = require('express');
 const router = express.Router();
@@ -28,5 +31,6 @@ router.post('/:id/accept', ctrl.acceptNegotiation);
 router.post('/:id/reject', ctrl.rejectNegotiation);
 router.post('/:id/cancel', ctrl.cancelNegotiation);
 router.post('/:id/finalize', ctrl.finalizeNegotiation);
+router.post('/:id/dispute', ctrl.raiseDispute);
 
 module.exports = router;

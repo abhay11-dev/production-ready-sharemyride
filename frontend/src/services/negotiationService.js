@@ -38,7 +38,8 @@ export const getNegotiationById = async (id) => {
 
 /**
  * Counter-offer with new terms. Either party may call this while status is
- * 'pending' or 'countered'.
+ * 'pending' or 'countered' — and it also doubles as the "reopen" call when
+ * status is 'rejected' | 'cancelled' | 'expired' and no booking exists yet.
  * @param {string} id
  * @param {{ pickupLocation?, dropLocation?, fare?, time?, date?, seats?, message?, preferenceNote? }} payload
  * @returns {Promise<Object>}
@@ -89,6 +90,18 @@ export const finalizeNegotiation = async (id) => {
   return response.data?.data || response.data;
 };
 
+/**
+ * Flag a negotiation for admin review. Either passenger or driver may call
+ * this at any point before/after resolution (except while already disputed).
+ * @param {string} id
+ * @param {string} reason
+ * @returns {Promise<Object>}
+ */
+export const raiseDispute = async (id, reason) => {
+  const response = await api.post(`/negotiations/${id}/dispute`, { reason });
+  return response.data?.data || response.data;
+};
+
 export default {
   initiateNegotiation,
   getMyNegotiations,
@@ -98,4 +111,5 @@ export default {
   rejectNegotiation,
   cancelNegotiation,
   finalizeNegotiation,
+  raiseDispute,
 };
