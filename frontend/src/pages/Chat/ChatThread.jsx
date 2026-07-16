@@ -13,6 +13,7 @@ import {
   finalizeNegotiation,
   counterOffer,
   initiateNegotiation,
+  cancelNegotiation,
 } from '../../services/negotiationService';
 import {
   getConversationById,
@@ -353,10 +354,6 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
   const style = NEGOTIATION_STATUS[negotiation.status] || NEGOTIATION_STATUS.pending;
   const sourceLabel = NEGOTIATION_SOURCE_LABELS[negotiation.source] || 'Negotiation';
 
-  // Whose turn it is to respond: the side that did NOT make the most
-  // recent proposal. Falls back to "your turn" for both sides if there's
-  // no proposal history yet (shouldn't happen — initiateNegotiation always
-  // creates one — but avoids hiding the actions entirely on bad data).
   const lastProposal = negotiation.proposals?.[negotiation.proposals.length - 1];
   const myRole = isDriver ? 'driver' : 'passenger';
   const isMyTurn = !lastProposal || lastProposal.proposedBy !== myRole;
@@ -365,10 +362,6 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
     setBusy(true);
     try {
       await actionFn(negotiation._id);
-      // Accept/Decline are auto-sent as a real chat message once the
-      // underlying negotiation action succeeds, using the spec's canned
-      // wording. Never blocks the negotiation action itself if sending
-      // the follow-up message fails.
       if (cannedKind && onSendCannedMessage) {
         const text = buildNegotiationResponseMessage(negotiation.source, cannedKind, terms);
         onSendCannedMessage(text).catch((err) => console.error('❌ Failed to send canned reply:', err.message));
@@ -389,8 +382,6 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
       setCounterOpen(false);
       toastService.success('Counter offer sent');
       await onRefresh();
-      // Counter Offer only prefills the composer (per spec) — it does not
-      // auto-send, since the driver may want to add context before sending.
       if (onSendCannedMessage) {
         onSendCannedMessage(buildNegotiationResponseMessage(negotiation.source, 'counter', terms, counterFare), { prefillOnly: true });
       }
@@ -402,119 +393,88 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
   };
 
   return (
-    <div className="flex-shrink-0 px-4 sm:px-5 pt-4 pb-4">
-      <div className="bg-white rounded-2xl border-2 border-indigo-100 shadow-md p-4 sm:p-5 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
-        {/* Header row */}
-        <div className="flex items-center justify-between mb-1 gap-2">
-          <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{sourceLabel}</span>
-        </div>
-        <div className="flex items-center justify-between mb-3.5 gap-2">
-          <span className={`px-3 py-1.5 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 ${style.badge}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${style.dot} animate-pulse`} />
-            <Icon name={style.icon} size="xs" />
-            {style.label}
+    <div className="bg-indigo-50/50 border-b border-indigo-100 px-4 py-2 flex flex-col gap-2 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wide flex items-center gap-1">
+            <Icon name={style.icon} size="xs" className="text-indigo-600" />
+            {sourceLabel} <span className="text-gray-400 font-medium lowercase">— {style.label}</span>
           </span>
           {terms.fare != null && (
-            <span className="bg-blue-50 rounded-xl px-3 py-1.5 text-right">
-              <span className="block text-[10px] text-blue-500 leading-none mb-0.5">Fare</span>
-              <span className="font-bold text-blue-700 text-sm flex items-center gap-0.5 justify-end">
-                <Icon name="IndianRupee" size="xs" />
-                {terms.fare}
-              </span>
+            <span className="text-xs font-semibold text-gray-700 mt-0.5">
+              Proposed Fare: <span className="text-indigo-700">₹{terms.fare}</span> 
+              {terms.seats && <span className="text-gray-500 font-normal ml-1">({terms.seats} seats)</span>}
             </span>
           )}
         </div>
-
-        {/* Route — same gradient route box treatment as MyBookings */}
-        {(terms.pickupLocation || terms.dropLocation) && (
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-3.5 mb-3.5">
-            {terms.pickupLocation && (
-              <div className="flex items-center gap-2.5 mb-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                <p className="font-semibold text-gray-900 text-sm truncate">{terms.pickupLocation}</p>
-              </div>
-            )}
-            {terms.pickupLocation && terms.dropLocation && (
-              <div className="ml-[3px] border-l-2 border-dashed border-gray-300 h-2.5 my-0.5" />
-            )}
-            {terms.dropLocation && (
-              <div className="flex items-center gap-2.5">
-                <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                <p className="font-semibold text-gray-900 text-sm truncate">{terms.dropLocation}</p>
-              </div>
-            )}
-            {terms.seats && (
-              <div className="mt-2.5 pt-2.5 border-t border-blue-100 flex items-center gap-1.5 text-xs text-gray-500">
-                <Icon name="Users" size="xs" />
-                {terms.seats} seat{terms.seats > 1 ? 's' : ''}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Actions / status messages — button rhythm matches MyBookings */}
         {['pending', 'countered'].includes(negotiation.status) && (
-          isMyTurn ? (
-            <div className="flex gap-2.5 flex-wrap">
-              <button
-                disabled={busy}
-                onClick={() => runAction(acceptNegotiation, 'Terms accepted', 'accept')}
-                className="flex-1 min-w-[100px] flex items-center justify-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
-              >
-                <Icon name="Check" size="xs" />
-                Yes (Accept)
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => runAction(rejectNegotiation, 'Negotiation declined', 'decline')}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
-              >
-                <Icon name="X" size="xs" />
-                No (Decline)
-              </button>
-              {negotiation.source === 'negotiate_fare' && (
-                <button
-                  disabled={busy}
-                  onClick={() => setCounterOpen(true)}
-                  className="px-4 py-2.5 rounded-xl text-sm font-semibold text-blue-600 border border-blue-200 hover:bg-blue-50 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
-                >
-                  <Icon name="RefreshCw" size="xs" />
-                  Counter Offer
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="bg-amber-50 rounded-xl p-3 flex items-center gap-1.5">
-              <Icon name="Clock" size="xs" className="text-amber-600 flex-shrink-0" />
-              <p className="text-xs font-medium text-amber-800">Waiting for a reply to your last proposal.</p>
-            </div>
-          )
-        )}
-
-        {negotiation.status === 'accepted' && isDriver && (
           <button
-            disabled={busy}
-            onClick={() => runAction(finalizeNegotiation, 'Booking created')}
-            className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+            type="button"
+            onClick={() => runAction(cancelNegotiation, 'Negotiation ended')}
+            className="text-[10px] text-gray-500 hover:text-red-600 transition-colors font-semibold flex items-center gap-1"
           >
-            <Icon name="Ticket" size="xs" />
-            Negotiation Done - Book Ride
+            <Icon name="XCircle" size="xs" /> End
           </button>
         )}
-        {negotiation.status === 'accepted' && !isDriver && (
-          <div className="bg-amber-50 rounded-xl p-3 flex items-center gap-1.5">
-            <Icon name="Clock" size="xs" className="text-amber-600 flex-shrink-0" />
-            <p className="text-xs font-medium text-amber-800">Waiting for the driver to finalize the booking.</p>
-          </div>
-        )}
-        {negotiation.status === 'finalized' && (
-          <div className="bg-blue-50 rounded-xl p-3 flex items-center gap-1.5">
-            <Icon name="CheckCircle" size="xs" className="text-blue-600 flex-shrink-0" />
-            <p className="text-xs font-semibold text-blue-800">Booking confirmed 🎉</p>
-          </div>
-        )}
       </div>
+
+      {['pending', 'countered'].includes(negotiation.status) && (
+        isMyTurn ? (
+          <div className="flex gap-2">
+            <button
+              disabled={busy}
+              onClick={() => runAction(acceptNegotiation, 'Terms accepted', 'accept')}
+              className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              <Icon name="Check" size="xs" /> Yes
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => runAction(rejectNegotiation, 'Negotiation declined', 'decline')}
+              className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 transition-colors"
+            >
+              <Icon name="X" size="xs" /> No
+            </button>
+            {negotiation.source === 'negotiate_fare' && (
+              <button
+                disabled={busy}
+                onClick={() => setCounterOpen(true)}
+                className="flex-1 flex items-center justify-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                <Icon name="RefreshCw" size="xs" /> Counter
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white/60 border border-amber-100 rounded-lg px-3 py-1.5 flex items-center justify-center gap-1.5">
+            <Icon name="Clock" size="xs" className="text-amber-600 flex-shrink-0" />
+            <p className="text-[10px] font-medium text-amber-800">Waiting for a reply...</p>
+          </div>
+        )
+      )}
+
+      {negotiation.status === 'accepted' && isDriver && (
+        <button
+          disabled={busy}
+          onClick={() => runAction(finalizeNegotiation, 'Booking created')}
+          className="w-full flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+        >
+          <Icon name="Ticket" size="xs" />
+          Negotiation Done - Book Ride
+        </button>
+      )}
+      {negotiation.status === 'accepted' && !isDriver && (
+        <div className="bg-amber-50 rounded-lg p-2 flex items-center justify-center gap-1.5">
+          <Icon name="Clock" size="xs" className="text-amber-600 flex-shrink-0" />
+          <p className="text-[10px] font-medium text-amber-800">Waiting for driver to finalize.</p>
+        </div>
+      )}
+      {negotiation.status === 'finalized' && (
+        <div className="bg-blue-50/80 rounded-lg p-2 flex items-center justify-center gap-1.5">
+          <Icon name="CheckCircle" size="xs" className="text-blue-600 flex-shrink-0" />
+          <p className="text-[10px] font-bold text-blue-800">Booking confirmed 🎉</p>
+        </div>
+      )}
 
       {counterOpen && (
         <CounterOfferModal
@@ -1125,15 +1085,6 @@ export default function ChatThread() {
               />
             ))
           )}
-
-          {/* Negotiation summary inside the scroll feed */}
-          <NegotiationPanel
-            negotiation={negotiation}
-            userId={user?._id}
-            onRefresh={refreshNegotiation}
-            onSendCannedMessage={handleSendCannedMessage}
-          />
-
           {typingLabel && (
             <p className="text-xs text-gray-400 italic px-2 flex items-center gap-1.5">
               <span className="flex gap-0.5">
@@ -1149,7 +1100,14 @@ export default function ChatThread() {
 
       {/* Composer — pinned to the bottom, never moves when the message
           list scrolls or the mobile keyboard opens. */}
-      <div className="flex-shrink-0 border-t border-gray-100 bg-white">
+      <div className="flex-shrink-0 bg-white">
+        {/* Compact pinned negotiation banner directly above composer */}
+        <NegotiationPanel
+          negotiation={negotiation}
+          userId={user?._id}
+          onRefresh={refreshNegotiation}
+          onSendCannedMessage={handleSendCannedMessage}
+        />
         {/* Preference status cards, slide-up panel, passenger only. */}
         {quickRepliesOpen && !isDriver && (
           <div className="max-w-3xl mx-auto px-4 sm:px-5 pt-3">
