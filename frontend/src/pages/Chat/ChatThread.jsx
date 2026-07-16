@@ -402,8 +402,9 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
   };
 
   return (
-    <div className="flex-shrink-0 px-4 sm:px-5 pt-4">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 sm:p-5">
+    <div className="flex-shrink-0 px-4 sm:px-5 pt-4 pb-4">
+      <div className="bg-white rounded-2xl border-2 border-indigo-100 shadow-md p-4 sm:p-5 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />
         {/* Header row */}
         <div className="flex items-center justify-between mb-1 gap-2">
           <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">{sourceLabel}</span>
@@ -462,7 +463,7 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
                 className="flex-1 min-w-[100px] flex items-center justify-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
               >
                 <Icon name="Check" size="xs" />
-                Accept
+                Yes (Accept)
               </button>
               <button
                 disabled={busy}
@@ -470,7 +471,7 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
                 className="px-4 py-2.5 rounded-xl text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 transition-colors inline-flex items-center gap-1.5"
               >
                 <Icon name="X" size="xs" />
-                Decline
+                No (Decline)
               </button>
               {negotiation.source === 'negotiate_fare' && (
                 <button
@@ -498,7 +499,7 @@ function NegotiationPanel({ negotiation, userId, onRefresh, onSendCannedMessage 
             className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
           >
             <Icon name="Ticket" size="xs" />
-            Finalize into booking
+            Negotiation Done - Book Ride
           </button>
         )}
         {negotiation.status === 'accepted' && !isDriver && (
@@ -847,15 +848,20 @@ export default function ChatThread() {
 
   const refreshNegotiation = useCallback(async () => {
     const negId = negotiation?._id || location.state?.negotiationId;
-    if (!negId) return;
     try {
-      const data = await getNegotiationById(negId);
-      setNegotiation(data);
+      if (negId) {
+        const data = await getNegotiationById(negId);
+        setNegotiation(data);
+      }
+      if (conversationId) {
+        const convData = await getConversationById(conversationId);
+        setConversation(convData);
+      }
       setSummaryRefreshToken((v) => v + 1);
     } catch (err) {
-      console.error('❌ Failed to load negotiation:', err.message);
+      console.error('❌ Failed to refresh state:', err.message);
     }
-  }, [negotiation?._id, location.state?.negotiationId]);
+  }, [negotiation?._id, location.state?.negotiationId, conversationId]);
 
   // Load the negotiation summary if one was passed via navigation state
   // (set by NegotiationActions after initiating, or by Inbox when the
@@ -1064,16 +1070,6 @@ export default function ChatThread() {
 
         {/* Center column — the actual chat surface */}
         <div className="flex-1 min-h-0 flex flex-col lg:h-full">
-          {/* Negotiation summary, if any — pinned above the message list. */}
-          <div className="flex-shrink-0 w-full">
-            <NegotiationPanel
-              negotiation={negotiation}
-              userId={user?._id}
-              onRefresh={refreshNegotiation}
-              onSendCannedMessage={handleSendCannedMessage}
-            />
-          </div>
-
           {/* Messages — the ONLY scrollable region on this screen */}
           <div
             ref={scrollContainerRef}
@@ -1129,6 +1125,14 @@ export default function ChatThread() {
               />
             ))
           )}
+
+          {/* Negotiation summary inside the scroll feed */}
+          <NegotiationPanel
+            negotiation={negotiation}
+            userId={user?._id}
+            onRefresh={refreshNegotiation}
+            onSendCannedMessage={handleSendCannedMessage}
+          />
 
           {typingLabel && (
             <p className="text-xs text-gray-400 italic px-2 flex items-center gap-1.5">

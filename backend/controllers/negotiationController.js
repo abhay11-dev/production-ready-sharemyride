@@ -143,9 +143,6 @@ exports.initiateNegotiation = async (req, res) => {
 
         const seatsRequested = Math.min(8, Math.max(1, parseInt(seats) || 1));
         const availableSeats = ride.availableSeats ?? ride.seats ?? 0;
-        if (availableSeats < seatsRequested) {
-            return res.status(400).json({ success: false, message: 'Not enough seats available on this ride' });
-        }
 
         const terms = {
             pickupLocation: pickupLocation || ride.start,
@@ -691,9 +688,6 @@ exports.finalizeNegotiation = async (req, res) => {
         const terms = negotiation.currentTerms;
         const seatsBooked = terms.seats || 1;
         const availableSeats = ride.availableSeats ?? ride.seats ?? 0;
-        if (availableSeats < seatsBooked) {
-            return res.status(400).json({ success: false, message: 'Not enough seats remaining on this ride' });
-        }
 
         const booking = new Booking({
             ride: ride._id,
