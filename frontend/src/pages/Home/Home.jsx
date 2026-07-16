@@ -1048,6 +1048,7 @@ function EmptyRideFeed() {
 // LOGGED-IN DASHBOARD
 // ═══════════════════════════════════════════════════════════════════════════════
 function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
+  const navigate = useNavigate();
   const firstName = user?.name?.split(' ')[0] || 'Traveller';
   const avatar = user?.avatar || null;
   const handleNavClick = () => sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
