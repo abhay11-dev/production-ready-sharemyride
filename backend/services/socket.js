@@ -137,6 +137,28 @@ function initSocket(httpServer) {
       socket.leave(`ride:${rideId}`);
     });
 
+    socket.on('conversation:join', async ({ conversationId }, ack) => {
+      if (!conversationId) return ack?.({ success: false, message: 'conversationId required' });
+      try {
+        const conversation = await Conversation.findById(conversationId).select('passenger driver');
+        if (!conversation) return ack?.({ success: false, message: 'Conversation not found' });
+
+        const isParticipant = [conversation.passenger.toString(), conversation.driver.toString()].includes(userId);
+        if (!isParticipant) return ack?.({ success: false, message: 'Not authorized for this conversation' });
+
+        socket.join(`conversation:${conversationId}`);
+        ack?.({ success: true });
+      } catch (err) {
+        console.warn('⚠️ conversation:join error:', err.message);
+        ack?.({ success: false, message: 'Server error' });
+      }
+    });
+
+    socket.on('conversation:leave', ({ conversationId }) => {
+      if (!conversationId) return;
+      socket.leave(`conversation:${conversationId}`);
+    });
+
     // ── message:send ───────────────────────────────────────────────────
 
     socket.on('message:send', async ({ conversationId, text }, ack) => {

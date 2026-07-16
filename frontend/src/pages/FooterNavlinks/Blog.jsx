@@ -254,7 +254,7 @@ function BlogCard({ blog, blogIndex, onLike, onSelect, onEdit, onDelete, current
         <span className="absolute bottom-2 left-3 text-xs font-semibold text-white bg-white/20 backdrop-blur-sm px-2.5 py-1 rounded-full">
           {blog.category || 'Blog'}
         </span>
-        <span className="absolute bottom-2 right-3 text-xs text-white/80">{blog.readTime || '5 min read'}</span>
+        <span className="absolute bottom-2 right-3 text-xs text-white/80">{blog.readTimeMinutes ? `${blog.readTimeMinutes} min read` : '5 min read'}</span>
       </div>
 
       <div className="p-5 flex flex-col flex-1">
@@ -275,7 +275,7 @@ function BlogCard({ blog, blogIndex, onLike, onSelect, onEdit, onDelete, current
               }`}
           >
             <HeartIcon filled={isLiked} className="w-4 h-4" />
-            <span>{blog.likes || 0}</span>
+            <span>{typeof blog.likeCount === 'number' ? blog.likeCount : Array.isArray(blog.likes) ? blog.likes.length : Number(blog.likes) || 0}</span>
           </button>
         </div>
       </div>
@@ -314,17 +314,30 @@ export default function Blog() {
   }, []);
 
   const loadBlogs = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      try {
-        const res = await api.get('/blogs', { params: { limit: 20 } });
-        setBlogs(res.data?.data || []);
-      } catch (err) {
-        console.log('Blog API not ready yet');
-        setBlogs([]);
-      }
+      const res = await api.get('/blogs', { params: { limit: 20 } });
+      setBlogs(res.data?.data || []);
+    } catch (err) {
+      setBlogs([]);
+      toast.error('Unable to load blogs right now. Please try again later.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadBlogDetails = async (blog) => {
+    if (!blog?.slug) {
+      setSelectedBlog(blog);
+      return;
+    }
+
+    try {
+      const res = await api.get(`/blogs/post/${encodeURIComponent(blog.slug)}`);
+      setSelectedBlog(res.data?.data || blog);
+    } catch (err) {
+      setSelectedBlog(blog);
+      toast.error('Unable to load full blog details. Showing summary only.');
     }
   };
 
@@ -333,14 +346,26 @@ export default function Blog() {
     const newLiked = !alreadyLiked;
     setGuestLike(blogId, newLiked);
     setGuestLikesState(getGuestLikes());
+
+    const applyLikeDelta = (item) => {
+      const currentCount = typeof item.likeCount === 'number'
+        ? item.likeCount
+        : Array.isArray(item.likes)
+          ? item.likes.length
+          : Number(item.likes) || 0;
+      return { ...item, likeCount: Math.max(0, currentCount + (newLiked ? 1 : -1)) };
+    };
+
     setBlogs(prev => prev.map(b =>
       (b._id === blogId || b.id === blogId)
-        ? { ...b, likes: Math.max(0, (b.likes || 0) + (newLiked ? 1 : -1)) }
+        ? applyLikeDelta(b)
         : b
     ));
+
     if (selectedBlog && (selectedBlog._id === blogId || selectedBlog.id === blogId)) {
-      setSelectedBlog(prev => ({ ...prev, likes: Math.max(0, (prev.likes || 0) + (newLiked ? 1 : -1)) }));
+      setSelectedBlog(prev => applyLikeDelta(prev));
     }
+
     if (user) {
       try {
         await api.post(`/blogs/${blogId}/like`);
@@ -598,7 +623,7 @@ export default function Blog() {
                 currentUser={user}
                 likedByGuest={!!guestLikes[blog._id || blog.id]}
                 onLike={() => handleLikeBlog(blog._id || blog.id)}
-                onSelect={() => setSelectedBlog(blog)}
+                onSelect={() => loadBlogDetails(blog)}
                 onEdit={handleEditInit}
                 onDelete={handleDeleteBlog}
               />
@@ -641,7 +666,7 @@ export default function Blog() {
                       }`}
                   >
                     <HeartIcon filled={!!guestLikes[selectedBlog._id || selectedBlog.id]} className="w-4 h-4" />
-                    {selectedBlog.likes || 0}
+                    {typeof selectedBlog.likeCount === 'number' ? selectedBlog.likeCount : Array.isArray(selectedBlog.likes) ? selectedBlog.likes.length : Number(selectedBlog.likes) || 0}
                   </button>
                 </div>
 

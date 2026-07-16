@@ -726,13 +726,6 @@ exports.finalizeNegotiation = async (req, res) => {
             return res.status(403).json({ success: false, message: 'Only the driver can finalize a negotiation' });
         }
 
-        if (negotiation.source === 'preference') {
-            return res.status(400).json({
-                success: false,
-                message: 'Preference negotiations don\'t create a booking on their own — accepting is the final step. Finalize the ride via a fare/chat negotiation or the normal booking flow instead.',
-            });
-        }
-
         negotiation.checkExpiry();
         if (negotiation.status !== 'accepted') {
             if (negotiation.isModified()) await negotiation.save();
@@ -747,19 +740,54 @@ exports.finalizeNegotiation = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Ride no longer active' });
         }
 
-        const terms = negotiation.currentTerms;
-        const seatsBooked = terms.seats || 1;
+        const acceptedNegotiations = await Negotiation.find({
+            ride: negotiation.ride,
+            passenger: negotiation.passenger,
+            driver: negotiation.driver,
+            status: 'accepted'
+        });
+
+        const terms = { ...negotiation.currentTerms };
+
+        for (const n of acceptedNegotiations) {
+           if (n._id.toString() !== negotiation._id.toString()) {
+               if (n.source === 'negotiate_fare' || n.source === 'request_partial') {
+                   if (n.currentTerms.fare != null) terms.fare = n.currentTerms.fare;
+                   if (n.currentTerms.seats != null) terms.seats = n.currentTerms.seats;
+               }
+               if (n.source === 'discuss_pickup' || n.source === 'request_partial') {
+                   if (n.currentTerms.pickupLocation) terms.pickupLocation = n.currentTerms.pickupLocation;
+                   if (n.currentTerms.pickupCoordinates) terms.pickupCoordinates = n.currentTerms.pickupCoordinates;
+               }
+               if (n.source === 'discuss_drop' || n.source === 'request_partial') {
+                   if (n.currentTerms.dropLocation) terms.dropLocation = n.currentTerms.dropLocation;
+                   if (n.currentTerms.dropCoordinates) terms.dropCoordinates = n.currentTerms.dropCoordinates;
+               }
+           }
+        }
+
+        const seatsBooked = Number.isFinite(Number(terms.seats)) ? parseInt(terms.seats, 10) : 1;
         const availableSeats = ride.availableSeats ?? ride.seats ?? 0;
+
+        if (seatsBooked > availableSeats) {
+            return res.status(400).json({
+                success: false,
+                message: 'Not enough seats available to finalize this negotiation',
+            });
+        }
+
+        const farePerSeat = Number(terms.fare);
+        const effectiveFarePerSeat = Number.isFinite(farePerSeat) ? farePerSeat : ride.fare;
 
         const booking = new Booking({
             ride: ride._id,
             passenger: negotiation.passenger,
             driver: negotiation.driver,
             seatsBooked,
-            pickupLocation: terms.pickupLocation,
-            pickupCoordinates: terms.pickupCoordinates,
-            dropLocation: terms.dropLocation,
-            dropCoordinates: terms.dropCoordinates,
+            pickupLocation: terms.pickupLocation || ride.start,
+            pickupCoordinates: terms.pickupCoordinates || ride.pickup || undefined,
+            dropLocation: terms.dropLocation || ride.end,
+            dropCoordinates: terms.dropCoordinates || ride.destination || undefined,
             status: 'pending',
             paymentStatus: 'pending',
             // Additive fields on the Booking schema (negotiated / negotiationId)
@@ -769,16 +797,22 @@ exports.finalizeNegotiation = async (req, res) => {
 
         // Reuse the Booking model's own fare-calculation method rather than
         // re-implementing the formula here.
-        booking.calculateFare(terms.fare, seatsBooked, false);
+        booking.calculateFare(effectiveFarePerSeat, seatsBooked, false);
         await booking.save();
 
-        // Mirror the exact seat-decrement pattern used in bookingController.createBooking
+        // Mirror the exact ride update pattern used in bookingController.createBooking
+        if (!ride.bookings) {
+            ride.bookings = [];
+        }
+        ride.bookings.push(booking._id);
         ride.availableSeats = Math.max(0, availableSeats - seatsBooked);
         await ride.save();
 
-        negotiation.transitionTo('finalized', req.user._id, `Finalized into booking ${booking._id}`);
-        negotiation.finalizedBookingId = booking._id;
-        await negotiation.save();
+        for (const n of acceptedNegotiations) {
+            n.transitionTo('finalized', req.user._id, `Finalized into booking ${booking._id}`);
+            n.finalizedBookingId = booking._id;
+            await n.save();
+        }
 
         // Post a system confirmation into the linked conversation, if one exists
         try {
@@ -787,7 +821,7 @@ exports.finalizeNegotiation = async (req, res) => {
                 const sysMsg = await Message.create({
                     conversation: conversation._id,
                     type: 'system',
-                    text: `Negotiation finalized — booking confirmed at ₹${terms.fare} for ${seatsBooked} seat(s).`,
+                    text: `Negotiation finalized — booking confirmed at ₹${effectiveFarePerSeat} for ${seatsBooked} seat(s).`,
                 });
                 conversation.lastMessage = { text: sysMsg.text, sender: null, sentAt: sysMsg.createdAt };
                 conversation.unreadCount.passenger += 1;
@@ -837,7 +871,7 @@ exports.raiseDispute = async (req, res) => {
         negotiation.disputeReason = reason.trim();
         negotiation.disputeRaisedBy = req.user._id;
         negotiation.disputeRaisedAt = new Date();
-        negotiation.statusHistory.push({ status: negotiation.status, changedBy: req.user._id, note: `Dispute raised: ${reason.trim()}` });
+        negotiation.transitionTo('rejected', req.user._id, `Dispute raised: ${reason.trim()}`);
         await negotiation.save();
 
         await logAudit({ actor: req.user, action: 'negotiation.dispute_raised', resourceId: negotiation._id, note: reason.trim() });

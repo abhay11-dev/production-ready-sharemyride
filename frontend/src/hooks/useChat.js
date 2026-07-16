@@ -72,6 +72,21 @@ export function useChat(conversationId) {
     if (!conversationId) return;
 
     const socket = connectSocket();
+    const joinedRef = { current: false };
+
+    const joinConversation = () => {
+      if (!conversationId || !socket.connected) return;
+      socket.emit('conversation:join', { conversationId }, (ack) => {
+        if (ack?.success) {
+          joinedRef.current = true;
+        } else {
+          joinedRef.current = false;
+          if (ack?.message) {
+            console.warn('⚠️ conversation:join failed:', ack.message);
+          }
+        }
+      });
+    };
 
     const handleNewMessage = (msg) => {
       const msgConvId = typeof msg.conversation === 'object' ? msg.conversation?._id : msg.conversation;
@@ -106,10 +121,24 @@ export function useChat(conversationId) {
       }
     };
 
+    const handleConnect = () => {
+      joinConversation();
+    };
+
+    socket.on('connect', handleConnect);
     socket.on('message:new', handleNewMessage);
     socket.on('typing:update', handleTyping);
 
+    if (socket.connected) {
+      joinConversation();
+    }
+
     return () => {
+      if (joinedRef.current) {
+        socket.emit('conversation:leave', { conversationId });
+        joinedRef.current = false;
+      }
+      socket.off('connect', handleConnect);
       socket.off('message:new', handleNewMessage);
       socket.off('typing:update', handleTyping);
       clearTimeout(typingTimerRef.current);
