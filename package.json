@@ -10,6 +10,11 @@
     "resend": "^6.12.4"
   },
   "devDependencies": {
-    "cheerio": "^1.0.0-rc.12"
+    "cheerio": "^1.0.0-rc.12",
+    "wrangler": "^4.112.0"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   }
 }
