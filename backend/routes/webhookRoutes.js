@@ -1,43 +1,38 @@
+// routes/webhookRoutes.js
+//
+// Your pasted version used `express.json({ type: '*/*' })` and manually
+// re-signed with JSON.stringify(req.body). That inline handler is now
+// superseded by webhookController.handlePaymentWebhook, which does real
+// HMAC verification against the RAW body — this file just needs to give it
+// raw bytes instead of a parsed object. Mount BEFORE any global
+// express.json() in server.js, or scope it with this router so the global
+// parser never touches these two paths first.
+
 const express = require('express');
 const router = express.Router();
-const crypto = require('crypto');
+const webhookController = require('../controllers/webhookController');
 
-router.post('/razorpay', express.json({ type: '*/*' }), (req, res) => {
-  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
-  const signature = req.headers['x-razorpay-signature'];
+// Stash the raw body on req.rawBody, then hand a parsed copy to req.body
+// for any downstream logging/convenience — the controller uses rawBody for
+// signature verification and the parsed copy for reading event data.
+const captureRawBody = express.raw({ type: 'application/json' });
+const attachRawBody = (req, res, next) => {
+  req.rawBody = req.body; // Buffer at this point
+  next();
+};
 
-  // 👇 Local test mode (no signature header)
-  if (!signature) {
-    console.log('⚙️ Local test webhook received:', req.body);
-    return res.status(200).json({ status: 'ok', test: true, data: req.body });
-  }
+router.post(
+  '/razorpay/payment',
+  captureRawBody,
+  attachRawBody,
+  webhookController.handlePaymentWebhook
+);
 
-  const body = JSON.stringify(req.body);
-
-  try {
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(body)
-      .digest('hex');
-
-    if (signature === expectedSignature) {
-      console.log('✅ Webhook verified successfully!');
-      console.log('📩 Event type:', req.body.event);
-
-      if (req.body.event === 'payment.captured') {
-        const payment = req.body.payload.payment.entity;
-        console.log('💰 Payment captured:', payment.id, payment.amount);
-      }
-
-      return res.status(200).json({ status: 'success' });
-    } else {
-      console.log('❌ Invalid webhook signature');
-      return res.status(400).json({ status: 'invalid signature' });
-    }
-  } catch (err) {
-    console.error('⚠️ Webhook error:', err.message);
-    return res.status(500).json({ status: 'error', message: err.message });
-  }
-});
+router.post(
+  '/razorpayx/payout',
+  captureRawBody,
+  attachRawBody,
+  webhookController.handlePayoutWebhook
+);
 
 module.exports = router;
