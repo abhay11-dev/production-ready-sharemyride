@@ -306,13 +306,13 @@ export default function TermsAndConditions() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 sm:px-6 py-4 text-sm font-semibold border-b-2 transition-all ${
+                className={`flex items-center gap-2 px-4 sm:px-6 py-4 text-sm font-semibold border-b-2 transition-all ${
                   activeTab === tab.id
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-600 hover:text-gray-900'
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
+                <span>{tab.icon}</span>
                 {tab.label}
               </button>
             ))}
