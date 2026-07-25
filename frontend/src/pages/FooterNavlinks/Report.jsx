@@ -518,7 +518,12 @@ export default function Report() {
             )}
 
             <button
-              onClick={() => setStep(2)}
+              onClick={() => {
+                setStep(2);
+                requestAnimationFrame(() => {
+                  document.getElementById('report-form-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+              }}
               className="w-full py-3 sm:py-3.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors text-sm"
             >
               Continue — Fill in Details

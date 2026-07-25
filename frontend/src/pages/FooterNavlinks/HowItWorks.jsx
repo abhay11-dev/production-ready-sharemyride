@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
+import Icon from '../../components/ui/Icon.jsx';
 
 function useScrollTop() { useEffect(() => { window.scrollTo(0, 0); }, []); }
 
@@ -253,8 +254,8 @@ export default function HowItWorks() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex">
             {[
-              { id: 'passenger', label: 'I want to find a ride', icon: '🎒' },
-              { id: 'driver',    label: 'I want to offer a ride', icon: '🚗' },
+              { id: 'passenger', label: 'I want to find a ride', icon: <Icon name="Search" size="sm" /> },
+              { id: 'driver',    label: 'I want to offer a ride', icon: <Icon name="Car" size="sm" /> },
             ].map(tab => (
               <button
                 key={tab.id}

@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import Icon from '../../components/ui/Icon.jsx';
 
 const FAQS = [
     {
         category: 'Account',
-        icon: '👤',
+        icon: <Icon name="User" size="sm" />,
         items: [
             {
                 q: 'How do I create an account?',
@@ -22,7 +23,7 @@ const FAQS = [
     },
     {
         category: 'Ride Sharing',
-        icon: '🚗',
+        icon: <Icon name="Car" size="sm" />,
         items: [
             {
                 q: 'How do I offer a ride?',
@@ -44,7 +45,7 @@ const FAQS = [
     },
     {
         category: 'Safety',
-        icon: '🛡️',
+        icon: <Icon name="Shield" size="sm" />,
         items: [
             {
                 q: 'Are all drivers verified?',
@@ -66,7 +67,7 @@ const FAQS = [
     },
     {
         category: 'Community',
-        icon: '🤝',
+        icon: <Icon name="Users" size="sm" />,
         items: [
             {
                 q: 'What are the community guidelines?',
@@ -80,7 +81,7 @@ const FAQS = [
     },
     {
         category: 'Technical',
-        icon: '⚙️',
+        icon: <Icon name="Settings" size="sm" />,
         items: [
             {
                 q: 'I forgot my password. What do I do?',
@@ -94,7 +95,7 @@ const FAQS = [
     },
     {
         category: 'Business',
-        icon: '🏢',
+        icon: <Icon name="Building" size="sm" />,
         items: [
             {
                 q: 'Can companies use ShareMyRide for employee carpooling?',

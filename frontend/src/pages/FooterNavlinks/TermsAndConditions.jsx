@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Icon from '../../components/ui/Icon.jsx';
 
 function useScrollTop() {
   useEffect(() => { window.scrollTo(0, 0); }, []);
@@ -168,7 +169,7 @@ const SECTIONS = [
   {
     id: 'terms',
     label: 'Terms & Conditions',
-    icon: '📋',
+    icon: <Icon name="FileText" size="sm" />,
     content: [
       {
         title: '1. Eligibility',
@@ -211,7 +212,7 @@ You agree to indemnify and defend ShareMyRide against any claims arising from yo
   {
     id: 'privacy',
     label: 'Privacy & Data Protection',
-    icon: '🔒',
+    icon: <Icon name="Shield" size="sm" />,
     content: [
       {
         title: '1. Information We Collect',

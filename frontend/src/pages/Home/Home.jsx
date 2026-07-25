@@ -1032,8 +1032,8 @@ function EmptyRideFeed({ onOfferClick }) {
       </div>
       <p className="font-semibold text-gray-800 mb-1">No rides currently available</p>
       <p className="text-sm text-gray-500 mb-4">Be the first to offer a ride and help fellow travelers.</p>
-      <a
-        href="/ride/post"
+      <Link
+        to="/ride/post"
         onClick={(e) => {
           if (onOfferClick) {
             onOfferClick(e);
@@ -1045,7 +1045,7 @@ function EmptyRideFeed({ onOfferClick }) {
       >
         <Icon name="Plus" size="sm" />
         Offer a ride
-      </a>
+      </Link>
     </div>
   );
 }
@@ -1251,8 +1251,8 @@ function PublicLanding({ stats, rides, ridesLoading }) {
       e.preventDefault();
       showToastThenNavigate(browseAllRef.current, '/login', 'Sign in to browse all rides');
     } else {
+      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
       handleNavClick();
-      navigate('/ride/search');
     }
   };
 
@@ -1373,15 +1373,15 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                 </p>
               )}
             </div>
-            <a
+            <Link
               ref={browseAllRef}
-              href="/ride/search"
+              to="/ride/search"
               onClick={handleBrowseAll}
               className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 flex-shrink-0 cursor-pointer whitespace-nowrap mt-1"
             >
               Browse all
               <Icon name="ChevronRight" size="sm" className="sm:w-4 sm:h-4" />
-            </a>
+            </Link>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
