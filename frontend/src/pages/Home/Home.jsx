@@ -1024,7 +1024,7 @@ function RideCard({ ride, onAuthRequired, onCardClick }) {
 }
 
 // ─── Empty Feed ────────────────────────────────────────────────────────────────
-function EmptyRideFeed() {
+function EmptyRideFeed({ onOfferClick }) {
   return (
     <div className="col-span-full bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
       <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -1032,14 +1032,20 @@ function EmptyRideFeed() {
       </div>
       <p className="font-semibold text-gray-800 mb-1">No rides currently available</p>
       <p className="text-sm text-gray-500 mb-4">Be the first to offer a ride and help fellow travelers.</p>
-      <Link
-        to="/ride/post"
-        onClick={() => window.scrollTo({ top: 0, behavior: 'instant' })}
+      <a
+        href="/ride/post"
+        onClick={(e) => {
+          if (onOfferClick) {
+            onOfferClick(e);
+          } else {
+            window.scrollTo({ top: 0, behavior: 'instant' });
+          }
+        }}
         className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors"
       >
         <Icon name="Plus" size="sm" />
         Offer a ride
-      </Link>
+      </a>
     </div>
   );
 }
@@ -1167,7 +1173,7 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
                     />
                   </div>
                 ))
-                : <EmptyRideFeed />
+                : <EmptyRideFeed onOfferClick={handleOfferRideClick} />
             }
           </div>
         </div>
@@ -1240,12 +1246,12 @@ function PublicLanding({ stats, rides, ridesLoading }) {
     rideSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const handleBrowseAll = (e, btnEl) => {
-    e.preventDefault();
+  const handleBrowseAll = (e) => {
     if (!user) {
-      showToastThenNavigate(btnEl || e.currentTarget, '/login', 'Sign in to browse all rides');
+      e.preventDefault();
+      showToastThenNavigate(browseAllRef.current, '/login', 'Sign in to browse all rides');
     } else {
-      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY));
+      handleNavClick();
       navigate('/ride/search');
     }
   };
@@ -1370,7 +1376,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
             <a
               ref={browseAllRef}
               href="/ride/search"
-              onClick={(e) => handleBrowseAll(e, browseAllRef.current)}
+              onClick={handleBrowseAll}
               className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 flex-shrink-0 cursor-pointer whitespace-nowrap mt-1"
             >
               Browse all
@@ -1394,7 +1400,7 @@ function PublicLanding({ stats, rides, ridesLoading }) {
                     onAuthRequired={(rect) => setToastRect({ rect, to: '/login', message: 'Sign in to view ride details' })}
                   />
                 ))
-                : <EmptyRideFeed />
+                : <EmptyRideFeed onOfferClick={handleOfferRideClick} />
             }
           </div>
 

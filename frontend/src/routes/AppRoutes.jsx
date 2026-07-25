@@ -146,8 +146,22 @@ function AppRoutes() {
         element={<VerifyEmail />}
       />
 
-      <Route path="/upcoming-rides" element={<UpcomingRides />} />
-      <Route path="/driver/upcoming-rides" element={<DriverUpcomingRides />} />
+      <Route
+        path="/upcoming-rides"
+        element={
+          <ProtectedRoute>
+            <UpcomingRides />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/driver/upcoming-rides"
+        element={
+          <ProtectedRoute>
+            <DriverUpcomingRides />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Protected Routes */}
       <Route

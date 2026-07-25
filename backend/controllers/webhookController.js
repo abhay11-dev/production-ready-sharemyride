@@ -75,7 +75,7 @@ function emitSocketEvent(room, event, payload) {
  * IMPORTANT: req.body must be the RAW body (Buffer/string), not
  * pre-parsed JSON, for verifyWebhookSignature to work — see
  * webhookRoutes.js note at the bottom of this file. If your route currently
- * does `express.json({ type: '*/*' })` before this handler, the signature
+ * does `express.json({ type: '* / *' })` before this handler, the signature
  * check will always fail against a real Razorpay-signed payload (it
  * happened to "work" in your local-test snippet only because that snippet
  * skips verification entirely when no signature header is present).

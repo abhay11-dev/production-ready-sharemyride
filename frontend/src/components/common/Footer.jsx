@@ -207,8 +207,6 @@ function Footer() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [eggActive, setEggActive] = useState(false);
-  const [footerToast, setFooterToast] = useState(null);
-  const toastTimerRef = useRef(null);
 
   const triggerEgg = useCallback((e) => { e.preventDefault(); setEggActive(true); }, []);
   const dismissEgg = useCallback(() => setEggActive(false), []);
@@ -224,33 +222,13 @@ function Footer() {
       navigate(to);
       return;
     }
-    /* Point 5: show toast then redirect to login */
-    clearTimeout(toastTimerRef.current);
-    const rect = btnEl?.getBoundingClientRect?.() || null;
-    setFooterToast(rect);
-    toastTimerRef.current = setTimeout(() => {
-      setFooterToast(null);
-      navigate('/login');
-    }, 2400);
+    // Redirect to login instantly
+    navigate('/login');
   }, [user, navigate]);
-
-  useEffect(() => () => clearTimeout(toastTimerRef.current), []);
 
   return (
     <>
       {eggActive && <CarEasterEgg onDismiss={dismissEgg} />}
-      {footerToast !== null && (
-        <LoginRequiredSpeechToast
-          rect={footerToast}
-          message="Sign in to access this"
-          onDismiss={() => {
-            clearTimeout(toastTimerRef.current);
-            setFooterToast(null);
-          }}
-          redirectTo="/login"
-          durationMs={2400}
-        />
-      )}
 
 
       <footer className="bg-gray-950 text-gray-400" style={{ position: 'relative' }}>
