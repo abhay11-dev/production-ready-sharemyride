@@ -1173,7 +1173,7 @@ function LoggedInDashboard({ user, stats, rides, ridesLoading }) {
                     />
                   </div>
                 ))
-                : <EmptyRideFeed onOfferClick={handleOfferRideClick} />
+                : <EmptyRideFeed onOfferClick={() => { handleNavClick(); window.scrollTo({ top: 0, behavior: 'instant' }); }} />
             }
           </div>
         </div>

@@ -268,37 +268,8 @@ function StepBar({ current, total }) {
   );
 }
 
-// ─── Standard Fare Preview (non-first-ride) ────────────────────────────────────
-function FarePreview({ fare, seats }) {
-  const base = parseFloat(fare) || 0;
-  if (base <= 0) return null;
-  const d = PaymentCalculator.calculateDriverEarnings(base, 1);
-  const netPerSeat = d.driverNetAmount;
-  const totalFull = netPerSeat * (parseInt(seats) || 1);
-
-  return (
-    <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 mt-3">
-      <p className="text-xs font-bold text-green-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-        <Coins size={14} strokeWidth={2} aria-hidden="true" /> Your earnings
-      </p>
-      <div className="space-y-1.5 text-sm">
-        <div className="flex justify-between font-bold text-green-700">
-          <span>You receive / seat</span>
-          <span className="text-base">{formatMoney(netPerSeat)}</span>
-        </div>
-        {parseInt(seats) > 1 && (
-          <div className="flex justify-between text-xs text-green-600 mt-2">
-            <span>If all {seats} seats filled</span>
-            <span className="font-semibold">{formatMoney(totalFull)}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── First Ride Posting Celebration ──────────────────────────────────────────
-function FirstRideCelebration({ fare, seats }) {
+// ─── 100% Earnings Celebration ──────────────────────────────────────────────────
+function FullEarningsCelebration({ fare, seats }) {
   const base = parseFloat(fare) || 0;
   const seatsNum = Math.max(1, parseInt(seats) || 1);
 
@@ -346,7 +317,6 @@ function FirstRideCelebration({ fare, seats }) {
     }
 
     burst(0);
-    burst(650);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base > 0]);
 
@@ -402,12 +372,12 @@ function FirstRideCelebration({ fare, seats }) {
           <p style={{
             fontSize: 10, fontWeight: 700, letterSpacing: '0.09em',
             color: '#15803d', textTransform: 'uppercase', margin: '0 0 5px',
-          }}>First Ride Offer</p>
+          }}>Zero Commission</p>
 
           <h3 className="smr-shimmer-text" style={{
             fontSize: 20, fontWeight: 700, margin: '0 0 3px', lineHeight: 1.25,
           }}>
-            Your first posting is free
+            You keep 100% of the fare
           </h3>
         </div>
 
@@ -840,23 +810,6 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
 
   return (
     <div className="bg-white shadow-2xl rounded-2xl w-full max-w-2xl border border-gray-100 overflow-hidden relative">
-      {/* Loading Modal Overlay */}
-      {isLoading && (
-        <div className="absolute inset-0 z-50 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center rounded-2xl">
-          <div className="bg-white p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center max-w-xs mx-4 text-center border border-gray-100 animate-in fade-in zoom-in duration-200">
-             <div className="relative mb-4">
-               <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
-               <div className="absolute inset-0 flex items-center justify-center">
-                 <svg className="w-6 h-6 text-blue-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                 </svg>
-               </div>
-             </div>
-             <h3 className="text-lg font-bold text-gray-900 mb-1">Publishing your ride</h3>
-             <p className="text-sm text-gray-500">Please wait while we set everything up...</p>
-          </div>
-        </div>
-      )}
 
       <StepBar current={step} total={STEPS.length} />
 
@@ -1110,10 +1063,7 @@ function RideForm({ onSubmit, isLoading, isFirstRideOffer = false }) {
                   />
                 </div>
 
-                {isFirstRideOffer
-                  ? <FirstRideCelebration fare={fare} seats={seats} />
-                  : <FarePreview fare={fare} seats={seats} />
-                }
+                <FullEarningsCelebration fare={fare} seats={seats} />
               </Field>
 
               {/* Policy notice removed */}

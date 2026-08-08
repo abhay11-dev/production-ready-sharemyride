@@ -186,7 +186,7 @@ function RideCard({ ride, onDelete, isDeleting, onExpand, isExpanded }) {
             <p className={`text-base font-bold ${bookedSeats > 0 ? 'text-amber-600' : 'text-green-600'}`}>{bookedSeats}/{ride.seats}</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-2.5 text-center border border-blue-100">
-            <p className="text-[10px] text-gray-400 mb-0.5">Free</p>
+            <p className="text-[10px] text-gray-400 mb-0.5">Available</p>
             <p className="text-base font-bold text-blue-600">{availableSeats}</p>
           </div>
           <div className="bg-green-50 rounded-xl p-2.5 text-center border border-green-100">
@@ -801,14 +801,14 @@ function RidePost() {
 
   // ── Delete ride ───────────────────────────────────────────────────────────
   const handleDeleteRide = (rideId) => {
-      toastService.confirm({
-        title: 'Cancel this ride?',
-        message: 'This cannot be undone. All bookings will be cancelled.',
-        confirmLabel: 'Yes, cancel',
-        cancelLabel: 'Keep it',
-        danger: true,
-        onConfirm: () => performDelete(rideId),
-      });
+    toastService.confirm({
+      title: 'Cancel this ride?',
+      message: 'This cannot be undone. All bookings will be cancelled.',
+      confirmLabel: 'Yes, cancel',
+      cancelLabel: 'Keep it',
+      danger: true,
+      onConfirm: () => performDelete(rideId),
+    });
   };
 
   const performDelete = async (rideId) => {
@@ -971,10 +971,10 @@ function RidePost() {
             {/* Quick links — same quick action card pattern as Home.jsx */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Ride Requests', to: '/driver/bookings',       icon: <Bell size={20} strokeWidth={1.75} className="text-amber-600" aria-hidden="true" />,   bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
-                { label: 'Upcoming Rides', to: '/upcoming-rides',       icon: <CalendarDays size={20} strokeWidth={1.75} className="text-blue-600" aria-hidden="true" />,    bg: 'bg-blue-50 border-blue-100',   text: 'text-blue-700' },
-                { label: 'My Bookings',  to: '/bookings/my-bookings',  icon: <Ticket size={20} strokeWidth={1.75} className="text-green-600" aria-hidden="true" />,  bg: 'bg-green-50 border-green-100', text: 'text-green-700' },
-                { label: 'My Profile',   to: '/profile',               icon: <UserCircle2 size={20} strokeWidth={1.75} className="text-purple-600" aria-hidden="true" />, bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },
+                { label: 'Ride Requests', to: '/driver/bookings', icon: <Bell size={20} strokeWidth={1.75} className="text-amber-600" aria-hidden="true" />, bg: 'bg-amber-50 border-amber-100', text: 'text-amber-700' },
+                { label: 'Upcoming Rides', to: '/upcoming-rides', icon: <CalendarDays size={20} strokeWidth={1.75} className="text-blue-600" aria-hidden="true" />, bg: 'bg-blue-50 border-blue-100', text: 'text-blue-700' },
+                { label: 'My Bookings', to: '/bookings/my-bookings', icon: <Ticket size={20} strokeWidth={1.75} className="text-green-600" aria-hidden="true" />, bg: 'bg-green-50 border-green-100', text: 'text-green-700' },
+                { label: 'My Profile', to: '/profile', icon: <UserCircle2 size={20} strokeWidth={1.75} className="text-purple-600" aria-hidden="true" />, bg: 'bg-purple-50 border-purple-100', text: 'text-purple-700' },
               ].map(card => (
                 <Link
                   key={card.label}
@@ -987,7 +987,7 @@ function RidePost() {
               ))}
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+            {/* <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">Quick mock test</p>
               <button
                 type="button"
@@ -1000,7 +1000,7 @@ function RidePost() {
               <p className="text-xs text-gray-500 mt-3">
                 Use this button to publish a test ride from Delhi to Indore with the current verified driver session.
               </p>
-            </div>
+            </div> */}
 
           </div>
         </div>
