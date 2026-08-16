@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { GoogleMap, MarkerF, PolylineF, useJsApiLoader } from '@react-google-maps/api';
 import { useAuth } from '../../hooks/useAuth';
 import { connectSocket } from '../../services/socketClient';
 import { getRideJourney, respondToSafetyCheck } from '../../services/rideLifecycleService';
@@ -17,6 +18,12 @@ const STAGE_META = {
     completed: { label: 'Completed', icon: 'check' },
     cancelled: { label: 'Cancelled', icon: 'close' },
 };
+
+// Google Maps JS SDK loader config — key must live in env, same pattern
+// as the rest of the app's Google Places integration.
+const GOOGLE_MAPS_LIBRARIES = ['geometry'];
+const MAP_CONTAINER_STYLE = { width: '100%', height: '100%' };
+const DEFAULT_CENTER = { lat: 12.9716, lng: 77.5946 }; // Bangalore fallback
 
 const Icon = {
     calendar: (cls) => (
@@ -86,6 +93,26 @@ const Icon = {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12h4l2-8 4 16 2-8h6" />
         </svg>
     ),
+    map: (cls) => (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.553 2.776A1 1 0 0021 18.382V7.618a1 1 0 00-.447-.894L15 4m0 13V4m0 0L9 7" />
+        </svg>
+    ),
+    sos: (cls) => (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+        </svg>
+    ),
+    phoneCall: (cls) => (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+        </svg>
+    ),
+    siren: (cls) => (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v2m6.364.636l-1.414 1.414M21.75 9h-2M5.636 4.636L4.222 6.05M2.25 9h2M12 22a8 8 0 008-8H4a8 8 0 008 8z" />
+        </svg>
+    ),
 };
 
 const formatTime = (ts) => {
@@ -109,9 +136,26 @@ const RideActivePage = () => {
     const [pendingSafetyCheck, setPendingSafetyCheck] = useState(null); // { reason, message }
     const [liveEvents, setLiveEvents] = useState([]); // local feed on top of journey.timeline
 
+    // ── Live location state ────────────────────────────────────────────────
+    const [driverLocation, setDriverLocation] = useState(null); // { lat, lng, speed, heading, timestamp }
+    const [routePath, setRoutePath] = useState([]); // [{ lat, lng }, ...] polyline history
+    const [locationSharingActive, setLocationSharingActive] = useState(false);
+
+    // ── SOS state ───────────────────────────────────────────────────────────
+    const [showSosModal, setShowSosModal] = useState(false);
+    const [sosSending, setSosSending] = useState(false);
+    const [sosTriggered, setSosTriggered] = useState(false);
+
     const socketRef = useRef(null);
+    const watchIdRef = useRef(null);
 
     const isDriver = journey?.driver && user && (journey.driver === user._id || journey.driver?._id === user._id);
+
+    const { isLoaded: mapsLoaded } = useJsApiLoader({
+        id: 'google-map-script',
+        googleMapsApiKey: import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || '',
+        libraries: GOOGLE_MAPS_LIBRARIES,
+    });
 
     // ── Initial fetch ──────────────────────────────────────────────────────
     const fetchJourney = useCallback(async () => {
@@ -178,6 +222,24 @@ const RideActivePage = () => {
             toastService.error('Passenger needs help', 'A passenger has flagged a safety concern.');
         };
 
+        // ── Live GPS location broadcast from driver ──
+        const handleLocationUpdate = (data) => {
+            if (!data || typeof data.latitude !== 'number' || typeof data.longitude !== 'number') return;
+            const point = {
+                lat: data.latitude,
+                lng: data.longitude,
+                speed: data.speed,
+                heading: data.heading,
+                timestamp: data.timestamp,
+            };
+            setDriverLocation(point);
+            setRoutePath(prev => {
+                const next = [...prev, { lat: point.lat, lng: point.lng }];
+                // Keep the polyline bounded so it doesn't grow unbounded on long rides
+                return next.length > 500 ? next.slice(next.length - 500) : next;
+            });
+        };
+
         socket.on('ride:started', handleStarted);
         socket.on('ride:passenger_boarded', handleBoarded);
         socket.on('ride:status', handleStatus);
@@ -185,6 +247,7 @@ const RideActivePage = () => {
         socket.on('ride:safety_check', handleSafetyCheck);
         socket.on('ride:safety_check_resolved', handleSafetyResolved);
         socket.on('ride:passenger_alert', handlePassengerAlert);
+        socket.on('ride:location_update', handleLocationUpdate);
 
         return () => {
             socket.emit('leave:ride', { rideId });
@@ -195,8 +258,80 @@ const RideActivePage = () => {
             socket.off('ride:safety_check', handleSafetyCheck);
             socket.off('ride:safety_check_resolved', handleSafetyResolved);
             socket.off('ride:passenger_alert', handlePassengerAlert);
+            socket.off('ride:location_update', handleLocationUpdate);
         };
     }, [rideId]);
+
+    // ── Driver-side: broadcast GPS while ride is active ────────────────────
+    // Uses watchPosition (continuous) but throttles outgoing emits to ~10s,
+    // since watchPosition can fire far more often than that on some devices.
+    useEffect(() => {
+        if (!isDriver || !journey) return;
+        const stage = journey.stage;
+        const shouldTrack = stage === 'active' || stage === 'boarding' || stage === 'started';
+
+        if (!shouldTrack) {
+            if (watchIdRef.current !== null && navigator.geolocation) {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+            }
+            setLocationSharingActive(false);
+            return;
+        }
+
+        if (!navigator.geolocation) {
+            toastService.error('Location unavailable', 'Your browser does not support GPS location.');
+            return;
+        }
+
+        let lastEmitAt = 0;
+        const EMIT_INTERVAL_MS = 10000;
+
+        const id = navigator.geolocation.watchPosition(
+            (position) => {
+                const now = Date.now();
+                if (now - lastEmitAt < EMIT_INTERVAL_MS) return;
+                lastEmitAt = now;
+
+                const { latitude, longitude, speed, heading } = position.coords;
+                const payload = {
+                    rideId,
+                    location: { lat: latitude, lng: longitude },
+                    latitude,
+                    longitude,
+                    speed: speed ?? null,
+                    heading: heading ?? null,
+                    timestamp: new Date().toISOString(),
+                };
+
+                socketRef.current?.emit('ride:location_update', payload);
+
+                // Reflect locally too, so the driver's own map updates immediately
+                setDriverLocation({ lat: latitude, lng: longitude, speed, heading, timestamp: payload.timestamp });
+                setRoutePath(prev => {
+                    const next = [...prev, { lat: latitude, lng: longitude }];
+                    return next.length > 500 ? next.slice(next.length - 500) : next;
+                });
+            },
+            (err) => {
+                console.error('Geolocation error:', err);
+                toastService.error('Location error', 'Could not access your GPS. Please check location permissions.');
+            },
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+        );
+
+        watchIdRef.current = id;
+        setLocationSharingActive(true);
+
+        return () => {
+            if (watchIdRef.current !== null) {
+                navigator.geolocation.clearWatch(watchIdRef.current);
+                watchIdRef.current = null;
+            }
+            setLocationSharingActive(false);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isDriver, journey?.stage, rideId]);
 
     const handleSafetyResponse = async (response) => {
         setSafetyResponding(true);
@@ -212,6 +347,30 @@ const RideActivePage = () => {
         } finally {
             setSafetyResponding(false);
         }
+    };
+
+    // ── SOS handlers ────────────────────────────────────────────────────────
+    const handleTriggerSilentAlarm = async () => {
+        setSosSending(true);
+        try {
+            // Reuses the existing safety-check-response endpoint with 'need_help',
+            // which the backend already treats as an alert (see ride:passenger_alert).
+            // If a dedicated /emergency endpoint exists on the backend, swap this
+            // call for that instead.
+            await respondToSafetyCheck(rideId, 'need_help');
+            setSosTriggered(true);
+            toastService.error('Alert sent', 'Support has been notified of your emergency.');
+        } catch (err) {
+            toastService.error('Could not send alert', err.response?.data?.message || 'Please try calling emergency services directly.');
+        } finally {
+            setSosSending(false);
+            setShowSosModal(false);
+        }
+    };
+
+    const handleCallEmergency = () => {
+        window.location.href = 'tel:100';
+        setShowSosModal(false);
     };
 
     // ── Loading / error states ─────────────────────────────────────────────
@@ -252,6 +411,10 @@ const RideActivePage = () => {
     const meta = STAGE_META[stage] || { label: stage, icon: 'route' };
     const timeline = journey.timeline || [];
     const safetyStatus = journey.safetyStatus || 'normal';
+    const mapCenter = driverLocation
+        ? { lat: driverLocation.lat, lng: driverLocation.lng }
+        : DEFAULT_CENTER;
+    const showMapSection = stage === 'active' || stage === 'boarding' || stage === 'started';
 
     const headerGradient = stage === 'cancelled'
         ? 'from-red-600 via-red-500 to-red-400'
@@ -264,13 +427,26 @@ const RideActivePage = () => {
             {/* ── HEADER ── */}
             <div className={`bg-gradient-to-r ${headerGradient} pt-6 pb-16 px-4 sm:px-6 lg:px-8`}>
                 <div className="max-w-4xl mx-auto">
-                    <button
-                        onClick={() => navigate('/upcoming-rides')}
-                        className="inline-flex items-center gap-1.5 text-blue-100 hover:text-white text-sm mb-4 transition-colors"
-                    >
-                        {Icon.back('w-4 h-4')}
-                        Back to upcoming rides
-                    </button>
+                    <div className="flex items-center justify-between mb-4">
+                        <button
+                            onClick={() => navigate('/upcoming-rides')}
+                            className="inline-flex items-center gap-1.5 text-blue-100 hover:text-white text-sm transition-colors"
+                        >
+                            {Icon.back('w-4 h-4')}
+                            Back to upcoming rides
+                        </button>
+
+                        {/* ── SOS button — visible any time the ride is not yet completed/cancelled ── */}
+                        {stage !== 'completed' && stage !== 'cancelled' && (
+                            <button
+                                onClick={() => setShowSosModal(true)}
+                                className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-lg animate-pulse"
+                            >
+                                {Icon.sos('w-4 h-4')}
+                                SOS
+                            </button>
+                        )}
+                    </div>
 
                     <div className="flex items-center gap-3 mb-1.5">
                         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
@@ -285,6 +461,78 @@ const RideActivePage = () => {
             </div>
 
             <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-10 pb-16 space-y-5">
+
+                {/* ── Live map ── */}
+                {showMapSection && (
+                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                        <div className="p-4 sm:p-5 pb-3 flex items-center justify-between">
+                            <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-1.5">
+                                {Icon.map('w-4 h-4 text-gray-500')}
+                                {isDriver ? 'Your live location' : "Driver's live location"}
+                            </h3>
+                            {(isDriver ? locationSharingActive : !!driverLocation) && (
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                    Live
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="h-64 sm:h-80 bg-gray-100">
+                            {!mapsLoaded ? (
+                                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm gap-2">
+                                    {Icon.spinner('h-4 w-4')} Loading map…
+                                </div>
+                            ) : !driverLocation ? (
+                                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm text-center px-6">
+                                    {isDriver
+                                        ? 'Waiting for GPS signal — make sure location permissions are enabled.'
+                                        : "Waiting for the driver's location to come online…"}
+                                </div>
+                            ) : (
+                                <GoogleMap
+                                    mapContainerStyle={MAP_CONTAINER_STYLE}
+                                    center={mapCenter}
+                                    zoom={15}
+                                    options={{
+                                        disableDefaultUI: true,
+                                        zoomControl: true,
+                                        clickableIcons: false,
+                                    }}
+                                >
+                                    <MarkerF
+                                        position={{ lat: driverLocation.lat, lng: driverLocation.lng }}
+                                        icon={window.google?.maps ? {
+                                            path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                                            scale: 6,
+                                            rotation: driverLocation.heading || 0,
+                                            fillColor: '#2563eb',
+                                            fillOpacity: 1,
+                                            strokeColor: '#ffffff',
+                                            strokeWeight: 2,
+                                        } : undefined}
+                                    />
+                                    {routePath.length > 1 && (
+                                        <PolylineF
+                                            path={routePath}
+                                            options={{
+                                                strokeColor: '#2563eb',
+                                                strokeOpacity: 0.8,
+                                                strokeWeight: 4,
+                                            }}
+                                        />
+                                    )}
+                                </GoogleMap>
+                            )}
+                        </div>
+
+                        {driverLocation?.speed != null && (
+                            <div className="px-4 sm:px-5 py-2.5 border-t border-gray-100 text-xs text-gray-500">
+                                Speed: {Math.max(0, Math.round((driverLocation.speed || 0) * 3.6))} km/h
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* ── Progress rail ── */}
                 <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6">
@@ -324,17 +572,23 @@ const RideActivePage = () => {
                 </div>
 
                 {/* ── Safety status banner ── */}
-                <div className={`rounded-2xl border p-4 sm:p-5 flex items-center gap-3 ${safetyStatus === 'normal'
-                    ? 'bg-green-50 border-green-100'
-                    : 'bg-amber-50 border-amber-200'
+                <div className={`rounded-2xl border p-4 sm:p-5 flex items-center gap-3 ${sosTriggered
+                    ? 'bg-red-50 border-red-200'
+                    : safetyStatus === 'normal'
+                        ? 'bg-green-50 border-green-100'
+                        : 'bg-amber-50 border-amber-200'
                     }`}>
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${safetyStatus === 'normal' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${sosTriggered
+                        ? 'bg-red-100 text-red-600'
+                        : safetyStatus === 'normal' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'
                         }`}>
                         {Icon.shield('w-5 h-5')}
                     </div>
                     <div>
-                        <p className={`text-sm font-semibold ${safetyStatus === 'normal' ? 'text-green-800' : 'text-amber-800'}`}>
-                            {safetyStatus === 'normal' ? 'All safety checks normal' : `Safety status: ${safetyStatus}`}
+                        <p className={`text-sm font-semibold ${sosTriggered ? 'text-red-800' : safetyStatus === 'normal' ? 'text-green-800' : 'text-amber-800'}`}>
+                            {sosTriggered
+                                ? 'Emergency alert active — support notified'
+                                : safetyStatus === 'normal' ? 'All safety checks normal' : `Safety status: ${safetyStatus}`}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
                             {journey.locationConsent
@@ -458,6 +712,60 @@ const RideActivePage = () => {
                     </div>
                 )}
             </div>
+
+            {/* ── SOS / EMERGENCY MODAL ── */}
+            {showSosModal && (
+                <div className="fixed inset-0 backdrop-blur-md bg-black/50 flex items-center justify-center z-50 p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gradient-to-r from-red-700 via-red-600 to-red-500 text-white p-6 rounded-t-2xl sticky top-0 z-10">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-11 h-11 bg-white/15 rounded-xl flex items-center justify-center">
+                                        {Icon.siren('w-6 h-6')}
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-bold leading-tight">Emergency</h3>
+                                        <p className="text-red-100 text-xs mt-0.5">Choose how you'd like to get help</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowSosModal(false)} className="text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors">
+                                    {Icon.close('w-5 h-5')}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-gray-600">
+                                Use this only in a genuine emergency. Calling connects you directly to police; the silent alert notifies our safety team without alerting anyone nearby.
+                            </p>
+
+                            <button
+                                onClick={handleCallEmergency}
+                                className="w-full bg-red-600 hover:bg-red-700 text-white px-5 py-3.5 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm"
+                            >
+                                {Icon.phoneCall('w-5 h-5')}
+                                Call Police (100)
+                            </button>
+
+                            <button
+                                onClick={handleTriggerSilentAlarm}
+                                disabled={sosSending || sosTriggered}
+                                className="w-full bg-gray-900 hover:bg-black text-white px-5 py-3.5 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {sosSending ? Icon.spinner('h-5 w-5') : Icon.shield('w-5 h-5')}
+                                {sosTriggered ? 'Alert already sent' : 'Send Silent Alert to Support'}
+                            </button>
+
+                            <button
+                                onClick={() => setShowSosModal(false)}
+                                className="w-full bg-gray-100 text-gray-700 px-5 py-2.5 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style>{`
         @keyframes fadeIn {
