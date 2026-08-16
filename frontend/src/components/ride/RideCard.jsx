@@ -627,7 +627,7 @@ function DetailsModal({ ride, onClose, isFirstRideFree = false }) {
                   />
                   <FareRow
                     label="GST"
-                    value={`₹${(isFirstRideFree ? standardSingleFare.serviceFeeGST : singleFare.serviceFeeGST).toFixed(2)}`}
+                    value={`₹${singleFare.serviceFeeGST.toFixed(2)}`}
                   />
                   <div className="pt-1 border-t border-green-200">
                     <FareRow label="You pay / seat" value={`₹${singleFare.perSeat.toFixed(2)}`} bold />

@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 
 import ReceiptService from '../../services/receiptService';
 import { getMyBookings, getDriverBookings } from '../../services/bookingService';
 import toastService from '../../services/toastService';
 import PaymentCalculator from '../../utils/paymentCalculator';
+import { connectSocket } from '../../services/socketClient';
+import {
+  getRideJourney,
+  startRide,
+  confirmBoarding,
+  beginActiveLeg,
+  markDestinationReached,
+  completeRide,
+} from '../../services/rideLifecycleService';
 
 // ─── Payment math (uses utils/paymentCalculator.js — the single source of
 // truth for these rates; previously this file kept its own hardcoded copy
@@ -37,6 +46,7 @@ const UPCOMING_STATUSES = ['accepted', 'completed'];
 
 const UpcomingRides = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [passengerRides, setPassengerRides] = useState([]);
   const [driverRides, setDriverRides] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +55,10 @@ const UpcomingRides = () => {
   const [showCallModal, setShowCallModal] = useState(false);
   const [callDetails, setCallDetails] = useState(null);
   const toastRef = useRef(null);
+
+  // ── Ride lifecycle state ─────────────────────────────────────────────
+  const [journeyStages, setJourneyStages] = useState({}); // { [rideId]: stage }
+  const [lifecycleLoading, setLifecycleLoading] = useState({}); // { [rideId]: true/false }
 
   useEffect(() => {
     fetchAllUpcomingRides();
@@ -58,6 +72,56 @@ const UpcomingRides = () => {
       }
     };
   }, []);
+
+  // ── Fetch initial journey stage for a single ride ────────────────────
+  const fetchJourneyStage = async (rideId) => {
+    if (!rideId) return;
+    try {
+      const journey = await getRideJourney(rideId);
+      setJourneyStages(prev => ({ ...prev, [rideId]: journey.stage }));
+    } catch {
+      // 404 = no journey yet (ride hasn't started) — default to 'scheduled'
+      setJourneyStages(prev => ({ ...prev, [rideId]: 'scheduled' }));
+    }
+  };
+
+  // ── Socket.IO — join every ride room on screen, listen for stage updates ──
+  useEffect(() => {
+    const allRideIds = [...driverRides, ...passengerRides]
+      .map(b => b.ride?._id)
+      .filter(Boolean);
+
+    if (allRideIds.length === 0) return;
+
+    const socket = connectSocket();
+
+    allRideIds.forEach(rideId => {
+      socket.emit('join:ride', { rideId });
+    });
+
+    const handleStatus = (data) => {
+      // Backend payload may or may not include rideId directly; support both
+      // a top-level rideId and a nested ride reference.
+      const rideId = data.rideId || data.ride;
+      if (!rideId) return;
+      setJourneyStages(prev => ({ ...prev, [rideId]: data.stage }));
+    };
+
+    const handleCompleted = (data) => {
+      const rideId = data.rideId || data.ride;
+      if (!rideId) return;
+      setJourneyStages(prev => ({ ...prev, [rideId]: 'completed' }));
+    };
+
+    socket.on('ride:status', handleStatus);
+    socket.on('ride:completed', handleCompleted);
+
+    return () => {
+      allRideIds.forEach(rideId => socket.emit('leave:ride', { rideId }));
+      socket.off('ride:status', handleStatus);
+      socket.off('ride:completed', handleCompleted);
+    };
+  }, [driverRides, passengerRides]);
 
   const fetchAllUpcomingRides = async () => {
     try {
@@ -107,11 +171,94 @@ const UpcomingRides = () => {
           { duration: 900, position: 'top-center', id: 'upcoming-rides-loaded' }
         );
       }
+
+      // Fetch lifecycle stage for every ride on screen (driver + passenger)
+      const allRideIds = [...upcomingDriver, ...upcomingPassenger]
+        .map(b => b.ride?._id)
+        .filter(Boolean);
+      allRideIds.forEach(rideId => fetchJourneyStage(rideId));
     } catch (error) {
       console.error('Failed to load upcoming rides:', error);
       toastService.error('Failed to load upcoming rides', 'Please refresh the page and try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const setRideLoading = (rideId, val) => {
+    setLifecycleLoading(prev => ({ ...prev, [rideId]: val }));
+  };
+
+  // ── Lifecycle action handlers (driver) ───────────────────────────────
+  const handleStartRide = async (rideId) => {
+    if (!rideId) return;
+    setRideLoading(rideId, true);
+    try {
+      const journey = await startRide(rideId);
+      setJourneyStages(prev => ({ ...prev, [rideId]: journey.stage }));
+      toastService.success('Ride started!', 'Waiting for passengers to board.');
+    } catch (err) {
+      toastService.error('Could not start ride', err.response?.data?.message || 'Please try again.');
+    } finally {
+      setRideLoading(rideId, false);
+    }
+  };
+
+  const handleBeginActive = async (rideId) => {
+    if (!rideId) return;
+    setRideLoading(rideId, true);
+    try {
+      const journey = await beginActiveLeg(rideId);
+      setJourneyStages(prev => ({ ...prev, [rideId]: journey.stage }));
+      toastService.success('Journey underway!', 'Have a safe trip.');
+    } catch (err) {
+      toastService.error('Error', err.response?.data?.message || 'Please try again.');
+    } finally {
+      setRideLoading(rideId, false);
+    }
+  };
+
+  const handleDestinationReached = async (rideId) => {
+    if (!rideId) return;
+    setRideLoading(rideId, true);
+    try {
+      const journey = await markDestinationReached(rideId);
+      setJourneyStages(prev => ({ ...prev, [rideId]: journey.stage }));
+      toastService.success('Destination reached!', 'Please complete the ride to finalize.');
+    } catch (err) {
+      toastService.error('Error', err.response?.data?.message || 'Please try again.');
+    } finally {
+      setRideLoading(rideId, false);
+    }
+  };
+
+  const handleCompleteRide = async (rideId) => {
+    if (!rideId) return;
+    setRideLoading(rideId, true);
+    try {
+      const journey = await completeRide(rideId);
+      setJourneyStages(prev => ({ ...prev, [rideId]: journey.stage }));
+      toastService.success('Ride completed! 🎉', 'Thank you for driving with ShareMyRide.');
+      fetchAllUpcomingRides();
+    } catch (err) {
+      toastService.error('Error', err.response?.data?.message || 'Please try again.');
+    } finally {
+      setRideLoading(rideId, false);
+    }
+  };
+
+  // ── Lifecycle action handler (passenger) ─────────────────────────────
+  const handleConfirmBoarded = async (rideId) => {
+    if (!rideId) return;
+    setRideLoading(rideId, true);
+    try {
+      const journey = await confirmBoarding(rideId);
+      setJourneyStages(prev => ({ ...prev, [rideId]: journey.stage }));
+      toastService.success('Boarding confirmed!', 'Enjoy your ride.');
+    } catch (err) {
+      toastService.error('Error', err.response?.data?.message || 'Please try again.');
+    } finally {
+      setRideLoading(rideId, false);
     }
   };
 
@@ -277,6 +424,93 @@ const UpcomingRides = () => {
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
       </svg>
     ),
+    play: (cls) => (
+      <svg className={cls} fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+      </svg>
+    ),
+    flag: (cls) => (
+      <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2z" />
+      </svg>
+    ),
+  };
+
+  // ── Lifecycle action buttons (rendered inside each ride card) ────────
+  const renderLifecycleActions = (booking, isPassenger) => {
+    const rideId = booking.ride?._id;
+    if (!rideId) return null;
+    const stage = journeyStages[rideId] || 'scheduled';
+    const isLoading = !!lifecycleLoading[rideId];
+
+    const btnBase = 'px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed';
+    const driverBtn = `bg-green-600 hover:bg-green-700 text-white ${btnBase}`;
+    const passengerBtn = `bg-blue-600 hover:bg-blue-700 text-white ${btnBase}`;
+    const purpleBtn = `bg-purple-600 hover:bg-purple-700 text-white ${btnBase}`;
+
+    if (!isPassenger) {
+      // ── Driver-side lifecycle buttons ──
+      if (stage === 'scheduled') {
+        return (
+          <button onClick={() => handleStartRide(rideId)} disabled={isLoading} className={driverBtn}>
+            {isLoading ? <>{Icon.spinner('h-4 w-4')} Starting…</> : <>{Icon.play('w-4 h-4')} Start Ride</>}
+          </button>
+        );
+      }
+      if (stage === 'started' || stage === 'boarding') {
+        return (
+          <button onClick={() => handleBeginActive(rideId)} disabled={isLoading} className={driverBtn}>
+            {isLoading ? <>{Icon.spinner('h-4 w-4')} Updating…</> : <>{Icon.driver('w-4 h-4')} Begin Journey</>}
+          </button>
+        );
+      }
+      if (stage === 'active') {
+        return (
+          <button onClick={() => handleDestinationReached(rideId)} disabled={isLoading} className={passengerBtn}>
+            {isLoading ? <>{Icon.spinner('h-4 w-4')} Updating…</> : <>{Icon.pin('w-4 h-4')} Destination Reached</>}
+          </button>
+        );
+      }
+      if (stage === 'destination_reached') {
+        return (
+          <button onClick={() => handleCompleteRide(rideId)} disabled={isLoading} className={purpleBtn}>
+            {isLoading ? <>{Icon.spinner('h-4 w-4')} Completing…</> : <>{Icon.check('w-4 h-4')} Complete Ride</>}
+          </button>
+        );
+      }
+      if (stage === 'completed') {
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+            {Icon.check('w-3.5 h-3.5')} Ride Completed
+          </span>
+        );
+      }
+      return null;
+    }
+
+    // ── Passenger-side lifecycle buttons ──
+    if (stage === 'started' || stage === 'boarding') {
+      return (
+        <button onClick={() => handleConfirmBoarded(rideId)} disabled={isLoading} className={passengerBtn}>
+          {isLoading ? <>{Icon.spinner('h-4 w-4')} Confirming…</> : <>{Icon.check('w-4 h-4')} I've Boarded</>}
+        </button>
+      );
+    }
+    if (stage === 'active') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
+          {Icon.driver('w-3.5 h-3.5')} Ride in progress
+        </span>
+      );
+    }
+    if (stage === 'completed') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+          {Icon.check('w-3.5 h-3.5')} Ride Completed
+        </span>
+      );
+    }
+    return null;
   };
 
   if (loading) {
@@ -602,6 +836,8 @@ const UpcomingRides = () => {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 pt-4 border-t border-gray-100 flex-wrap">
+                      {renderLifecycleActions(booking, isPassenger)}
+
                       <button
                         onClick={() => handleCallAction(
                           booking,
@@ -637,6 +873,16 @@ const UpcomingRides = () => {
                         {Icon.ticket('w-4 h-4')}
                         All bookings
                       </Link>
+
+                      {journeyStages[booking.ride?._id] === 'active' && (
+                        <button
+                          onClick={() => navigate(`/ride-active/${booking.ride._id}`)}
+                          className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-50 hover:text-gray-800 transition-colors inline-flex items-center gap-1.5"
+                        >
+                          {Icon.flag('w-4 h-4')}
+                          Live tracking
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

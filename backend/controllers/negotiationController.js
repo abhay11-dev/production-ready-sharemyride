@@ -795,9 +795,12 @@ exports.finalizeNegotiation = async (req, res) => {
             negotiationId: negotiation._id,
         });
 
+        const previousPassengerBookings = await Booking.countDocuments({ passenger: negotiation.passenger });
+        const isFirstRideFree = previousPassengerBookings === 0;
+
         // Reuse the Booking model's own fare-calculation method rather than
         // re-implementing the formula here.
-        booking.calculateFare(effectiveFarePerSeat, seatsBooked, false);
+        booking.calculateFare(effectiveFarePerSeat, seatsBooked, isFirstRideFree);
         await booking.save();
 
         // Mirror the exact ride update pattern used in bookingController.createBooking

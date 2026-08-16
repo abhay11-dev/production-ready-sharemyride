@@ -108,54 +108,54 @@ function HeroBackground() {
       <div className="hero-ring" aria-hidden="true" style={{ width: 200, height: 200, top: '10%', left: '75%', animationDuration: '11s', animationDelay: '6s' }} />
 
       {[
-        { top: '12%', left: '5%',  d: '0s',   dur: '5s'  },
-        { top: '28%', left: '15%', d: '1.2s', dur: '6s'  },
-        { top: '55%', left: '8%',  d: '2.5s', dur: '7s'  },
-        { top: '78%', left: '18%', d: '0.8s', dur: '5.5s'},
-        { top: '90%', left: '35%', d: '3.2s', dur: '6.5s'},
-        { top: '65%', left: '45%', d: '1.8s', dur: '8s'  },
-        { top: '20%', left: '55%', d: '4s',   dur: '5s'  },
-        { top: '42%', left: '65%', d: '0.4s', dur: '7s'  },
-        { top: '75%', left: '72%', d: '2s',   dur: '6s'  },
-        { top: '10%', left: '82%', d: '3.5s', dur: '9s'  },
-        { top: '50%', left: '88%', d: '1s',   dur: '5.5s'},
-        { top: '85%', left: '94%', d: '2.8s', dur: '7s'  },
+        { top: '12%', left: '5%', d: '0s', dur: '5s' },
+        { top: '28%', left: '15%', d: '1.2s', dur: '6s' },
+        { top: '55%', left: '8%', d: '2.5s', dur: '7s' },
+        { top: '78%', left: '18%', d: '0.8s', dur: '5.5s' },
+        { top: '90%', left: '35%', d: '3.2s', dur: '6.5s' },
+        { top: '65%', left: '45%', d: '1.8s', dur: '8s' },
+        { top: '20%', left: '55%', d: '4s', dur: '5s' },
+        { top: '42%', left: '65%', d: '0.4s', dur: '7s' },
+        { top: '75%', left: '72%', d: '2s', dur: '6s' },
+        { top: '10%', left: '82%', d: '3.5s', dur: '9s' },
+        { top: '50%', left: '88%', d: '1s', dur: '5.5s' },
+        { top: '85%', left: '94%', d: '2.8s', dur: '7s' },
       ].map((dot, i) => (
         <div key={i} className="hero-dot" aria-hidden="true"
           style={{ top: dot.top, left: dot.left, animationDelay: dot.d, animationDuration: dot.dur }} />
       ))}
 
       {[
-        { left: '4%',  h: 80,  dur: '7s',   d: '0s'   },
-        { left: '4%',  h: 45,  dur: '7s',   d: '3.5s' },
-        { left: '12%', h: 65,  dur: '9s',   d: '1.2s' },
-        { left: '12%', h: 38,  dur: '9s',   d: '5.5s' },
-        { left: '20%', h: 90,  dur: '8s',   d: '2.8s' },
-        { left: '28%', h: 55,  dur: '10s',  d: '0.6s' },
-        { left: '36%', h: 70,  dur: '7.5s', d: '4s'   },
-        { left: '44%', h: 50,  dur: '11s',  d: '2s'   },
-        { left: '44%', h: 88,  dur: '11s',  d: '6s'   },
-        { left: '52%', h: 62,  dur: '8.5s', d: '1s'   },
-        { left: '60%', h: 75,  dur: '9.5s', d: '3s'   },
-        { left: '68%', h: 42,  dur: '7s',   d: '5s'   },
-        { left: '68%', h: 95,  dur: '7s',   d: '1.8s' },
-        { left: '76%', h: 58,  dur: '8s',   d: '4.5s' },
-        { left: '84%', h: 80,  dur: '10s',  d: '0.3s' },
-        { left: '92%', h: 48,  dur: '6.5s', d: '2.2s' },
-        { left: '97%', h: 70,  dur: '9s',   d: '3.8s' },
+        { left: '4%', h: 80, dur: '7s', d: '0s' },
+        { left: '4%', h: 45, dur: '7s', d: '3.5s' },
+        { left: '12%', h: 65, dur: '9s', d: '1.2s' },
+        { left: '12%', h: 38, dur: '9s', d: '5.5s' },
+        { left: '20%', h: 90, dur: '8s', d: '2.8s' },
+        { left: '28%', h: 55, dur: '10s', d: '0.6s' },
+        { left: '36%', h: 70, dur: '7.5s', d: '4s' },
+        { left: '44%', h: 50, dur: '11s', d: '2s' },
+        { left: '44%', h: 88, dur: '11s', d: '6s' },
+        { left: '52%', h: 62, dur: '8.5s', d: '1s' },
+        { left: '60%', h: 75, dur: '9.5s', d: '3s' },
+        { left: '68%', h: 42, dur: '7s', d: '5s' },
+        { left: '68%', h: 95, dur: '7s', d: '1.8s' },
+        { left: '76%', h: 58, dur: '8s', d: '4.5s' },
+        { left: '84%', h: 80, dur: '10s', d: '0.3s' },
+        { left: '92%', h: 48, dur: '6.5s', d: '2.2s' },
+        { left: '97%', h: 70, dur: '9s', d: '3.8s' },
       ].map((lane, i) => (
         <div key={i} className="hero-lane" aria-hidden="true"
           style={{ left: lane.left, height: lane.h, animationDuration: lane.dur, animationDelay: lane.d }} />
       ))}
 
       {[
-        { w: 30, h: 13, top: '15%', dur: '9s',  d: '0s'  },
-        { w: 24, h: 11, top: '32%', dur: '12s', d: '2s'  },
-        { w: 34, h: 14, top: '52%', dur: '10s', d: '5s'  },
-        { w: 22, h: 10, top: '70%', dur: '8s',  d: '1s'  },
-        { w: 28, h: 12, top: '85%', dur: '11s', d: '7s'  },
-        { w: 20, h: 9,  top: '25%', dur: '14s', d: '3.5s'},
-        { w: 26, h: 11, top: '60%', dur: '13s', d: '6.5s'},
+        { w: 30, h: 13, top: '15%', dur: '9s', d: '0s' },
+        { w: 24, h: 11, top: '32%', dur: '12s', d: '2s' },
+        { w: 34, h: 14, top: '52%', dur: '10s', d: '5s' },
+        { w: 22, h: 10, top: '70%', dur: '8s', d: '1s' },
+        { w: 28, h: 12, top: '85%', dur: '11s', d: '7s' },
+        { w: 20, h: 9, top: '25%', dur: '14s', d: '3.5s' },
+        { w: 26, h: 11, top: '60%', dur: '13s', d: '6.5s' },
       ].map((car, i) => (
         <div key={i} className="hero-car" aria-hidden="true"
           style={{ width: car.w, height: car.h, top: car.top, animationDuration: car.dur, animationDelay: car.d }} />
@@ -180,7 +180,7 @@ Drivers must additionally hold a valid Indian driving licence, own or have autho
       {
         title: '2. User Responsibilities',
         text: `By using ShareMyRide you agree to: provide accurate and complete information in your profile and ride listings; keep your contact information current; use the platform only for its intended purpose of community ride-sharing; not use automated tools to scrape, spam, or manipulate platform data; not circumvent the platform by arranging rides entirely outside the app after initial contact; and comply with all applicable traffic laws during rides.
-
+y joining
 You are solely responsible for your conduct on the platform and during rides facilitated through it.`,
       },
       {
@@ -281,8 +281,8 @@ export default function TermsAndConditions() {
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-blue-800 overflow-hidden min-h-screen flex flex-col justify-center">
         <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
-  <HeroBackground />
-</div>
+          <HeroBackground />
+        </div>
 
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-blue-100 text-xs font-semibold uppercase tracking-widest mb-6">
@@ -306,11 +306,10 @@ export default function TermsAndConditions() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 sm:px-6 py-4 text-sm font-semibold border-b-2 transition-all ${
-                  activeTab === tab.id
+                className={`flex items-center gap-2 px-4 sm:px-6 py-4 text-sm font-semibold border-b-2 transition-all ${activeTab === tab.id
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
+                  }`}
               >
                 <span>{tab.icon}</span>
                 {tab.label}
@@ -336,9 +335,8 @@ export default function TermsAndConditions() {
                   <h3 className="text-base sm:text-lg font-bold text-gray-900">{section.title}</h3>
                 </div>
                 <svg
-                  className={`w-5 h-5 text-gray-600 flex-shrink-0 ml-4 transition-transform ${
-                    expandedSection === section.title ? 'rotate-180' : ''
-                  }`}
+                  className={`w-5 h-5 text-gray-600 flex-shrink-0 ml-4 transition-transform ${expandedSection === section.title ? 'rotate-180' : ''
+                    }`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"

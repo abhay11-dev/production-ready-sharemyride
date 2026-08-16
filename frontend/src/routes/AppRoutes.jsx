@@ -21,6 +21,7 @@ import { useAuth } from '../hooks/useAuth';
 import PaymentSetupForm from '../pages/PaymentSetupForm.jsx';
 import UpcomingRides from '../pages/rides/UpcomingRides';
 import DriverUpcomingRides from '../pages/driver/DriverUpcomingRides';
+import RideActivePage from '../pages/rides/RideActivePage';
 import PaymentSuccess from "../pages/PaymentSuccess.jsx";
 import PaymentFailed from "../pages/PaymentFailed.jsx";
 
@@ -164,6 +165,14 @@ function AppRoutes() {
       />
 
       {/* Protected Routes */}
+      <Route
+        path="/ride-active/:rideId"
+        element={
+          <ProtectedRoute>
+            <RideActivePage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/ride/search"
         element={
