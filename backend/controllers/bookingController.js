@@ -525,7 +525,7 @@ exports.getDriverBookings = async (req, res) => {
         path: 'ride',
         select: 'start end date time vehicle fareMode perKmRate totalDistance matchType userSearchDistance phoneNumber vehicleNumber'
       })
-      .populate('passenger', 'name email phone avatar ratings')
+      .populate('passenger', 'name email phone avatar ratings ratingSummary totalRatings')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit))
@@ -863,6 +863,19 @@ exports.updateBookingStatus = async (req, res) => {
     console.log('✅ Step 11: Updated booking fetched');
     console.log('🔵 ============ UPDATE COMPLETED SUCCESSFULLY ============\n');
 
+    try {
+      if (isDriver && (status === 'accepted' || status === 'rejected')) {
+        const passengerId = updatedBooking.passenger?._id || updatedBooking.passenger;
+        if (passengerId) {
+          const { emitToUser } = require('../services/socket');
+          emitToUser(passengerId.toString(), 'booking-status-updated', updatedBooking);
+          console.log(`[Socket] Emitted booking-status-updated to passenger:${passengerId}`);
+        }
+      }
+    } catch (socketErr) {
+      console.error('⚠️ Socket emit error:', socketErr);
+    }
+
     return res.json({
       success: true,
       message: `Booking ${status} successfully`,
@@ -1129,13 +1142,17 @@ exports.addRating = async (req, res) => {
       try {
         const driver = await User.findById(booking.driver);
         if (driver) {
-          const currentRating = driver.ratings?.average || 0;
-          const totalRatings = driver.ratings?.total || 0;
-          const newAverage = ((currentRating * totalRatings) + rating) / (totalRatings + 1);
+          const currentCount = driver.totalRatings || driver.ratings?.total || driver.ratings?.count || 0;
+          const currentAvg = driver.ratingSummary || driver.ratings?.average || 5;
+          const newTotal = currentCount + 1;
+          const newAverage = Number((((currentAvg * currentCount) + rating) / newTotal).toFixed(1));
 
           await User.findByIdAndUpdate(booking.driver, {
+            ratingSummary: newAverage,
+            totalRatings: newTotal,
             'ratings.average': newAverage,
-            'ratings.total': totalRatings + 1
+            'ratings.total': newTotal,
+            'ratings.count': newTotal
           });
         }
       } catch (driverError) {
@@ -1152,13 +1169,17 @@ exports.addRating = async (req, res) => {
       try {
         const passenger = await User.findById(booking.passenger);
         if (passenger) {
-          const currentRating = passenger.ratings?.average || 0;
-          const totalRatings = passenger.ratings?.total || 0;
-          const newAverage = ((currentRating * totalRatings) + rating) / (totalRatings + 1);
+          const currentCount = passenger.totalRatings || passenger.ratings?.total || passenger.ratings?.count || 0;
+          const currentAvg = passenger.ratingSummary || passenger.ratings?.average || 5;
+          const newTotal = currentCount + 1;
+          const newAverage = Number((((currentAvg * currentCount) + rating) / newTotal).toFixed(1));
 
           await User.findByIdAndUpdate(booking.passenger, {
+            ratingSummary: newAverage,
+            totalRatings: newTotal,
             'ratings.average': newAverage,
-            'ratings.total': totalRatings + 1
+            'ratings.total': newTotal,
+            'ratings.count': newTotal
           });
         }
       } catch (passengerError) {

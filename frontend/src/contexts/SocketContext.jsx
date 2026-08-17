@@ -57,6 +57,7 @@ export function SocketProvider({ children }) {
             onClick={() => {
               toast.dismiss(t.id);
               if (conversationId) navigate(`/chat/${conversationId}`);
+              else if (opts.link) navigate(opts.link);
             }}
             className="bg-white shadow-lg rounded-xl border border-gray-100 px-4 py-3 text-sm text-gray-800 cursor-pointer max-w-sm"
           >
@@ -95,6 +96,14 @@ export function SocketProvider({ children }) {
         `Your account has been ${(payload.action || 'restricted').toLowerCase()}${payload.reason ? `: ${payload.reason}` : '.'}`,
         { duration: 10000 }
       );
+    });
+
+    s.on('booking-status-updated', (booking) => {
+      if (booking.status === 'accepted') {
+        clickableToast(`✅ Ride accepted! Click here to see your booking page.`, null, { duration: 10000, link: '/bookings/my-bookings' });
+      } else if (booking.status === 'rejected') {
+        clickableToast(`❌ Sorry, the driver did not approve your ride.`, null, { duration: 10000, link: '/bookings/my-bookings' });
+      }
     });
 
     socketRef.current = s;

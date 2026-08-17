@@ -1321,20 +1321,38 @@ exports.getUserStats = async (req, res) => {
     if (role === 'driver') {
       const rides = await Ride.find({
         $or: [{ driverId: userId }, { postedBy: userId }, { driver: userId }]
-      });
+      }).lean();
+
+      const completedRideIds = rides
+        .filter((r) => r.rideStatus === 'completed')
+        .map((r) => r._id);
 
       const totalRides = rides.length;
-      const activeRides = rides.filter((ride) => ride.rideStatus === 'active').length;
-      const completedRides = rides.filter((ride) => ride.rideStatus === 'completed').length;
+      const activeRides = rides.filter((r) => r.rideStatus === 'active' || r.rideStatus === 'in_progress').length;
+      const completedRides = completedRideIds.length;
+
+      // Find all completed/eligible bookings for this driver
+      const eligibleBookings = await Booking.find({
+        $or: [
+          { driver: userId },
+          { ride: { $in: completedRideIds } }
+        ],
+        status: { $in: ['completed', 'accepted'] },
+        paymentStatus: { $nin: ['failed', 'refunded'] }
+      }).populate('ride', 'rideStatus fare').lean();
 
       let totalEarnings = 0;
-      rides.forEach((ride) => {
-        if (Array.isArray(ride.bookings)) {
-          ride.bookings.forEach((booking) => {
-            if (booking.status === 'completed' && booking.paymentStatus === 'paid') {
-              totalEarnings += booking.calculatedFare || 0;
-            }
-          });
+      eligibleBookings.forEach((booking) => {
+        const isRideCompleted = booking.ride?.rideStatus === 'completed';
+        const isBookingCompleted = booking.status === 'completed';
+
+        if (isRideCompleted || isBookingCompleted) {
+          const fareAmount = Number(
+            booking.baseFare ??
+            booking.segmentFare ??
+            (booking.ride?.fare ? booking.ride.fare * (booking.seatsBooked || 1) : 0)
+          );
+          totalEarnings += fareAmount;
         }
       });
 
@@ -1349,22 +1367,27 @@ exports.getUserStats = async (req, res) => {
       });
     }
 
+    // Passenger statistics
     const bookings = await Booking.aggregate([
-      { $match: { passenger: userId } },
+      {
+        $match: {
+          passenger: userId,
+          status: { $in: ['completed', 'accepted'] },
+          paymentStatus: { $nin: ['failed', 'refunded'] }
+        }
+      },
       {
         $group: {
           _id: '$status',
           count: { $sum: 1 },
-          totalSpent: { $sum: '$calculatedFare' }
+          totalSpent: { $sum: { $ifNull: ['$finalAmount', '$totalFare'] } }
         }
       }
     ]);
 
-    const totalBookings = bookings.reduce((sum, item) => sum + (item.count || 0), 0);
-    const completedTrips = bookings.find((item) => item._id === 'completed')?.count || 0;
-    const totalSpent = bookings
-      .filter((item) => item._id === 'completed')
-      .reduce((sum, item) => sum + (item.totalSpent || 0), 0);
+    const totalBookings = await Booking.countDocuments({ passenger: userId });
+    const completedTrips = bookings.reduce((sum, item) => sum + (item.count || 0), 0);
+    const totalSpent = bookings.reduce((sum, item) => sum + (item.totalSpent || 0), 0);
 
     return res.json({
       success: true,

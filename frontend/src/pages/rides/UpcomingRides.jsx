@@ -16,6 +16,8 @@ import {
   completeRide,
 } from '../../services/rideLifecycleService';
 
+import EmergencyContactModal from '../../components/ride/EmergencyContactModal';
+
 // ─── Payment math (uses utils/paymentCalculator.js — the single source of
 // truth for these rates; previously this file kept its own hardcoded copy
 // of PLATFORM_FEE_RATE/GST_RATE, which is exactly the kind of drift spec
@@ -54,6 +56,8 @@ const UpcomingRides = () => {
   const [downloadingReceipt, setDownloadingReceipt] = useState(null);
   const [showCallModal, setShowCallModal] = useState(false);
   const [callDetails, setCallDetails] = useState(null);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null); // { type: 'start'|'board', rideId }
   const toastRef = useRef(null);
 
   // ── Ride lifecycle state ─────────────────────────────────────────────
@@ -189,9 +193,22 @@ const UpcomingRides = () => {
     setLifecycleLoading(prev => ({ ...prev, [rideId]: val }));
   };
 
+  const hasEmergencyContact = () => {
+    return !!(user?.emergencyContact || (user?.trustedContacts && user.trustedContacts.length > 0));
+  };
+
   // ── Lifecycle action handlers (driver) ───────────────────────────────
   const handleStartRide = async (rideId) => {
     if (!rideId) return;
+    if (!hasEmergencyContact()) {
+      setPendingAction({ type: 'start', rideId });
+      setShowEmergencyModal(true);
+      return;
+    }
+    executeStartRide(rideId);
+  };
+
+  const executeStartRide = async (rideId) => {
     setRideLoading(rideId, true);
     try {
       const journey = await startRide(rideId);
@@ -250,6 +267,15 @@ const UpcomingRides = () => {
   // ── Lifecycle action handler (passenger) ─────────────────────────────
   const handleConfirmBoarded = async (rideId) => {
     if (!rideId) return;
+    if (!hasEmergencyContact()) {
+      setPendingAction({ type: 'board', rideId });
+      setShowEmergencyModal(true);
+      return;
+    }
+    executeConfirmBoarded(rideId);
+  };
+
+  const executeConfirmBoarded = async (rideId) => {
     setRideLoading(rideId, true);
     try {
       const journey = await confirmBoarding(rideId);
@@ -259,6 +285,22 @@ const UpcomingRides = () => {
       toastService.error('Error', err.response?.data?.message || 'Please try again.');
     } finally {
       setRideLoading(rideId, false);
+    }
+  };
+
+  const handleEmergencyContactSaved = (contact) => {
+    setShowEmergencyModal(false);
+    if (user) {
+      user.emergencyContact = contact.phone;
+      user.emergencyContactName = contact.name;
+    }
+    if (pendingAction) {
+      if (pendingAction.type === 'start') {
+        executeStartRide(pendingAction.rideId);
+      } else if (pendingAction.type === 'board') {
+        executeConfirmBoarded(pendingAction.rideId);
+      }
+      setPendingAction(null);
     }
   };
 
@@ -953,6 +995,14 @@ const UpcomingRides = () => {
           </div>
         </div>
       )}
+
+      {/* ── EMERGENCY CONTACT MODAL ── */}
+      <EmergencyContactModal
+        isOpen={showEmergencyModal}
+        onClose={() => setShowEmergencyModal(false)}
+        onSaved={handleEmergencyContactSaved}
+        role={activeTab}
+      />
 
       <style>{`
         @keyframes fadeIn {

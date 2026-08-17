@@ -342,7 +342,6 @@ rideSchema.index({ featured: 1, verified: 1 });
 rideSchema.index({ 'pickup.latitude': 1, 'pickup.longitude': 1 });
 rideSchema.index({ 'destination.latitude': 1, 'destination.longitude': 1 });
 rideSchema.index({ 'pickup.city': 1, 'destination.city': 1, date: 1 });
-rideSchema.index({ roundTripGroupId: 1 });
 
 // ===========================
 // VIRTUAL FIELDS

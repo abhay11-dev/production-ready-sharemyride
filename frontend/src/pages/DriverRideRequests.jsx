@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useSocketContext } from '../contexts/SocketContext.jsx';
 import {
   getDriverBookings,
   updateBookingStatus,
@@ -235,7 +236,8 @@ function BookingCard({ booking, onAction }) {
   const passengerPhone = passenger.phone || null;
   const passengerEmail = passenger.email || null;
   const passengerAvatar = passenger.avatar || null;
-  const passengerRating = passenger.ratings?.average || 0;
+  const passengerRating = passenger.ratingSummary || passenger.ratings?.average || 0;
+  const passengerTotalRatings = passenger.totalRatings || passenger.ratings?.total || passenger.ratings?.count || 0;
 
   const ride = booking.ride || {};
   const rideStart = ride.start || booking.pickupLocation || '—';
@@ -282,12 +284,17 @@ function BookingCard({ booking, onAction }) {
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-gray-900 text-sm truncate">{passengerName}</p>
             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              {passengerRating > 0 && (
-                <span className="flex items-center gap-0.5 text-xs text-gray-500">
-                  <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+              {passengerRating > 0 ? (
+                <span className="flex items-center gap-1 text-xs text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-md">
+                  <svg className="w-3 h-3 text-amber-400 fill-amber-400" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                   </svg>
-                  {Number(passengerRating).toFixed(1)}
+                  <span>{Number(passengerRating).toFixed(1)}</span>
+                  <span className="text-[10px] text-amber-600 font-normal">({passengerTotalRatings > 0 ? passengerTotalRatings : 1})</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[11px] text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded-md">
+                  ⭐ New Passenger
                 </span>
               )}
               <span className="text-xs text-gray-400">{timeAgo(booking.createdAt)}</span>
@@ -555,6 +562,7 @@ const FILTERS = [
 function DriverRideRequests() {
   const { user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const { socket } = useSocketContext();
 
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -588,6 +596,23 @@ function DriverRideRequests() {
     intervalRef.current = setInterval(() => fetchBookings(true), 30000);
     return () => clearInterval(intervalRef.current);
   }, [user, authLoading, fetchBookings, navigate]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleBookingRequest = (booking) => {
+      console.log('[Socket] Received booking-request', booking);
+      setBookings(prev => {
+        if (prev.some(b => b._id === booking._id)) return prev;
+        return [booking, ...prev];
+      });
+    };
+
+    socket.on('booking-request', handleBookingRequest);
+    return () => {
+      socket.off('booking-request', handleBookingRequest);
+    };
+  }, [socket]);
 
   // ── Filtering + sorting ──────────────────────────────────────────────────
   const filtered = bookings

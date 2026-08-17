@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { getMyBookings, cancelBooking } from '../../services/bookingService';
 import { createPaymentOrder, verifyPayment } from '../../services/paymentService';
 import { useAuth } from '../../hooks/useAuth';
+import { useSocketContext } from '../../contexts/SocketContext';
 import toastService from '../../services/toastService';
 import PaymentCalculator from '../../utils/paymentCalculator';
 
@@ -126,6 +127,7 @@ const MyBookings = () => {
   const [processingPayment, setProcessingPayment] = useState(null);
   const [filter, setFilter] = useState('all');
   const [expandedBooking, setExpandedBooking] = useState(null);
+  const { socket } = useSocketContext();
 
   useEffect(() => {
     fetchBookings();
@@ -133,6 +135,19 @@ const MyBookings = () => {
     const interval = setInterval(fetchBookings, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    
+    const handleBookingStatusUpdated = (updatedBooking) => {
+      setBookings(prev => prev.map(b => 
+        b._id === updatedBooking._id ? updatedBooking : b
+      ));
+    };
+
+    socket.on('booking-status-updated', handleBookingStatusUpdated);
+    return () => socket.off('booking-status-updated', handleBookingStatusUpdated);
+  }, [socket]);
 
   const fetchBookings = async () => {
     try {

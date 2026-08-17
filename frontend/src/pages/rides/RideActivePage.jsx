@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { GoogleMap, MarkerF, PolylineF, useJsApiLoader } from '@react-google-maps/api';
+import LiveTrackingMap from '../../components/map/LiveTrackingMap';
 import { useAuth } from '../../hooks/useAuth';
 import { connectSocket } from '../../services/socketClient';
-import { getRideJourney, respondToSafetyCheck } from '../../services/rideLifecycleService';
+import { getRideJourney, respondToSafetyCheck, getSOSContacts } from '../../services/rideLifecycleService';
 import toastService from '../../services/toastService';
+import { reportLocation } from '../../services/liveTrackingService';
+import { triggerSOS } from '../../services/emergencyService';
+import PostRideRatingModal from '../../components/ride/PostRideRatingModal';
 
 // ── Stage metadata — order matters, drives the progress rail ──────────────
 const STAGE_ORDER = ['scheduled', 'started', 'boarding', 'active', 'destination_reached', 'completed'];
@@ -19,10 +22,7 @@ const STAGE_META = {
     cancelled: { label: 'Cancelled', icon: 'close' },
 };
 
-// Google Maps JS SDK loader config — key must live in env, same pattern
-// as the rest of the app's Google Places integration.
-const GOOGLE_MAPS_LIBRARIES = ['geometry'];
-const MAP_CONTAINER_STYLE = { width: '100%', height: '100%' };
+
 const DEFAULT_CENTER = { lat: 12.9716, lng: 77.5946 }; // Bangalore fallback
 
 const Icon = {
@@ -145,17 +145,16 @@ const RideActivePage = () => {
     const [showSosModal, setShowSosModal] = useState(false);
     const [sosSending, setSosSending] = useState(false);
     const [sosTriggered, setSosTriggered] = useState(false);
+    const [sosContacts, setSosContacts] = useState([]);
+    const [sosContactsLoading, setSosContactsLoading] = useState(false);
+    const [showRatingModal, setShowRatingModal] = useState(false);
 
     const socketRef = useRef(null);
     const watchIdRef = useRef(null);
+    const locationBufferRef = useRef([]);
+    const locationFlushIntervalRef = useRef(null);
 
     const isDriver = journey?.driver && user && (journey.driver === user._id || journey.driver?._id === user._id);
-
-    const { isLoaded: mapsLoaded } = useJsApiLoader({
-        id: 'google-map-script',
-        googleMapsApiKey: import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || '',
-        libraries: GOOGLE_MAPS_LIBRARIES,
-    });
 
     // ── Initial fetch ──────────────────────────────────────────────────────
     const fetchJourney = useCallback(async () => {
@@ -204,6 +203,7 @@ const RideActivePage = () => {
             setJourney(prev => prev ? { ...prev, stage: 'completed' } : prev);
             pushEvent('Ride completed', 'Trip finished successfully');
             toastService.success('Ride completed! 🎉', 'Thanks for riding with ShareMyRide.');
+            setShowRatingModal(true);
         };
 
         const handleSafetyCheck = (data) => {
@@ -222,20 +222,22 @@ const RideActivePage = () => {
             toastService.error('Passenger needs help', 'A passenger has flagged a safety concern.');
         };
 
-        // ── Live GPS location broadcast from driver ──
+        // ── Live GPS location broadcast from backend (now via REST -> socket) ──
         const handleLocationUpdate = (data) => {
-            if (!data || typeof data.latitude !== 'number' || typeof data.longitude !== 'number') return;
+            if (!data || typeof data.lat !== 'number' || typeof data.lng !== 'number') return;
             const point = {
-                lat: data.latitude,
-                lng: data.longitude,
+                lat: data.lat,
+                lng: data.lng,
                 speed: data.speed,
                 heading: data.heading,
-                timestamp: data.timestamp,
+                timestamp: data.at || data.timestamp,
             };
+            // Ignore our own echoes if we are the driver sending them
+            if (isDriver) return;
+
             setDriverLocation(point);
             setRoutePath(prev => {
                 const next = [...prev, { lat: point.lat, lng: point.lng }];
-                // Keep the polyline bounded so it doesn't grow unbounded on long rides
                 return next.length > 500 ? next.slice(next.length - 500) : next;
             });
         };
@@ -247,7 +249,7 @@ const RideActivePage = () => {
         socket.on('ride:safety_check', handleSafetyCheck);
         socket.on('ride:safety_check_resolved', handleSafetyResolved);
         socket.on('ride:passenger_alert', handlePassengerAlert);
-        socket.on('ride:location_update', handleLocationUpdate);
+        socket.on('ride:location', handleLocationUpdate);
 
         return () => {
             socket.emit('leave:ride', { rideId });
@@ -258,7 +260,7 @@ const RideActivePage = () => {
             socket.off('ride:safety_check', handleSafetyCheck);
             socket.off('ride:safety_check_resolved', handleSafetyResolved);
             socket.off('ride:passenger_alert', handlePassengerAlert);
-            socket.off('ride:location_update', handleLocationUpdate);
+            socket.off('ride:location', handleLocationUpdate);
         };
     }, [rideId]);
 
@@ -287,27 +289,43 @@ const RideActivePage = () => {
         let lastEmitAt = 0;
         const EMIT_INTERVAL_MS = 10000;
 
+        // Set up the periodic flush to the REST API
+        locationFlushIntervalRef.current = setInterval(async () => {
+            if (locationBufferRef.current.length > 0) {
+                const batch = [...locationBufferRef.current];
+                locationBufferRef.current = [];
+                try {
+                    await reportLocation(rideId, batch);
+                } catch (err) {
+                    console.error('Failed to report location batch:', err);
+                    // On failure, we could push them back, but let's drop to prevent memory bloat if truly offline,
+                    // or ideally we'd persist them to indexedDB for later. For now, drop on error.
+                }
+            }
+        }, EMIT_INTERVAL_MS);
+
         const id = navigator.geolocation.watchPosition(
             (position) => {
                 const now = Date.now();
-                if (now - lastEmitAt < EMIT_INTERVAL_MS) return;
+                if (now - lastEmitAt < 2000) return; // Throttle local watch point collection to every 2 seconds max
                 lastEmitAt = now;
 
-                const { latitude, longitude, speed, heading } = position.coords;
-                const payload = {
-                    rideId,
-                    location: { lat: latitude, lng: longitude },
-                    latitude,
-                    longitude,
+                const { latitude, longitude, speed, heading, accuracy } = position.coords;
+                
+                const point = {
+                    lat: latitude,
+                    lng: longitude,
                     speed: speed ?? null,
                     heading: heading ?? null,
-                    timestamp: new Date().toISOString(),
+                    accuracy: accuracy ?? null,
+                    at: new Date().toISOString(),
                 };
 
-                socketRef.current?.emit('ride:location_update', payload);
+                // Push to buffer for the 10s REST flush
+                locationBufferRef.current.push(point);
 
-                // Reflect locally too, so the driver's own map updates immediately
-                setDriverLocation({ lat: latitude, lng: longitude, speed, heading, timestamp: payload.timestamp });
+                // Reflect locally so the driver's own map updates immediately
+                setDriverLocation({ lat: latitude, lng: longitude, speed, heading, timestamp: point.at });
                 setRoutePath(prev => {
                     const next = [...prev, { lat: latitude, lng: longitude }];
                     return next.length > 500 ? next.slice(next.length - 500) : next;
@@ -327,6 +345,10 @@ const RideActivePage = () => {
             if (watchIdRef.current !== null) {
                 navigator.geolocation.clearWatch(watchIdRef.current);
                 watchIdRef.current = null;
+            }
+            if (locationFlushIntervalRef.current !== null) {
+                clearInterval(locationFlushIntervalRef.current);
+                locationFlushIntervalRef.current = null;
             }
             setLocationSharingActive(false);
         };
@@ -359,7 +381,15 @@ const RideActivePage = () => {
             // call for that instead.
             await respondToSafetyCheck(rideId, 'need_help');
             setSosTriggered(true);
-            toastService.error('Alert sent', 'Support has been notified of your emergency.');
+            
+            // Also notify trusted contacts via backend directly by triggering full SOS
+            try {
+                await triggerSOS(rideId, driverLocation || undefined);
+            } catch (tcErr) {
+                console.warn('Trusted contact alert error', tcErr);
+            }
+
+            toastService.error('Alert sent', 'Support and trusted contacts have been notified of your emergency.');
         } catch (err) {
             toastService.error('Could not send alert', err.response?.data?.message || 'Please try calling emergency services directly.');
         } finally {
@@ -368,9 +398,26 @@ const RideActivePage = () => {
         }
     };
 
+    const handleOpenSosModal = async () => {
+        setShowSosModal(true);
+        setSosContactsLoading(true);
+        try {
+            const contacts = await getSOSContacts(rideId);
+            setSosContacts(contacts || []);
+        } catch {
+            setSosContacts([]);
+        } finally {
+            setSosContactsLoading(false);
+        }
+    };
+
     const handleCallEmergency = () => {
         window.location.href = 'tel:100';
         setShowSosModal(false);
+    };
+
+    const handleCallContact = (phone) => {
+        window.location.href = `tel:${phone}`;
     };
 
     // ── Loading / error states ─────────────────────────────────────────────
@@ -436,10 +483,18 @@ const RideActivePage = () => {
                             Back to upcoming rides
                         </button>
 
+                        {/* ── Messages button ── */}
+                        <button
+                            onClick={() => navigate('/messages')}
+                            className="inline-flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-sm ml-auto mr-3"
+                        >
+                            Messages
+                        </button>
+
                         {/* ── SOS button — visible any time the ride is not yet completed/cancelled ── */}
                         {stage !== 'completed' && stage !== 'cancelled' && (
                             <button
-                                onClick={() => setShowSosModal(true)}
+                                onClick={handleOpenSosModal}
                                 className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-lg animate-pulse"
                             >
                                 {Icon.sos('w-4 h-4')}
@@ -462,7 +517,7 @@ const RideActivePage = () => {
 
             <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-10 pb-16 space-y-5">
 
-                {/* ── Live map ── */}
+                {/* ── Live map (OLA Maps / MapLibre GL) ── */}
                 {showMapSection && (
                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                         <div className="p-4 sm:p-5 pb-3 flex items-center justify-between">
@@ -470,67 +525,16 @@ const RideActivePage = () => {
                                 {Icon.map('w-4 h-4 text-gray-500')}
                                 {isDriver ? 'Your live location' : "Driver's live location"}
                             </h3>
-                            {(isDriver ? locationSharingActive : !!driverLocation) && (
-                                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-green-700 bg-green-50 px-2.5 py-1 rounded-full">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                    Live
-                                </span>
-                            )}
                         </div>
 
-                        <div className="h-64 sm:h-80 bg-gray-100">
-                            {!mapsLoaded ? (
-                                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm gap-2">
-                                    {Icon.spinner('h-4 w-4')} Loading map…
-                                </div>
-                            ) : !driverLocation ? (
-                                <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm text-center px-6">
-                                    {isDriver
-                                        ? 'Waiting for GPS signal — make sure location permissions are enabled.'
-                                        : "Waiting for the driver's location to come online…"}
-                                </div>
-                            ) : (
-                                <GoogleMap
-                                    mapContainerStyle={MAP_CONTAINER_STYLE}
-                                    center={mapCenter}
-                                    zoom={15}
-                                    options={{
-                                        disableDefaultUI: true,
-                                        zoomControl: true,
-                                        clickableIcons: false,
-                                    }}
-                                >
-                                    <MarkerF
-                                        position={{ lat: driverLocation.lat, lng: driverLocation.lng }}
-                                        icon={window.google?.maps ? {
-                                            path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                                            scale: 6,
-                                            rotation: driverLocation.heading || 0,
-                                            fillColor: '#2563eb',
-                                            fillOpacity: 1,
-                                            strokeColor: '#ffffff',
-                                            strokeWeight: 2,
-                                        } : undefined}
-                                    />
-                                    {routePath.length > 1 && (
-                                        <PolylineF
-                                            path={routePath}
-                                            options={{
-                                                strokeColor: '#2563eb',
-                                                strokeOpacity: 0.8,
-                                                strokeWeight: 4,
-                                            }}
-                                        />
-                                    )}
-                                </GoogleMap>
-                            )}
+                        <div className="h-64 sm:h-80">
+                            <LiveTrackingMap
+                                driverLocation={driverLocation}
+                                routePath={routePath}
+                                isDriver={isDriver}
+                                locationSharingActive={locationSharingActive}
+                            />
                         </div>
-
-                        {driverLocation?.speed != null && (
-                            <div className="px-4 sm:px-5 py-2.5 border-t border-gray-100 text-xs text-gray-500">
-                                Speed: {Math.max(0, Math.round((driverLocation.speed || 0) * 3.6))} km/h
-                            </div>
-                        )}
                     </div>
                 )}
 
@@ -591,9 +595,13 @@ const RideActivePage = () => {
                                 : safetyStatus === 'normal' ? 'All safety checks normal' : `Safety status: ${safetyStatus}`}
                         </p>
                         <p className="text-xs text-gray-500 mt-0.5">
-                            {journey.locationConsent
-                                ? 'Live location sharing is on for this ride.'
-                                : 'Live location sharing is off.'}
+                            {isDriver
+                                ? (locationSharingActive
+                                    ? 'Live location sharing is active (broadcasting GPS telemetry).'
+                                    : 'Live location sharing is paused (waiting for active stage or GPS signal).')
+                                : (driverLocation
+                                    ? 'Live location sharing is active for this ride.'
+                                    : 'Waiting for driver location updates.')}
                         </p>
                     </div>
                 </div>
@@ -701,10 +709,17 @@ const RideActivePage = () => {
                 </div>
 
                 {stage === 'completed' && (
-                    <div className="text-center">
+                    <div className="text-center space-y-4">
+                        <button
+                            onClick={() => setShowRatingModal(true)}
+                            className="inline-flex items-center gap-1.5 bg-amber-500 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-amber-600 transition-colors shadow-sm w-full sm:w-auto justify-center"
+                        >
+                            Rate your experience
+                        </button>
+                        <br />
                         <Link
                             to="/upcoming-rides"
-                            className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                            className="inline-flex items-center gap-1.5 bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm w-full sm:w-auto justify-center"
                         >
                             {Icon.check('w-4 h-4')}
                             Back to my rides
@@ -724,8 +739,10 @@ const RideActivePage = () => {
                                         {Icon.siren('w-6 h-6')}
                                     </div>
                                     <div>
-                                        <h3 className="text-lg font-bold leading-tight">Emergency</h3>
-                                        <p className="text-red-100 text-xs mt-0.5">Choose how you'd like to get help</p>
+                                        <h3 className="text-lg font-bold leading-tight">Emergency Help</h3>
+                                        <p className="text-red-100 text-xs mt-0.5">
+                                            {isDriver ? 'You are the driver — get help fast' : 'You are the passenger — get help fast'}
+                                        </p>
                                     </div>
                                 </div>
                                 <button onClick={() => setShowSosModal(false)} className="text-white hover:bg-white/20 rounded-lg p-1.5 transition-colors">
@@ -734,11 +751,14 @@ const RideActivePage = () => {
                             </div>
                         </div>
 
-                        <div className="p-6 space-y-4">
+                        <div className="p-6 space-y-3">
                             <p className="text-sm text-gray-600">
-                                Use this only in a genuine emergency. Calling connects you directly to police; the silent alert notifies our safety team without alerting anyone nearby.
+                                {isDriver
+                                    ? 'Use this in a genuine emergency. Silent alert notifies our safety team. You can also call the police or your emergency contact directly.'
+                                    : 'Use this in a genuine emergency. Silent alert notifies our safety team. You can also call the police or your emergency contact directly.'}
                             </p>
 
+                            {/* Police */}
                             <button
                                 onClick={handleCallEmergency}
                                 className="w-full bg-red-600 hover:bg-red-700 text-white px-5 py-3.5 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm"
@@ -747,6 +767,7 @@ const RideActivePage = () => {
                                 Call Police (100)
                             </button>
 
+                            {/* Silent SOS to support team */}
                             <button
                                 onClick={handleTriggerSilentAlarm}
                                 disabled={sosSending || sosTriggered}
@@ -755,6 +776,43 @@ const RideActivePage = () => {
                                 {sosSending ? Icon.spinner('h-5 w-5') : Icon.shield('w-5 h-5')}
                                 {sosTriggered ? 'Alert already sent' : 'Send Silent Alert to Support'}
                             </button>
+
+                            {/* Emergency / trusted contacts */}
+                            {sosContactsLoading && (
+                                <div className="flex items-center justify-center gap-2 py-3 text-sm text-gray-400">
+                                    {Icon.spinner('h-4 w-4')} Loading your emergency contacts…
+                                </div>
+                            )}
+                            {!sosContactsLoading && sosContacts.length > 0 && (
+                                <div className="border-t border-gray-100 pt-3 space-y-2">
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Your Emergency Contacts</p>
+                                    {sosContacts.map((c, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => handleCallContact(c.phone)}
+                                            className="w-full flex items-center gap-3 bg-blue-50 hover:bg-blue-100 border border-blue-100 px-4 py-3 rounded-xl transition-colors text-left"
+                                        >
+                                            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                                                {Icon.phoneCall('w-4 h-4 text-white')}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-sm font-semibold text-gray-900 truncate">{c.name}</p>
+                                                <p className="text-xs text-gray-500">{c.phone} · {c.relationship}</p>
+                                            </div>
+                                            <span className="text-xs font-bold text-blue-600 flex-shrink-0">CALL</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {!sosContactsLoading && sosContacts.length === 0 && (
+                                <div className="border-t border-gray-100 pt-3">
+                                    <p className="text-xs text-gray-400 text-center">
+                                        No emergency contacts saved.{' '}
+                                        <a href="/profile" className="text-blue-600 underline">Add one in your profile</a>
+                                        {' '}so they appear here next time.
+                                    </p>
+                                </div>
+                            )}
 
                             <button
                                 onClick={() => setShowSosModal(false)}
@@ -766,6 +824,15 @@ const RideActivePage = () => {
                     </div>
                 </div>
             )}
+
+            {/* ── POST RIDE RATING MODAL ── */}
+            <PostRideRatingModal
+                isOpen={showRatingModal}
+                onClose={() => setShowRatingModal(false)}
+                bookingId={journey?.bookingId || journey?.bookings?.[0]?._id || rideId}
+                targetName={isDriver ? (journey?.passengers?.[0]?.name || 'Passenger') : (journey?.driver?.name || 'Driver')}
+                isDriver={isDriver}
+            />
 
             <style>{`
         @keyframes fadeIn {

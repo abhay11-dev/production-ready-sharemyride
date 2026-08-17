@@ -745,7 +745,8 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false, autoOpenDet
   const vehicle = ride.vehicle || {};
   const isVerified = driverInfo.verified || driver.isDriverVerified || false;
   const driverName = driverInfo.name || driver.name || 'Driver';
-  const driverRating = driver.ratingSummary || 0;
+  const driverRating = driver.ratingSummary || driver.ratings?.average || 0;
+  const totalRatingsCount = driver.totalRatings || driver.ratings?.total || driver.ratings?.count || 0;
   const fareMode = ride.fareMode || 'fixed';
   const perKmRate = ride.perKmRate || 0;
   const isSegment = ride.matchType === 'on_route' && ride.userSearchDistance;
@@ -912,10 +913,16 @@ function RideCard({ ride, onBookingSuccess, isFirstRideFree = false, autoOpenDet
                   <span className="text-xs font-semibold text-gray-900 truncate">{driverName.split(' ')[0]}</span>
                   {isVerified && <VerifiedBadge />}
                 </div>
-                {driverRating > 0 && (
-                  <div className="flex items-center gap-0.5">
+                {driverRating > 0 ? (
+                  <div className="flex items-center gap-1 text-xs text-gray-600 font-medium">
                     <Icon name="Star" size="xs" className="text-amber-400 fill-amber-400" decorative />
-                    <span className="text-xs text-gray-500">{Number(driverRating).toFixed(1)}</span>
+                    <span>{Number(driverRating).toFixed(1)}</span>
+                    <span className="text-gray-400 text-[10px]">({totalRatingsCount > 0 ? totalRatingsCount : 1})</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 text-[11px] text-amber-600 font-medium">
+                    <Icon name="Star" size="xs" className="text-amber-400 fill-amber-400" decorative />
+                    <span>New Driver</span>
                   </div>
                 )}
               </div>

@@ -4,6 +4,7 @@ import { updateBookingStatus } from '../services/bookingService';
 import { useAuth } from '../hooks/useAuth';
 import { Link } from 'react-router-dom';
 import toast from '../services/toastService';
+import { useSocketContext } from '../contexts/SocketContext';
 
 function NotificationDropdown() {
   const { user, isLoading: authLoading } = useAuth();
@@ -12,6 +13,21 @@ function NotificationDropdown() {
   const [loading, setLoading] = useState(false);
   const [processingId, setProcessingId] = useState(null);
   const dropdownRef = useRef(null);
+  const { socket } = useSocketContext();
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleBookingRequest = (booking) => {
+      if (booking.status === 'pending') {
+        setNotifications(prev => {
+          if (prev.some(b => b._id === booking._id)) return prev;
+          return [booking, ...prev];
+        });
+      }
+    };
+    socket.on('booking-request', handleBookingRequest);
+    return () => socket.off('booking-request', handleBookingRequest);
+  }, [socket]);
 
   useEffect(() => {
     if (!authLoading && user) {

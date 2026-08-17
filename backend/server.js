@@ -97,6 +97,7 @@ const emergencyRoutes = require('./routes/emergencyRoutes'); // Ride Safety Plat
 const trustedContactsRoutes = require('./routes/trustedContactsRoutes'); // Ride Safety Platform — Phase 5
 const { startRideDataRetentionScheduler } = require('./services/jobs/rideDataRetentionScheduler'); // Ride Safety Platform — Phase 5
 const { startNegotiationExpiryScheduler } = require('./services/jobs/negotiationExpiryScheduler'); // Negotiation dispute/reopen/expiry build
+const initMonitoringCron = require('./jobs/rideMonitoringCron'); // Active Ride Anomaly & Signal Loss Monitoring
 
 // Middleware to ensure DB connection before handling requests
 app.use(async (req, res, next) => {
@@ -205,13 +206,20 @@ app.use((err, req, res, next) => {
 const server = http.createServer(app);
 initSocket(server);
 
-// Ride Safety Platform — Phase 5: periodic auto-archive + data minimization sweep.
-startRideDataRetentionScheduler();
+// Connect to DB initially and start background schedulers once connected
+connectDB().then(() => {
+  // Ride Safety Platform — Phase 5: periodic auto-archive + data minimization sweep.
+  startRideDataRetentionScheduler();
 
-// Negotiation dispute/reopen/expiry build: proactively expires stale
-// pending/countered negotiations every 5 minutes instead of relying only
-// on the lazy checkExpiry() check on read paths.
-startNegotiationExpiryScheduler();
+  // Negotiation dispute/reopen/expiry build: proactively expires stale
+  // pending/countered negotiations every 5 minutes
+  startNegotiationExpiryScheduler();
+
+  // Active Ride Monitoring: runs every 5 minutes to detect lost signals and long stops
+  initMonitoringCron();
+}).catch((err) => {
+  console.error('❌ Failed DB connection for schedulers:', err.message);
+});
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {

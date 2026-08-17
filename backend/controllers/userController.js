@@ -317,24 +317,39 @@ exports.getProfile = async (req, res) => {
 async function getUserStats(userId, role) {
   try {
     if (role === 'driver') {
-      // Get driver statistics
       const rides = await Ride.find({
-        $or: [{ driverId: userId }, { postedBy: userId }]
-      });
+        $or: [{ driverId: userId }, { postedBy: userId }, { driver: userId }]
+      }).lean();
+
+      const completedRideIds = rides
+        .filter((r) => r.rideStatus === 'completed')
+        .map((r) => r._id);
 
       const totalRides = rides.length;
-      const activeRides = rides.filter(r => r.rideStatus === 'active').length;
-      const completedRides = rides.filter(r => r.rideStatus === 'completed').length;
+      const activeRides = rides.filter((r) => r.rideStatus === 'active' || r.rideStatus === 'in_progress').length;
+      const completedRides = completedRideIds.length;
 
-      // Calculate total earnings from completed bookings
+      const eligibleBookings = await Booking.find({
+        $or: [
+          { driver: userId },
+          { ride: { $in: completedRideIds } }
+        ],
+        status: { $in: ['completed', 'accepted'] },
+        paymentStatus: { $nin: ['failed', 'refunded'] }
+      }).populate('ride', 'rideStatus fare').lean();
+
       let totalEarnings = 0;
-      rides.forEach(ride => {
-        if (ride.bookings) {
-          ride.bookings.forEach(booking => {
-            if (booking.status === 'completed' && booking.paymentStatus === 'paid') {
-              totalEarnings += booking.calculatedFare;
-            }
-          });
+      eligibleBookings.forEach((booking) => {
+        const isRideCompleted = booking.ride?.rideStatus === 'completed';
+        const isBookingCompleted = booking.status === 'completed';
+
+        if (isRideCompleted || isBookingCompleted) {
+          const fareAmount = Number(
+            booking.baseFare ??
+            booking.segmentFare ??
+            (booking.ride?.fare ? booking.ride.fare * (booking.seatsBooked || 1) : 0)
+          );
+          totalEarnings += fareAmount;
         }
       });
 
@@ -345,24 +360,26 @@ async function getUserStats(userId, role) {
         totalEarnings
       };
     } else if (role === 'passenger') {
-      // Get passenger statistics
-      const bookings = await Ride.aggregate([
-        { $unwind: '$bookings' },
-        { $match: { 'bookings.passengerId': userId } },
+      const bookings = await Booking.aggregate([
+        {
+          $match: {
+            passenger: userId,
+            status: { $in: ['completed', 'accepted'] },
+            paymentStatus: { $nin: ['failed', 'refunded'] }
+          }
+        },
         {
           $group: {
-            _id: '$bookings.status',
+            _id: '$status',
             count: { $sum: 1 },
-            totalSpent: { $sum: '$bookings.calculatedFare' }
+            totalSpent: { $sum: { $ifNull: ['$finalAmount', '$totalFare'] } }
           }
         }
       ]);
 
-      const totalBookings = bookings.reduce((sum, b) => sum + b.count, 0);
-      const completedTrips = bookings.find(b => b._id === 'completed')?.count || 0;
-      const totalSpent = bookings
-        .filter(b => b._id === 'completed')
-        .reduce((sum, b) => sum + b.totalSpent, 0);
+      const totalBookings = await Booking.countDocuments({ passenger: userId });
+      const completedTrips = bookings.reduce((sum, item) => sum + (item.count || 0), 0);
+      const totalSpent = bookings.reduce((sum, item) => sum + (item.totalSpent || 0), 0);
 
       return {
         totalBookings,
@@ -389,6 +406,8 @@ exports.updateProfile = async (req, res) => {
       dateOfBirth,
       gender,
       emergencyContact,
+      emergencyContactName,
+      trustedContacts,
       savedVehicle
     } = req.body;
 
@@ -467,6 +486,8 @@ exports.updateProfile = async (req, res) => {
     if (dateOfBirth) user.dateOfBirth = dateOfBirth;
     if (gender) user.gender = gender;
     if (emergencyContact) user.emergencyContact = emergencyContact;
+    if (emergencyContactName) user.emergencyContactName = emergencyContactName;
+    if (trustedContacts) user.trustedContacts = trustedContacts;
     if (savedVehicle) user.savedVehicle = savedVehicle;
 
     await user.save();

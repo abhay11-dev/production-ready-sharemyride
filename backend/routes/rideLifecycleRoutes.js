@@ -28,4 +28,7 @@ router.post('/:rideId/safety-check/respond', ctrl.respondToSafetyCheck);
 // Phase 5 — Privacy & Consent
 router.post('/:rideId/location/consent', ctrl.setLocationConsent);
 
+// SOS contacts — fetch the actor's trusted contacts for the emergency modal
+router.get('/:rideId/sos-contacts', ctrl.getSOSContacts);
+
 module.exports = router;

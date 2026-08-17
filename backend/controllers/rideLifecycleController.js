@@ -120,3 +120,14 @@ exports.setLocationConsent = async (req, res) => {
     handleError(res, error);
   }
 };
+
+// GET /api/ride-journey/:rideId/sos-contacts
+// Returns the actor's trusted contacts for the SOS modal
+exports.getSOSContacts = async (req, res) => {
+  try {
+    const contacts = await monitoring.getSOSContacts(req.user._id);
+    res.json({ success: true, data: contacts });
+  } catch (error) {
+    handleError(res, error);
+  }
+};

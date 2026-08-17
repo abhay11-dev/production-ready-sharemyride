@@ -49,6 +49,12 @@ export const respondToSafetyCheck = async (rideId, response) => {
   return res.data.data;
 };
 
+// SOS contacts — fetch current user's trusted contacts for the emergency modal
+export const getSOSContacts = async (rideId) => {
+  const res = await api.get(`/ride-journey/${rideId}/sos-contacts`);
+  return res.data.data;
+};
+
 // Phase 5 — Privacy & Consent
 export const setLocationConsent = async (rideId, granted) => {
   const res = await api.post(`/ride-journey/${rideId}/location/consent`, { granted });
@@ -65,5 +71,6 @@ export default {
   archiveRideJourney,
   cancelRideJourney,
   respondToSafetyCheck,
+  getSOSContacts,
   setLocationConsent
 };

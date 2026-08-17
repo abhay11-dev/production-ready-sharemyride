@@ -93,43 +93,82 @@ function evaluateCheckIns(journey, ride) {
 }
 
 /**
- * One-tap passenger response: 'safe' | 'need_help' | 'contact_support'.
- * 'safe' quietly resolves; the other two escalate to the admin dashboard
- * (and clear back down to a passive banner on the driver's side, never an
- * interactive prompt — see the module doc above).
+ * SOS / safety-check respond endpoint.
+ *
+ * Who can call this:
+ *   - Any passenger with a confirmed booking on the ride (responds to a pending check-in)
+ *   - The driver of the ride (can only send 'need_help' or 'contact_support' — i.e. SOS)
+ *
+ * Passengers use it to reply to automated safety check-ins.
+ * Both drivers AND passengers use it for SOS (the frontend sends 'need_help').
  */
-async function respondToCheckIn(rideId, passengerUser, response) {
+async function respondToCheckIn(rideId, actorUser, response) {
   if (!['safe', 'need_help', 'contact_support'].includes(response)) {
     throw new LifecycleError('Invalid response type', 400);
   }
 
-  const journey = await RideJourney.findOne({ ride: rideId });
+  const journey = await RideJourney.findOne({ ride: rideId }).populate('ride', 'driverId postedBy driver');
   if (!journey) throw new LifecycleError('No journey found for this ride', 404);
 
-  const passenger = journey.passengers.find((p) => p.user.toString() === passengerUser._id.toString());
+  const userId = actorUser._id.toString();
+
+  // ── Determine if actor is the driver ─────────────────────────────────────
+  const ride = journey.ride;
+  const driverId = (ride?.driverId || ride?.postedBy || ride?.driver)?.toString();
+  const isDriver = driverId && driverId === userId;
+
+  // ── Driver SOS path ───────────────────────────────────────────────────────
+  if (isDriver) {
+    // Drivers can only send emergency signals, not respond to passenger check-ins
+    if (response === 'safe') {
+      throw new LifecycleError('Drivers cannot respond to passenger check-ins', 403);
+    }
+
+    journey.safetyStatus = 'alert';
+    journey.timeline.push({
+      event: 'driver_sos',
+      actorRole: 'driver',
+      actor: actorUser._id,
+      message: `Driver triggered SOS (${response})`,
+      at: new Date()
+    });
+    await journey.save();
+
+    const payload = { rideId: rideId.toString(), actorId: userId, role: 'driver', response, at: new Date() };
+    emitToRide(rideId, 'ride:passenger_alert', payload);
+    emitToAdmins('ride:passenger_alert', payload);
+    return journey;
+  }
+
+  // ── Passenger path ────────────────────────────────────────────────────────
+  const passenger = journey.passengers.find((p) => p.user.toString() === userId);
   if (!passenger) throw new LifecycleError('You do not have a confirmed booking on this ride', 403);
 
   const pending = [...(passenger.safetyChecks || [])].reverse().find((c) => !c.respondedAt);
-  if (!pending) throw new LifecycleError('No pending safety check to respond to', 404);
 
-  pending.respondedAt = new Date();
-  pending.response = response;
-  passenger.lastSafetyResponse = response;
+  // For SOS (need_help / contact_support), passengers don't need a pending check-in
+  if (!pending && response === 'safe') {
+    throw new LifecycleError('No pending safety check to respond to', 404);
+  }
+
+  if (pending) {
+    pending.respondedAt = new Date();
+    pending.response = response;
+    passenger.lastSafetyResponse = response;
+  }
 
   journey.timeline.push({
     event: response === 'safe' ? 'passenger_confirmed_safe' : 'passenger_escalated',
     actorRole: 'passenger',
-    actor: passengerUser._id,
+    actor: actorUser._id,
     message:
       response === 'safe'
-        ? `${passengerUser.name || 'Passenger'} confirmed they're safe`
-        : `${passengerUser.name || 'Passenger'} requested help (${response})`,
+        ? `${actorUser.name || 'Passenger'} confirmed they're safe`
+        : `${actorUser.name || 'Passenger'} requested help (${response})`,
     at: new Date()
   });
 
   if (response === 'safe') {
-    // Only drop back to 'normal' if nothing else (deviation/long-stop) is
-    // still active — those own the elevated status until they clear.
     if (!journey.routeDeviation.active && !journey.longStop.active) {
       journey.safetyStatus = 'normal';
     }

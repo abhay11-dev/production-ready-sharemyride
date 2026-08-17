@@ -646,10 +646,7 @@ bookingSchema.index({ passenger: 1, createdAt: -1 });
 bookingSchema.index({ ride: 1, createdAt: -1 });
 bookingSchema.index({ driver: 1, status: 1 });
 bookingSchema.index({ status: 1, paymentStatus: 1 });
-bookingSchema.index({ paymentStatus: 1 });
-bookingSchema.index({ status: 1 });
 bookingSchema.index({ createdAt: -1 });
-bookingSchema.index({ transactionId: 1 });
 
 // Compound indexes for common queries
 bookingSchema.index({ passenger: 1, status: 1, createdAt: -1 });
